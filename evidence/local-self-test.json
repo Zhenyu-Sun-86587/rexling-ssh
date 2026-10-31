@@ -1,0 +1,44 @@
+{
+  "api_revision": 8,
+  "block_id": "block:01a1921f-29fa-7a58-aea8-fb9e9e42440f",
+  "checks": [
+    "session creation and window/block inspection",
+    "text snapshot",
+    "ticket and binary data handshake",
+    "initial Ghostty snapshot and nonce-marked APC",
+    "incremental output after input",
+    "resize API and PTY stty size",
+    "data resume with output produced during disconnect",
+    "control resume preserves client ID and rotates token",
+    "fresh view and snapshot after control resume",
+    "paginated snapshot agrees with full snapshot",
+    "input and live output after control resume"
+  ],
+  "data": {
+    "nonce": 17502384126260606454,
+    "resume_ms": 60000,
+    "stream_offset": 1652
+  },
+  "described_block": "block:01a1921f-29fa-7a58-aea8-fb9e9e42440f",
+  "initial_stream_bytes": 1369,
+  "initial_stream_prefix_hex": "47484f5354534e5001000100990300006534005f5000180000000000000000000000170000004f000000000100590000",
+  "passed": true,
+  "post_resume_event_seq": 1,
+  "session_destroyed_after_test": true,
+  "session_id": "session:01a1921f-29fa-79a8-bb14-45fab848e3e0",
+  "size": {
+    "cell_height_px": 16,
+    "cell_width_px": 8,
+    "columns": 93,
+    "desired": [
+      {
+        "client_id": "client:01a1921f-29f9-7c50-bed7-81770e1b05fc",
+        "columns": 93,
+        "rows": 31,
+        "updated_at": "2026-10-31T21:21:18.401844+08:00"
+      }
+    ],
+    "owner": "client:01a1921f-29f9-7c50-bed7-81770e1b05fc",
+    "rows": 31
+  }
+}

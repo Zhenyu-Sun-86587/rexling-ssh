@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "checks": [
+    "session list and inspect",
+    "watch and data resume",
+    "stdin write",
+    "resize",
+    "attach raw stdout with split UTF-8 input",
+    "text/html/vt snapshots",
+    "snapshot file",
+    "remote block closure exits with idle stdin"
+  ],
+  "session_id": "session:01a19222-ee32-7e11-88b2-4d5df5065427",
+  "cleanup": "destroyed in finally"
+}
