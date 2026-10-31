@@ -4,8 +4,9 @@ Verified on **2026-10-31**, using the user's installed Rex and existing saved
 Tailscale host. The Rust proof of concept connects directly to both servers,
 lists sessions, inspects windows/blocks, captures snapshots and live terminal
 bytes, writes input, resizes the PTY, and resumes both control and data connections.
-No Android UI, JNI layer, or Ghostty dependency was added. No server configuration
-or authentication settings were changed.
+The initial phase added no Android UI, JNI layer, or terminal emulator. The
+subsequent optional native Ghostty integration is documented below. No server
+configuration or authentication settings were changed.
 
 ## Tested installations and evidence
 
@@ -339,7 +340,7 @@ only that session in cleanup. Forced termination or connection failure can still
 prevent cleanup; the self-test prints its disposable session ID to stderr.
 Unit/integration tests include a localhost-only mock peer for interleaved
 events/pings, errors, and sequence gaps; restricted sandboxes must permit those
-local sockets. Six automated Rust tests passed, plus both real-server self-tests
+local sockets. At the initial transport checkpoint, six Rust tests passed, plus both real-server self-tests
 and both CLI smoke tests.
 
 ## Implementation boundaries and remaining work
@@ -356,10 +357,154 @@ snapshot directly to a terminal screen. Captures use new files with mode 0600 on
 Unix. Traces redact protocol secrets, but can contain terminal input, snapshots,
 paths, and identity information; only the isolated test traces are archived here.
 
-The immediate direct-connect protocol proof has no known blocker on the tested
-remote host. The next substantive task is Ghostty snapshot import and subsequent
-VT/APC handling using a compatible `libghostty-vt` API, followed by Android build,
-JNI/UniFFI, rendering, input, and VPN/lifecycle testing. Snapshot ABI/version
-compatibility, Android support, production backpressure/event reconciliation,
-automatic reconnect/fresh-snapshot fallback, and secure credential storage remain
-unverified. This binary does not claim to be a working terminal renderer.
+The direct-connect proof and the native Ghostty phase below have no known
+protocol/snapshot blocker on the tested servers. Android compilation, JNI/UniFFI,
+Compose rendering, mobile input and lifecycle recovery remain unverified.
+
+## Native Ghostty integration — verified 2026-10-31
+
+`rex-view` now restores actual Rex snapshots with native **libghostty-vt** and
+maintains a terminal replica using live VT output. It includes an interactive ANSI
+diagnostic renderer. The server remains the canonical terminal and the only
+participant answering PTY queries. This phase adds no bridge, proxy, Android UI,
+browser application, or server configuration change.
+
+### Source pin and build
+
+The installed Rex binary's Go build metadata named
+`go.mitchellh.com/libghostty@v0.0.0-20261021212106-df1957cbff56`. That module's
+`CMakeLists.txt` pins Ghostty revision
+`f54340ad77814fe319d136e5e915d6a48de8dd23`, which requires Zig **0.17.0**.
+This is evidence for the source choice, not proof of which native archive was
+linked by Rex's release builder. Compatibility was subsequently tested against
+both live servers.
+
+The binding uses the public C APIs from that exact revision:
+
+- [Snapshot API](https://github.com/ghostty-org/ghostty/blob/f54340ad77814fe319d136e5e915d6a48de8dd23/include/ghostty/vt/snapshot.h)
+- [Terminal and parser-boundary APIs](https://github.com/ghostty-org/ghostty/blob/f54340ad77814fe319d136e5e915d6a48de8dd23/include/ghostty/vt/terminal.h)
+- [Render-state API](https://github.com/ghostty-org/ghostty/blob/f54340ad77814fe319d136e5e915d6a48de8dd23/include/ghostty/vt/render.h)
+
+`native/ghostty-source.json` records source/toolchain URLs and SHA256 checksums.
+`scripts/build_ghostty.py` verifies downloads and builds under `target/`; it does
+not install global tools. Its full build was reproduced on the Mac. The optional
+Cargo feature links the static archive through `native/ghostty_shim.c`.
+`otool -L target/debug/rex-view` confirms no runtime Ghostty dylib dependency.
+The helper contains Linux toolchain metadata, but a Linux client build and an
+Android cross-build have not been run.
+
+An integration detail found in testing: putting the shared library and archive
+under the same Darwin linker search basename selected the dylib. The build script
+copies the archive to a unique basename in Cargo's build directory before linking.
+No `DYLD_LIBRARY_PATH` setup is required.
+
+### Snapshot boundary and restoration
+
+The `GHOSTSNP` envelope is ten bytes: eight-byte magic and a little-endian u16
+version, currently **1**. Each subsequent record has a u16 tag, u32 payload length,
+u32 CRC32C, then payload. Tag 5 is READY; tag 6 is FINISH with an empty payload.
+WebSocket messages can split any envelope, record, escape sequence, or character.
+
+`SnapshotBuffer` incrementally frames records and stops exactly after FINISH. It
+does not interpret page memory or validate CRC itself. The complete snapshot is
+then passed to `ghostty_snapshot_decoder_new_buf` and
+`ghostty_snapshot_decoder_decode`; Ghostty validates its records and checksums.
+`GHOSTTY_SNAPSHOT_DECODER_DATA_SOURCE_OFFSET` must equal the framed snapshot size.
+Trailing bytes are passed to the restored terminal as live VT, never to the
+snapshot decoder. The current proof waits for FINISH and limits the buffered
+snapshot to 128 MiB; incremental READY/history import is future work.
+
+Native tests prove restoration of truecolor and bold cells, Unicode, cursor state,
+the alternate and primary screens, and snapshots taken halfway through UTF-8 or a
+CSI sequence. Truncated and corrupted snapshots are rejected. Format version 1
+and the C API are explicitly experimental upstream: this pin does not imply
+compatibility with arbitrary future Ghostty/Rex versions.
+
+### VT, APCs, and render state
+
+Live bytes go through `ghostty_terminal_vt_write_until` with APC_END boundaries.
+Ghostty's unsupported-sequence callback copies complete APC payloads into Rust.
+The callback does not mutate the terminal. After the native parser returns, Rust
+matches the decimal u64 nonce, applies a recognized Rex event, and then processes
+the remaining bytes. The native parser preserves partial UTF-8/VT state across
+calls. This avoids scanning raw chunks for apparent control sequences.
+
+Recognized `resize` messages call `ghostty_terminal_resize`, including cell-pixel
+dimensions. `theme` replaces default foreground/background/cursor and palette;
+program-created color overrides are preserved by the public default-color API.
+Other nonce-matching event types, including `child_exited`, remain available in
+the replica's event queue. Wrong-nonce APCs and unknown sequence types cannot
+change the replica's size/theme. No WRITE_PTY callback is installed, so the replica
+does not duplicate the server's query responses.
+
+Ghostty RenderState only refreshes background/foreground together when both
+defaults exist. For omitted theme defaults the shim supplies RenderState.empty's
+white foreground and black background; otherwise a background-only theme left
+the cached render colors unchanged. This behavior is covered by the theme test.
+Missing defaults are also filled when configuring a new/restored terminal, so a
+snapshot with only one configured color renders correctly before the first theme APC.
+
+`Terminal::frame()` returns viewport dimensions, cursor, default colors, and cells
+with full grapheme text, resolved RGB colors, width, and common attributes. Wide
+cell spacers are retained explicitly. This is the rendering boundary intended for
+the future Android renderer. The terminal handle is deliberately neither Send nor
+Sync; JNI must keep all operations serialized on its owning thread.
+
+### Real-server and interactive evidence
+
+Both API revision 8 (local Mac) and revision 7 (Linux over Tailscale) passed:
+
+1. Import a real Rex snapshot containing bold truecolor text and `λ🦀`.
+2. Feed subsequent output in seven-byte fragments and verify live Unicode input.
+3. Apply Rex resize APCs and verify both replica dimensions and child `stty size`.
+4. Apply a live theme APC and verify the replica background.
+5. Enter/leave the alternate screen and recover primary-screen content.
+6. Drop/resume the data connection without resetting Ghostty; recover gap output.
+7. Compare the replica's formatted screen/scrollback with Rex's own `format` result.
+
+Evidence: [local Ghostty report](evidence/ghostty-local.json),
+[remote Ghostty report](evidence/ghostty-remote.json). The corresponding
+[local](evidence/ghostty-local.bin) and [remote](evidence/ghostty-remote.bin) raw
+streams contain only the disposable child output and terminal state. They contain
+no data-handshake tickets or reconnect tokens. `tests/ghostty_fixtures.rs` replays
+these actual captures without a server, at several chunk sizes including one byte.
+The complete feature-enabled suite has twelve passing Rust tests; the default
+build has eight and requires no native Ghostty library.
+
+The interactive viewer additionally passed real local PTY tests, both locally
+and over Tailscale: styled viewport output, visible Unicode, split UTF-8 input,
+local-terminal resize propagation, Ctrl-] detach, and restoration of local terminal
+modes. Reports: [local](evidence/view-local-smoke.json),
+[remote](evidence/view-remote-smoke.json). Every disposable session was destroyed.
+
+```sh
+python3 scripts/build_ghostty.py
+cargo build --locked --features ghostty --bins
+cargo test --locked --features ghostty
+cargo clippy --locked --features ghostty --all-targets -- -D warnings
+./target/debug/rex-view -S https://rex.taildaac1.ts.net self-test
+python3 scripts/smoke_view.py --server https://rex.taildaac1.ts.net
+./target/debug/rex-view decode evidence/ghostty-remote.bin \
+  --nonce 11418691820941138289
+./target/debug/rex-view -S https://rex.taildaac1.ts.net view 'session:...' 'block:...'
+```
+
+`view` uses the existing remote size by default. Add `--take` to claim that block
+and send the local terminal's size; size polling also handles local terminal
+resizes. Ctrl-] detaches. The CLI renderer clips to the local viewport and forwards
+UTF-8 input. It is an intentionally simple diagnostic renderer: it redraws the full
+viewport, does not render graphics or expose scrollback navigation, and does not
+implement Android IME or modern key-protocol encoding. Reconnection is verified
+by the self-test; the interactive loop currently stops on connection loss rather
+than automatically recovering.
+
+### Next native step
+
+Expose the Rust protocol/replica through an explicitly designed JNI or UniFFI
+boundary, cross-compile Ghostty and Rust for `aarch64-linux-android`, then draw the
+cell model in a Compose-hosted view and implement input/resize/lifecycle handling.
+No Android SDK/NDK or Android Studio installation was found at the standard local
+paths, and no Android build/device test has been performed. Graphics, large-history
+memory use, mobile key encoding, ownership contention, automatic fallback to a
+fresh snapshot, secure token storage, and background network recovery still need
+work. The snapshot compatibility question is now resolved for the tested pins.

@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "session_id": "session:01a1923b-498d-7534-93d9-213b0ba43f12",
+  "checks": [
+    "native viewport rendered through a PTY",
+    "Unicode snapshot visible",
+    "split UTF-8 keyboard input reaches child",
+    "local PTY resize reaches Rex",
+    "Ctrl-] detaches",
+    "local terminal modes restored"
+  ],
+  "cleanup": "destroyed in finally"
+}
