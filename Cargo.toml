@@ -7,6 +7,15 @@ description = "Independent Rex control and terminal-data protocol probe"
 [features]
 ghostty = []
 
+[[bin]]
+name = "rex-probe"
+path = "src/main.rs"
+
+[[bin]]
+name = "rex-view"
+path = "src/bin/rex-view.rs"
+required-features = ["ghostty"]
+
 [build-dependencies]
 cc = "1"
 
