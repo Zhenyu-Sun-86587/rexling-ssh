@@ -24,6 +24,7 @@ class RexModel(application: Application) : AndroidViewModel(application) {
         private set
     var altModifier by mutableStateOf(false)
         private set
+    private val navigation = WorkspaceNavigation()
     private var handle = 0L
     private var resizeJob: Job? = null
     private var lastSize = 0 to 0
@@ -68,8 +69,27 @@ class RexModel(application: Application) : AndroidViewModel(application) {
     }
     fun disconnect() = command("disconnect")
     fun preview() = command("preview")
-    fun selectSession(id: String) = command("session", "id" to id)
-    fun selectBlock(id: String) = command("block", "id" to id)
+    fun selectSession(id: String) {
+        if (id != state.value.selectedSession) command("session", "id" to id)
+    }
+    fun selectBlock(id: String) {
+        val current = state.value
+        if (id == current.selectedBlock) return
+        navigation.remember(current.selectedSession, current.windows, id)
+        command("block", "id" to id)
+    }
+    fun selectWindow(id: String) {
+        val current = state.value
+        current.windows.firstOrNull { it.id == id }?.let { window ->
+            navigation.pane(current.selectedSession, window)?.let(::selectBlock)
+        }
+    }
+    fun openPreferredTerminal() {
+        val current = state.value
+        if (current.connected && current.selectedSession.isNotBlank() && current.selectedBlock.isBlank()) {
+            navigation.pane(current.selectedSession, current.windows)?.let(::selectBlock)
+        }
+    }
     fun refresh() = command("refresh")
     fun takeControl() = command("take")
     fun releaseControl() { controlModifier = false; altModifier = false; command("release") }
