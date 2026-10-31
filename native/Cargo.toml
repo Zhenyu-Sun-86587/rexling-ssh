@@ -1,0 +1,3 @@
+[workspace]
+members = ["rex-core", "rex-jni"]
+resolver = "2"

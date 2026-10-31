@@ -1,0 +1,27 @@
+{
+  "api_revision": 7,
+  "block_id": "block:01a1923e-2ffe-79fa-ad1e-41540a9bc358",
+  "checks": [
+    "real Rex snapshot imported into native Ghostty",
+    "truecolor and bold cells preserved",
+    "Unicode snapshot and split live UTF-8",
+    "Rex resize APC applied before following VT",
+    "Rex theme APC applied",
+    "alternate screen and primary restoration",
+    "data resume preserves Ghostty state",
+    "replica screen and scrollback matches server format"
+  ],
+  "cleanup": "destroyed before report",
+  "columns": 93,
+  "cursor": [
+    0,
+    7
+  ],
+  "ghostty_revision": "f54340ad77814fe319d136e5e915d6a48de8dd23",
+  "nonce": 11418691820941138289,
+  "passed": true,
+  "rows": 31,
+  "session_id": "session:01a1923e-2ffe-77c5-8270-084f2afc70d6",
+  "snapshot_bytes": 1260,
+  "stream_bytes": 1811
+}
