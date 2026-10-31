@@ -12,7 +12,7 @@ Verified on the development Mac and **API 37 arm64 Android emulator** on
 | Emulator live connection | Authenticated server connection and live terminal visible; control mode and keyboard observed |
 | Emulator crash log | No AndroidRuntime errors or libc fatal entries during smoke run |
 | `assembleDebug` | Passed; debug APK signed |
-| Kotlin model/input JVM tests | 3 passed |
+| Kotlin model/input/navigation JVM tests | 5 passed |
 | Native offline unit tests | 9 passed |
 | Explicit real-server actor host test | Passed on the existing Tailscale host |
 | Actual JNI bridge on host JVM | Passed |
@@ -55,3 +55,27 @@ without a guest VPN setup. This does not establish phone-side VPN/DNS behavior.
 The live UI smoke run was observed manually; no comprehensive emulator test suite
 was run. IME composition, real-phone rendering, rotation, network loss and
 background/process-death behavior still need testing on the S22+.
+
+## Compact navigation update
+
+The normal terminal layout now uses a 44 dp session/pane/control header, a 36 dp
+scrollable window tab strip, and a 40 dp terminal key row. The title, dimension
+row, session/pane chip rows and routine status footer no longer take shell space.
+Navigation remains visible while the keyboard is open. Server and terminal
+options live in the overflow menu.
+
+The rebuilt app was installed on the same API 37 emulator. A disposable test
+session contained an Editor tab with two panes and a Logs tab with one pane;
+a second disposable session exercised cross-session switching. ADB-driven UI
+checks confirmed selecting a session, changing tabs and panes, restoring the
+last pane when returning to a tab/session, and access to all top navigation
+controls while the IME was open. Input sent through the app produced
+`REPLY:compact-input-check` in the disposable shell, verified using the independent
+probe's snapshot command. Both test sessions were destroyed afterward.
+
+The IME-visible terminal viewport measured `[0,274][1080,1323]` on the emulator;
+the terminal reported 49 columns by 22 rows at the default 14 sp font. The prior
+layout's observed IME-visible terminal was 49 by 17. Navigation history unit tests
+also cover removed panes/windows and empty windows. `assembleDebug`, all five
+Kotlin tests and `lintDebug` passed; lint has no errors. The crash log contained
+no AndroidRuntime error or libc fatal entries during these checks.

@@ -55,10 +55,17 @@ are a deliberately fixed working set; lint may report newer versions.
    `adb install -r app/build/outputs/apk/debug/app-debug.apk` yourself.
 3. Open **Rex**. Connect to the prefilled server URL, or enter another explicit
    `https://`, `http://`, `wss://`, or `ws://` Rex server address.
-4. Choose a session, then a terminal. It opens for viewing.
-5. Tap **Take control** to enable input and resize the terminal to the phone's
+4. Tap the session name at the top left to switch sessions. A session opens its
+   last visited terminal, or its first available one. The top tabs are Rex windows;
+   tap a tab to switch windows. **Panes 1/2 ▾** opens that tab's pane picker.
+   Each tab remembers its last selected pane while the app remains running.
+5. Tap **Control** to enable input and resize the terminal to the phone's
    viewport. **Release** gives up ownership. Switching terminals also releases
-   the old claim. The toolbar provides Esc, Ctrl, Alt, Tab, arrows and paste.
+   the old claim. The compact key row provides Esc, Ctrl, Alt, Tab, arrows and a
+   keyboard button. Session, tab and pane navigation stays visible with the IME.
+6. Open **⋮** for server settings, connection status, terminal dimensions, font
+   size, copy, paste and refresh. Routine status messages live in this menu so
+   the terminal gets more space.
 
 **Try preview** restores a captured disposable test stream locally. It displays
 an actual Ghostty snapshot and later VT output without requiring a connection.

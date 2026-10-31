@@ -1,6 +1,6 @@
 {
   "apk": "app/build/outputs/apk/debug/app-debug.apk",
-  "sha256": "d40013e1da083bb0074db5b19b18459d8545d90158249a0313a8449f2098e222",
+  "sha256": "7599cb249a893510f18669fcd7235e37837b2e84b997aaaee6865910c04f71f1",
   "bytes": 41142862,
   "signature_verified": true,
   "zip_alignment_16k": true,
