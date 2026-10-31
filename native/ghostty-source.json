@@ -1,0 +1,28 @@
+{
+  "revision": "f54340ad77814fe319d136e5e915d6a48de8dd23",
+  "source_url": "https://codeload.github.com/ghostty-org/ghostty/tar.gz/f54340ad77814fe319d136e5e915d6a48de8dd23",
+  "source_sha256": "12dc51799cd364608150d82fcca130bc10149be4bf21908f30256d44bc866de4",
+  "zig_version": "0.17.0",
+  "zig": {
+    "aarch64-macos": {
+      "tarball": "https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz",
+      "shasum": "b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a",
+      "size": "53985220"
+    },
+    "x86_64-macos": {
+      "tarball": "https://ziglang.org/download/0.17.0/zig-x86_64-macos-0.17.0.tar.xz",
+      "shasum": "4f9a1c5269aa17ebda5e6d3c2b89d6cbf36f7d2b22a0306e9ab98f25f95529c6",
+      "size": "59317572"
+    },
+    "aarch64-linux": {
+      "tarball": "https://ziglang.org/download/0.17.0/zig-aarch64-linux-0.17.0.tar.xz",
+      "shasum": "9e8d11661d4ae3bd57702a3832781e23ad151dde5798e16a5ccd503f65234ff8",
+      "size": "52877280"
+    },
+    "x86_64-linux": {
+      "tarball": "https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz",
+      "shasum": "1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026",
+      "size": "57332648"
+    }
+  }
+}

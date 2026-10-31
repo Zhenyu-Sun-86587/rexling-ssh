@@ -689,6 +689,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "cc",
  "clap",
  "crossterm",
  "futures-util",

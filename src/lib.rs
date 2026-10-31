@@ -1,4 +1,7 @@
-//! Independent Rex protocol client. No subprocesses, Rex CLI, or terminal emulator.
+//! Direct Rex client with optional native Ghostty terminal state; no Rex subprocesses.
 pub mod control;
 pub mod data;
+#[cfg(feature = "ghostty")]
+pub mod ghostty;
+pub mod snapshot;
 pub mod transport;
