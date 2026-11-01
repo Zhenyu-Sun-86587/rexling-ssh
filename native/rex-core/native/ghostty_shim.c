@@ -9,6 +9,7 @@ typedef void (*CellFn)(void *, uint16_t, uint16_t, const uint32_t *, size_t,
 typedef struct {
   uint16_t columns, rows, cursor_x, cursor_y;
   uint8_t cursor_visible, foreground[3], background[3];
+  uint64_t scroll_total, scroll_offset, scroll_visible;
 } RpFrame;
 typedef struct {
   GhosttyTerminal terminal;
@@ -142,6 +143,12 @@ int rp_encode(RpTerminal *t, uint8_t **out, size_t *len) {
 }
 void rp_bytes_free(uint8_t *bytes, size_t len) { ghostty_free(NULL, bytes, len); }
 
+void rp_scroll(RpTerminal *t, int32_t lines, int bottom) {
+  GhosttyTerminalScrollViewport behavior = {0};
+  behavior.tag = bottom ? GHOSTTY_SCROLL_VIEWPORT_BOTTOM : GHOSTTY_SCROLL_VIEWPORT_DELTA;
+  behavior.value.delta = lines;
+  ghostty_terminal_scroll_viewport(t->terminal, behavior);
+}
 int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   int r = ghostty_render_state_update(t->render, t->terminal);
   if (r != 0) return r;
@@ -152,6 +159,12 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   GET(GHOSTTY_RENDER_STATE_DATA_ROWS,&frame->rows);
   GET(GHOSTTY_RENDER_STATE_DATA_COLORS,&colors);
   GET(GHOSTTY_RENDER_STATE_DATA_CURSOR,&cursor);
+  GhosttyTerminalScrollbar scrollbar = {0};
+  r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_SCROLLBAR,&scrollbar);
+  if(r!=0)return r;
+  frame->scroll_total=scrollbar.total;
+  frame->scroll_offset=scrollbar.offset;
+  frame->scroll_visible=scrollbar.len;
   frame->cursor_x=cursor.viewport_x; frame->cursor_y=cursor.viewport_y;
   frame->cursor_visible=cursor.visible && cursor.viewport_has_value;
   memcpy(frame->foreground,&colors.foreground,3);

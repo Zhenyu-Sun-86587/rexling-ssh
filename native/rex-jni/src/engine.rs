@@ -767,9 +767,31 @@ impl Actor {
                 self.notice = "Viewing terminal".into();
                 self.publish();
             }
+            "scroll" => {
+                if value["block"].as_str() != Some(self.selected_block.as_str()) {
+                    return Ok(());
+                }
+                if let Some(replica) = self.replica.as_mut().filter(|r| r.ready()) {
+                    let terminal = replica.terminal()?;
+                    if value["bottom"] == true {
+                        terminal.scroll_to_bottom();
+                    } else {
+                        terminal.scroll_viewport(
+                            value["lines"].as_i64().unwrap_or(0).clamp(-100000, 100000) as i32,
+                        );
+                    }
+                    self.dirty = true;
+                }
+            }
             "input" | "paste" | "resize" => {
                 ensure!(self.controlled, "Take control before typing or resizing");
                 let kind = value["type"].as_str().unwrap();
+                if kind != "resize"
+                    && let Some(replica) = self.replica.as_mut().filter(|r| r.ready())
+                {
+                    replica.terminal()?.scroll_to_bottom();
+                    self.dirty = true;
+                }
                 let c = self.control.as_mut().context("not connected")?;
                 let result=match kind {
                     "input"=>c.terminal(&self.selected_session,&self.selected_block,"write",json!({"data":value["text"].as_str().context("text required")?})).await,
@@ -1133,7 +1155,7 @@ fn frame_json(frame: Frame) -> Value {
             ])
         })
         .collect();
-    json!({"columns":frame.columns,"rows":frame.rows,"cursor":frame.cursor,"foreground":rgb(frame.foreground),"background":rgb(frame.background),"cells":cells})
+    json!({"columns":frame.columns,"rows":frame.rows,"scrollbar":[frame.scroll_total,frame.scroll_offset,frame.scroll_visible],"cursor":frame.cursor,"foreground":rgb(frame.foreground),"background":rgb(frame.background),"cells":cells})
 }
 
 #[cfg(test)]
@@ -1251,7 +1273,7 @@ mod tests {
                 Trace::default(),
             ))
             .unwrap();
-        let script = "stty -echo; printf 'ACTOR_READY\\n'; while IFS= read -r line; do printf 'ACTOR_REPLY:%s\\n' \"$line\"; done";
+        let script = r#"stty -echo; i=0; while [ "$i" -lt 80 ]; do printf 'SCROLL_%03d\n' "$i"; i=$((i+1)); done; printf 'ACTOR_READY\n'; while IFS= read -r line; do printf 'ACTOR_REPLY:%s\n' "$line"; done"#;
         let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rex-android-host-test-{}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}}]}))).unwrap();
         let id = created["session_id"].as_str().unwrap();
         let block = created["initial_windows"][0]["block_ids"][0]
@@ -1271,6 +1293,25 @@ mod tests {
                 .unwrap();
             wait(&app, |v| {
                 text(v).contains("ACTOR_READY") && v["navigationId"] == 17
+            });
+            app.command(json!({"type":"scroll","block":block,"lines":-10000}))
+                .unwrap();
+            let history = wait(&app, |v| {
+                text(v).contains("SCROLL_000") && v["screen"]["scrollbar"][1] == 0
+            });
+            assert_eq!(history["controlled"], false);
+            runtime
+                .block_on(writer.terminal(
+                    id,
+                    block,
+                    "write",
+                    json!({"data":"while-reading-history\n"}),
+                ))
+                .unwrap();
+            wait(&app, |v| {
+                text(v).contains("SCROLL_000")
+                    && v["screen"]["scrollbar"][0].as_u64()
+                        > history["screen"]["scrollbar"][0].as_u64()
             });
             app.command(json!({"type":"take"})).unwrap();
             wait(&app, |v| v["controlled"] == true);

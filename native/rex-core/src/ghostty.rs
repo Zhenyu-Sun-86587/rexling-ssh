@@ -22,6 +22,9 @@ struct RawFrame {
     cursor_visible: u8,
     foreground: [u8; 3],
     background: [u8; 3],
+    scroll_total: u64,
+    scroll_offset: u64,
+    scroll_visible: u64,
 }
 unsafe extern "C" {
     fn rp_new(cols: u16, rows: u16, out: *mut *mut c_void) -> i32;
@@ -41,6 +44,7 @@ unsafe extern "C" {
     fn rp_text(term: *mut c_void, out: *mut *mut u8, len: *mut usize) -> i32;
     fn rp_encode(term: *mut c_void, out: *mut *mut u8, len: *mut usize) -> i32;
     fn rp_bytes_free(bytes: *mut u8, len: usize);
+    fn rp_scroll(term: *mut c_void, lines: i32, bottom: i32);
     fn rp_frame(
         term: *mut c_void,
         frame: *mut RawFrame,
@@ -71,6 +75,9 @@ pub struct Frame {
     pub foreground: [u8; 3],
     pub background: [u8; 3],
     pub cells: Vec<Cell>,
+    pub scroll_total: u64,
+    pub scroll_offset: u64,
+    pub scroll_visible: u64,
 }
 impl Frame {
     pub fn text(&self) -> String {
@@ -245,6 +252,12 @@ impl Terminal {
     pub fn encode(&mut self) -> Result<Vec<u8>> {
         self.buffer(true)
     }
+    pub fn scroll_viewport(&mut self, lines: i32) {
+        unsafe { rp_scroll(self.handle.as_ptr(), lines, 0) };
+    }
+    pub fn scroll_to_bottom(&mut self) {
+        unsafe { rp_scroll(self.handle.as_ptr(), 0, 1) };
+    }
     pub fn frame(&mut self) -> Result<Frame> {
         unsafe extern "C" fn cell(
             userdata: *mut c_void,
@@ -301,6 +314,9 @@ impl Terminal {
             cursor: (raw.cursor_visible != 0).then_some((raw.cursor_x, raw.cursor_y)),
             foreground: raw.foreground,
             background: raw.background,
+            scroll_total: raw.scroll_total,
+            scroll_offset: raw.scroll_offset,
+            scroll_visible: raw.scroll_visible,
             cells,
         })
     }
@@ -433,6 +449,39 @@ impl Replica {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restored_scrollback_scrolls_locally_and_keeps_new_output_anchored() {
+        let mut original = Terminal::new(30, 4).unwrap();
+        for i in 0..40 {
+            original
+                .write(format!("HISTORY_{i:03}\r\n").as_bytes())
+                .unwrap();
+        }
+        let snapshot = original.encode().unwrap();
+        let (mut terminal, _) = Terminal::decode(&snapshot).unwrap();
+        let bottom = terminal.frame().unwrap();
+        assert!(bottom.scroll_total > bottom.scroll_visible);
+        assert!(bottom.text().contains("HISTORY_039"));
+        terminal.scroll_viewport(-10000);
+        let top = terminal.frame().unwrap();
+        assert_eq!(top.scroll_offset, 0);
+        assert!(top.text().contains("HISTORY_000"));
+        terminal.write(b"NEW_WHILE_SCROLLED\r\n").unwrap();
+        assert!(terminal.frame().unwrap().text().contains("HISTORY_000"));
+        terminal.scroll_to_bottom();
+        assert!(
+            terminal
+                .frame()
+                .unwrap()
+                .text()
+                .contains("NEW_WHILE_SCROLLED")
+        );
+        terminal.write(b"\x1b[?1049hALTERNATE").unwrap();
+        terminal.scroll_viewport(-1000);
+        let alternate = terminal.frame().unwrap();
+        assert_eq!(alternate.scroll_total, alternate.scroll_visible);
+        assert!(alternate.text().contains("ALTERNATE"));
+    }
     #[test]
     fn restores_binary_snapshot_then_handles_fragmented_vt_and_nonce_apcs() {
         let mut terminal = Terminal::new(40, 6).unwrap();
