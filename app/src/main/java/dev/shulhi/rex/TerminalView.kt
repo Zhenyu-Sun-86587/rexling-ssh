@@ -42,6 +42,7 @@ class TerminalView(context: Context) : View(context) {
     var textSp: Float = 10f
         set(value) { if (field != value) { field = value; metrics(); invalidate() } }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
     private val fonts = TerminalFonts(context)
     private var cellWidth = 1f
     private var cellHeight = 1f
@@ -72,12 +73,27 @@ class TerminalView(context: Context) : View(context) {
         val saved = canvas.save()
         canvas.clipRect(0, 0, width, height)
         canvas.drawColor(palette.background)
-        // Draw all backgrounds first; spacer cells must not overwrite a wide glyph.
-        for (cell in frame.cells) {
-            val inverse = cell.attributes and 8 != 0
-            paint.color = if (inverse) palette.foreground(cell) else palette.background(cell)
-            canvas.drawRect(cell.x * cellWidth, cell.y * cellHeight, (cell.x + max(1, cell.width)) * cellWidth, (cell.y + 1) * cellHeight, paint)
+        // Frames are row-major. Merge equal fills and let a wide lead cover its spacer.
+        var row = -1
+        var start = 0
+        var end = 0
+        var color = 0
+        fun flushBackground() {
+            if (end <= start) return
+            backgroundPaint.color = color
+            canvas.drawRect(start * cellWidth, row * cellHeight, end * cellWidth,
+                (row + 1) * cellHeight, backgroundPaint)
         }
+        for (cell in frame.cells) {
+            if (cell.y == row && cell.width == 0 && cell.x < end) continue
+            val nextColor = if (cell.attributes and 8 != 0) palette.foreground(cell) else palette.background(cell)
+            if (cell.y != row || cell.x != end || nextColor != color) {
+                flushBackground()
+                row = cell.y; start = cell.x; color = nextColor
+            }
+            end = cell.x + max(1, cell.width)
+        }
+        flushBackground()
         for (cell in frame.cells) {
             if (cell.width == 0 || cell.text.isEmpty() || cell.attributes and 16 != 0) continue
             val x = cell.x * cellWidth; val y = cell.y * cellHeight

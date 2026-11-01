@@ -70,7 +70,7 @@ import kotlin.math.roundToInt
             val position=(i-index)*stride+drag
             key(block.id) {
                 Column(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
-                    translationX=leftPx+position
+                    translationX=kotlin.math.round(leftPx+position)
                     alpha=1f-(abs(position)/stride).coerceIn(0f,1f)*.48f
                 }.clip(RoundedCornerShape(21.dp)).background(Color(palette.background))
                     .then(if(center) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
