@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -186,11 +187,16 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         LazyRow(Modifier.weight(1f).fillMaxHeight().clipToBounds(),state=list,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w ->
                 val active=w.id==selectedId
+                val indicatorColor=MaterialTheme.colorScheme.primary
                 val programs=panePrograms(w)
                 val pane=selectedPane(w)
                 val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
                 val title=w.label.takeUnless {it.isBlank() || it.startsWith("Window ")} ?: w.blocks.firstOrNull()?.label ?: "Terminal ${i+1}"
                 Column(Modifier.height(44.dp).width(IntrinsicSize.Max).widthIn(min=70.dp,max=185.dp)
+                    .drawWithContent {
+                        drawContent()
+                        if(active) drawRect(indicatorColor,Offset(0f,size.height-2.dp.toPx()),Size(size.width,2.dp.toPx()))
+                    }
                     .clip(RoundedCornerShape(16.dp))
                     .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"}
                     .selectable(active,enabled,role=Role.Tab) {onSelect(w.id)},horizontalAlignment=Alignment.CenterHorizontally) {
@@ -201,8 +207,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                     }
-                    Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(if(active) MaterialTheme.colorScheme.primary else Color.Transparent))
+                    Spacer(Modifier.height(2.dp))
                 }
             }
         }

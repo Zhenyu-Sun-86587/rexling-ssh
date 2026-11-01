@@ -79,7 +79,7 @@ import kotlin.math.roundToInt
                             factory={TerminalView(it)},modifier=Modifier.fillMaxSize().clipToBounds(),
                             update={view ->
                                 view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
-                                view.setTerminalPaddingDp(6,8,if(blocks.size>1) 22 else 6)
+                                view.setTerminalPaddingDp(12,8,if(blocks.size>1) 22 else 6)
                                 view.palette=palette;view.textSp=fontSize;view.screen=frame
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
