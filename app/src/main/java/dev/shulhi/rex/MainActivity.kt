@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
     key(model.activeServerId) {RexWorkspace(model,client)}
 }
 
+private data class TerminalCloseTarget(val session: String,val id: String,val label: String,val tab: Boolean,val blocks: List<String>)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun RexWorkspace(model: RexModel,client: RexConnection) {
     val state by client.chromeState.collectAsState()
@@ -104,12 +106,21 @@ class MainActivity : ComponentActivity() {
     var menu by remember {mutableStateOf(false)}
     var add by remember {mutableStateOf(false)}
     var appearance by remember {mutableStateOf(false)}
+    var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
     var fontSize by rememberSaveable {mutableIntStateOf(10)}
     var terminalView by remember {mutableStateOf<TerminalView?>(null)}
     val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
     val liveBlock=state.selectedBlock.ifBlank {if(state.phase=="preview") "preview" else ""}
+    fun closePaneTarget(block: BlockItem)=TerminalCloseTarget(state.selectedSession,block.id,
+        (state.programs[block.id] ?: ProgramIdentity.Terminal).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
+    fun closeTabTarget(tab: WindowItem): TerminalCloseTarget {
+        val pane=client.tabPaneIndex(tab);val block=tab.blocks.getOrNull(pane)
+        val program=state.programs[block?.id] ?: ProgramIdentity.Terminal
+        return TerminalCloseTarget(state.selectedSession,tab.id,program.tabTitle(tab.label,block?.label.orEmpty(),1,state.titles[block?.id].orEmpty()),true,tab.blocks.map {it.id})
+    }
+    LaunchedEffect(state.selectedSession) {closeTarget=null}
     LaunchedEffect(palette) { model.updateTerminalTheme(palette) }
     LaunchedEffect(state.phase) {if(state.connected || state.phase=="preview") showServer=false}
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
@@ -150,6 +161,9 @@ class MainActivity : ComponentActivity() {
                             DropdownMenuItem(text={Text("Servers · ${model.connectedCount} connected")},onClick={menu=false;servers=true})
                             DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;client.refresh()})
                             DropdownMenuItem(text={Text("Switch pane")},enabled=blocks.isNotEmpty(),onClick={menu=false;picker="panes"})
+                            HorizontalDivider(Modifier.padding(vertical=6.dp))
+                            DropdownMenuItem(text={Text("Close pane")},enabled=ready && blocks.any {it.id==chosen},onClick={menu=false;blocks.firstOrNull {it.id==chosen}?.let {closeTarget=closePaneTarget(it)}})
+                            DropdownMenuItem(text={Text("Close tab")},enabled=ready && window!=null,onClick={menu=false;window?.let {closeTarget=closeTabTarget(it)}})
                         }
                     }
                 })
@@ -188,7 +202,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
-                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,{picker="panes"},panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},add={
+                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,{picker="panes"},panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},add={
                                 Box {
                                     Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
                                         ChromeButton(ChromeIcon.ADD,"Add terminal",ready){add=true}
@@ -229,10 +243,20 @@ class MainActivity : ComponentActivity() {
                             color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                     Text(if(b.id==chosen) "✓" else "${index+1}",color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    ChromeButton(ChromeIcon.CLOSE,"Close pane $label",ready) {picker="";closeTarget=closePaneTarget(b)}
                 }
             }
             TextButton(onClick={picker="";client.createPane()},enabled=ready){Text("New pane")}
         }
+    }
+    closeTarget?.let {target->
+        AlertDialog(onDismissRequest={closeTarget=null},title={Text(if(target.tab) "Close tab?" else "Close pane?")},
+            text={Text(if(target.tab) "Close “${target.label}”? This ends every program in its ${target.blocks.size} pane${if(target.blocks.size==1) "" else "s"}."
+                else "Close “${target.label}”? This ends the program running in this pane.")},
+            confirmButton={TextButton(enabled=ready,onClick={closeTarget=null
+                if(target.tab) client.closeTab(target.session,target.id,target.blocks) else client.closePane(target.session,target.id)
+            }) {Text("Close",color=MaterialTheme.colorScheme.error)}},
+            dismissButton={TextButton(onClick={closeTarget=null}) {Text("Cancel")}})
     }
     if(appearance) AlertDialog(onDismissRequest={appearance=false},title={Text("Appearance")},text={
         Column {Appearance.entries.forEach {mode->

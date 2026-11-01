@@ -46,7 +46,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB }
+internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -68,6 +68,7 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.SESSIONS -> { box(4f,8f,13f,12f); line(8f,4f,20f,4f); line(20f,4f,20f,16f); line(7f,12f,11f,12f); line(7f,16f,13f,16f) }
             ChromeIcon.COPY -> { box(8f,8f,12f,12f); line(15f,4f,4f,4f); line(4f,4f,4f,15f) }
             ChromeIcon.MORE -> { for(y in listOf(5f,12f,19f)) drawCircle(color,1.4f*u,Offset(12f*u,y*u)) }
+            ChromeIcon.CLOSE -> {line(6f,6f,18f,18f);line(6f,18f,18f,6f)}
             ChromeIcon.ADD -> { line(5f,12f,19f,12f); line(12f,5f,12f,19f) }
             ChromeIcon.LEFT -> arrow(-1f,0f)
             ChromeIcon.RIGHT -> arrow(1f,0f)
@@ -190,8 +191,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},add: @Composable ()->Unit) {
+    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},add: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -201,6 +203,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     Row(Modifier.fillMaxWidth().height(49.dp).padding(start=11.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
         LazyRow(Modifier.weight(1f).fillMaxHeight().clipToBounds(),state=list,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w ->
+                var actions by remember(w.id) {mutableStateOf(false)}
                 val active=w.id==selectedId
                 val indicatorColor=MaterialTheme.colorScheme.primary
                 val busy=paneWorking(w)
@@ -209,6 +212,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 val pane=selectedPane(w)
                 val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
                 val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
+                Box {
                 Column(Modifier.height(44.dp).width(IntrinsicSize.Max).widthIn(min=70.dp,max=185.dp)
                     .drawWithContent {
                         drawContent()
@@ -224,7 +228,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     }
                     .clip(RoundedCornerShape(16.dp))
                     .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(if(busy) ", working" else "")}
-                    .selectable(active,enabled,role=Role.Tab) {onSelect(w.id)},horizontalAlignment=Alignment.CenterHorizontally) {
+                    .semantics {selected=active}
+                    .combinedClickable(enabled=enabled,role=Role.Tab,onClick={onSelect(w.id)},onLongClick={actions=true}),horizontalAlignment=Alignment.CenterHorizontally) {
                     Row(Modifier.weight(1f).padding(horizontal=10.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                         ProgramStack(programs,pane)
@@ -234,6 +239,10 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                     }
                     Spacer(Modifier.height(2.dp))
+                }
+                androidx.compose.material3.DropdownMenu(actions,{actions=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+                    androidx.compose.material3.DropdownMenuItem(text={Text("Close tab")},enabled=enabled,onClick={actions=false;onClose(w)})
+                }
                 }
             }
         }
