@@ -116,18 +116,18 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     Row(Modifier.fillMaxWidth().height(50.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
         if(!expanded) {ProgramStack(programs,paneIndex,framed=true);Spacer(Modifier.width(7.dp))}
         Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
-            if(!expanded) Row(Modifier.fillMaxWidth().height(22.dp),verticalAlignment=Alignment.CenterVertically) {
+            if(!expanded) Row(Modifier.fillMaxWidth().height(19.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,letterSpacing=0.sp,maxLines=1,
                     overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=if(title.isBlank()) 90.dp else 190.dp))
                 if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
                     fontFamily=MonoUi,fontSize=9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else 20.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else 17.dp)) {
                 val pageWidth=if(expanded) 160.dp else maxWidth.coerceAtLeast(40.dp)
                 val pagePadding=if(expanded) ((maxWidth-pageWidth)/2).coerceAtLeast(0.dp) else 0.dp
                 Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else 20.dp),userScrollEnabled=enabled && sessions.size>1,
+                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else 17.dp),userScrollEnabled=enabled && sessions.size>1,
                         pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={sessions.getOrNull(it)?.id ?: "empty"}) { index ->
                         val item=sessions.getOrNull(index)
                         val active=item?.id==selectedId
