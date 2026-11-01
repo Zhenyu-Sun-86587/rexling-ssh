@@ -94,4 +94,27 @@ class TerminalBackgroundTest {
         }
         assertEquals(expected,result.getPixel((cellWidth*1.5f).toInt(),result.height/2))
     }
+    @Test fun rowCacheReusesUnchangedRowsAndMatchesFreshDrawing() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val context=instrumentation.targetContext
+            val cells=(0 until 4).flatMap {y->(0 until 20).map {x->TerminalCell(x,y,('!'.code+x).toChar().toString(),-1,0xff283442.toInt(),0,1)}}
+            val initial=TerminalScreen(20,4,2,2,-1,0xff000000.toInt(),cells)
+            fun view(frame: TerminalScreen)=TerminalView(context).apply {
+                screen=frame;setTerminalPaddingDp(12,8,6)
+                measure(View.MeasureSpec.makeMeasureSpec(500,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(220,View.MeasureSpec.EXACTLY));layout(0,0,500,220)
+            }
+            val cached=view(initial)
+            fun draw(view: TerminalView)=Bitmap.createBitmap(500,220,Bitmap.Config.ARGB_8888).also {view.draw(Canvas(it))}
+            draw(cached).recycle();val count=cached.recordedRowCount
+            val changed=initial.copy(cells=cells.map {if(it.y==1) it.copy(text="Z") else it},lines=initial.lines.mapIndexed {y,row->if(y==1) row.map {it.copy(text="Z")} else row})
+            cached.screen=changed
+            val image=draw(cached)
+            assertEquals(count+1,cached.recordedRowCount)
+            val fresh=draw(view(changed))
+            org.junit.Assert.assertTrue("Cached and fresh rows must render identically",image.sameAs(fresh))
+            image.recycle();fresh.recycle()
+        }
+    }
+
 }

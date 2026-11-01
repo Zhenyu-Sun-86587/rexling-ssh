@@ -2,6 +2,7 @@ package dev.shulhi.rex
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Picture
 import android.graphics.Paint
 import android.text.InputType
 import android.view.KeyEvent
@@ -22,7 +23,7 @@ import kotlin.math.max
 class TerminalView(context: Context) : View(context) {
     var interactive = true
     var palette: TerminalPalette = TerminalPalette.Dark
-        set(value) { if(field != value) { field=value;invalidate() } }
+        set(value) { if(field != value) { field=value;clearRows();invalidate() } }
     var onPaneDrag: ((Float, Boolean) -> Unit)? = null
     var onPaneDragEnd: ((Float, Float) -> Unit)? = null
     private var startX=0f
@@ -39,7 +40,7 @@ class TerminalView(context: Context) : View(context) {
     var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
     var screen: TerminalScreen? = null
-        set(value) { field = value; invalidate() }
+        set(value) { if(field!==value) {field = value; postInvalidateOnAnimation()} }
     var controlled: Boolean = false
         set(value) {
             if (field != value) {
@@ -53,6 +54,15 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
     private val fonts = TerminalFonts(context)
+    private data class RecordedRow(val cells: List<TerminalCell>,val picture: Picture)
+    private var recorded= arrayOfNulls<RecordedRow>(0)
+    private var rowGeometry=""
+    private val advances=object: LinkedHashMap<Pair<Int,String>,Float>(256,.75f,true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int,String>,Float>?)=size>4096
+    }
+    internal var recordedRowCount=0;private set
+    private fun clearRows() {recorded=arrayOfNulls(0);rowGeometry=""}
+    private fun advance(text: String,style: Int): Float=advances.getOrPut(style to text){paint.measureText(text)}
     private var cellWidth = 1f
     private var cellHeight = 1f
     private var baseline = 0f
@@ -70,7 +80,7 @@ class TerminalView(context: Context) : View(context) {
         val b = (bottom * density).roundToInt().toFloat()
         if (h == insetHorizontal && t == insetTop && b == insetBottom) return
         insetHorizontal = h; insetTop = t; insetBottom = b
-        reportDimensions(); invalidate()
+        clearRows();reportDimensions(); invalidate()
     }
     private val paneGesture = PaneGesture(ViewConfiguration.get(context).scaledTouchSlop.toFloat(), 48f * resources.displayMetrics.density)
 
@@ -80,6 +90,7 @@ class TerminalView(context: Context) : View(context) {
         metrics()
     }
     private fun metrics() {
+        clearRows();advances.clear()
         val grid = fonts.configure(paint, textSp)
         cellWidth = grid.cellWidth
         cellHeight = grid.cellHeight
@@ -98,54 +109,29 @@ class TerminalView(context: Context) : View(context) {
         canvas.drawColor(palette.background)
         val visibleColumns = minOf(frame.columns, max(1, ceil(contentWidth / cellWidth).toInt()))
         val visibleRows = minOf(frame.rows, max(1, ceil(contentHeight / cellHeight).toInt()))
-        // Frames are row-major. Merge equal fills and let a wide lead cover its spacer.
-        var row = -1
-        var start = 0
-        var end = 0
-        var color = 0
-        fun flushBackground() {
-            if (end <= start || start >= visibleColumns || row !in 0 until visibleRows) return
-            backgroundPaint.color = color
-            // Extend the adjacent visible cell backgrounds through each edge's padding.
-            val left = if(start == 0) 0f else insetHorizontal + start * cellWidth
-            val right = if(end >= visibleColumns) width.toFloat() else insetHorizontal + end * cellWidth
-            val top = if(row == 0) 0f else insetTop + row * cellHeight
-            val bottom = if(row == visibleRows - 1) height.toFloat() else insetTop + (row + 1) * cellHeight
-            canvas.drawRect(left, top, right, bottom, backgroundPaint)
-        }
-        for (cell in frame.cells) {
-            if (cell.y == row && cell.width == 0 && cell.x < end) continue
-            val nextColor = if (cell.attributes and 8 != 0) palette.foreground(cell) else palette.background(cell)
-            if (cell.y != row || cell.x != end || nextColor != color) {
-                flushBackground()
-                row = cell.y; start = cell.x; color = nextColor
+        android.os.Trace.beginSection("Rexlet.drawTerminal")
+        val geometry="$width:$height:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom"
+        if(geometry!=rowGeometry) {recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
+        for(y in 0 until visibleRows) {
+            val cells=frame.lines[y]
+            var row=recorded[y]
+            if(row==null || row.cells!=cells) {
+                val origin=if(y==0) 0f else insetTop+y*cellHeight
+                val top=if(y==0) insetTop else 0f
+                val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
+                val picture=Picture()
+                val target=picture.beginRecording(width,bottom.toInt().coerceAtLeast(1))
+                drawRow(target,cells,visibleColumns,top,bottom)
+                picture.endRecording();row=RecordedRow(cells,picture);recorded[y]=row;recordedRowCount++
             }
-            end = cell.x + max(1, cell.width)
+            canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
+            canvas.drawPicture(row.picture);canvas.restore()
         }
-        flushBackground()
         canvas.save()
-        canvas.clipRect(insetHorizontal, insetTop, width - insetHorizontal, height - insetBottom)
-        canvas.translate(insetHorizontal, insetTop)
-        for (cell in frame.cells) {
-            if (cell.width == 0 || cell.text.isEmpty() || cell.attributes and 16 != 0) continue
-            val x = cell.x * cellWidth; val y = cell.y * cellHeight
-            if (x >= width || y >= height) continue
-            paint.color = if (cell.attributes and 8 != 0) palette.background(cell) else palette.foreground(cell)
-            paint.alpha = if (cell.attributes and 4 != 0) 150 else 255
-            paint.typeface = when (cell.attributes and 3) { 1 -> fonts.bold; 2 -> fonts.italic; 3 -> fonts.boldItalic; else -> fonts.regular }
-            canvas.save(); canvas.clipRect(x, y, x + cell.width * cellWidth, y + cellHeight)
-            val allocated = cell.width * cellWidth
-            val advance = paint.measureText(cell.text)
-            val offset = ((allocated - advance) / 2f).coerceAtLeast(0f)
-            if (advance > allocated) canvas.scale(allocated / advance, 1f, x, y)
-            canvas.drawText(cell.text, x + offset, y + baseline, paint)
-            paint.strokeWidth = resources.displayMetrics.density.coerceAtLeast(1f)
-            if (cell.attributes and 64 != 0) canvas.drawLine(x, y + baseline + 2, x + cell.width * cellWidth, y + baseline + 2, paint)
-            if (cell.attributes and 32 != 0) canvas.drawLine(x, y + cellHeight / 2, x + cell.width * cellWidth, y + cellHeight / 2, paint)
-            canvas.restore(); paint.alpha = 255
-        }
+        canvas.clipRect(insetHorizontal,insetTop,width-insetHorizontal,height-insetBottom)
+        canvas.translate(insetHorizontal,insetTop)
         if (frame.cursorX != null && frame.cursorY != null) {
-            val cell=frame.cells.firstOrNull {it.x==frame.cursorX && it.y==frame.cursorY && it.width>0}
+            val cell=frame.lines.getOrNull(frame.cursorY)?.firstOrNull {it.x==frame.cursorX && it.width>0}
             val x = frame.cursorX * cellWidth; val y = frame.cursorY * cellHeight
             val cursorWidth=max(1,cell?.width ?: 1)*cellWidth
             backgroundPaint.color=palette.accent
@@ -153,7 +139,7 @@ class TerminalView(context: Context) : View(context) {
             if(cell!=null && cell.text.isNotEmpty() && cell.attributes and 16==0) {
                 paint.color=android.graphics.Color.WHITE;paint.alpha=255
                 paint.typeface=when(cell.attributes and 3) {1->fonts.bold;2->fonts.italic;3->fonts.boldItalic;else->fonts.regular}
-                val advance=paint.measureText(cell.text)
+                val advance=advance(cell.text,cell.attributes and 3)
                 canvas.save();canvas.clipRect(x,y,x+cursorWidth,y+cellHeight)
                 if(advance>cursorWidth) canvas.scale(cursorWidth/advance,1f,x,y)
                 canvas.drawText(cell.text,x+((cursorWidth-advance)/2f).coerceAtLeast(0f),y+baseline,paint)
@@ -169,6 +155,61 @@ class TerminalView(context: Context) : View(context) {
         }
         canvas.restore()
         canvas.restoreToCount(saved)
+        android.os.Trace.endSection()
+    }
+    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float) {
+        var start=0;var end=0;var color=0
+        fun flush() {
+            if(end<=start || start>=columns) return
+            backgroundPaint.color=color
+            canvas.drawRect(if(start==0) 0f else insetHorizontal+start*cellWidth,0f,
+                if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth,bottom,backgroundPaint)
+        }
+        for(cell in cells) {
+            if(cell.width==0 && cell.x<end) continue
+            val next=if(cell.attributes and 8!=0) palette.foreground(cell) else palette.background(cell)
+            if(cell.x!=end || next!=color) {flush();start=cell.x;color=next}
+            end=cell.x+max(1,cell.width)
+        }
+        flush()
+        canvas.save();canvas.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
+        canvas.translate(insetHorizontal,top)
+        var index=0
+        while(index<cells.size) {
+            val cell=cells[index++]
+            if(cell.x>=columns || cell.width==0 || cell.text.isEmpty() || cell.attributes and 16!=0) continue
+            val style=cell.attributes and 3
+            paint.typeface=when(style) {1->fonts.bold;2->fonts.italic;3->fonts.boldItalic;else->fonts.regular}
+            paint.color=if(cell.attributes and 8!=0) palette.background(cell) else palette.foreground(cell)
+            paint.alpha=if(cell.attributes and 4!=0) 150 else 255
+            var text=cell.text;var width=cell.width
+            val ascii=cell.width==1 && cell.text.length==1 && cell.text[0] in ' '..'~'
+            if(ascii) {
+                val run=StringBuilder(text)
+                while(index<cells.size) {
+                    val next=cells[index]
+                    if(next.x!=cell.x+width || next.x>=columns || next.width!=1 || next.text.length!=1 || next.text[0] !in ' '..'~' ||
+                        next.attributes!=cell.attributes || next.foreground!=cell.foreground || next.background!=cell.background) break
+                    run.append(next.text);width++;index++
+                }
+                text=run.toString()
+            }
+            val x=cell.x*cellWidth;val allocated=width*cellWidth
+            if(text.any {it!=' '}) {
+                if(ascii) canvas.drawText(text,x,baseline,paint)
+                else {
+                    val advance=advance(text,style)
+                    canvas.save();canvas.clipRect(x,0f,x+allocated,cellHeight)
+                    if(advance>allocated) canvas.scale(allocated/advance,1f,x,0f)
+                    canvas.drawText(text,x+((allocated-advance)/2f).coerceAtLeast(0f),baseline,paint);canvas.restore()
+                }
+            }
+            paint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
+            if(cell.attributes and 64!=0) canvas.drawLine(x,baseline+2,x+allocated,baseline+2,paint)
+            if(cell.attributes and 32!=0) canvas.drawLine(x,cellHeight/2,x+allocated,cellHeight/2,paint)
+            paint.alpha=255
+        }
+        canvas.restore()
     }
     private fun scrollByPixels(pixels: Float) {
         scrollPixels+=pixels
