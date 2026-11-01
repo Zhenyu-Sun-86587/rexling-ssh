@@ -90,6 +90,10 @@ object TerminalInput {
         "esc" -> "\u001b"; "tab" -> "\t"; "enter" -> "\r"; "backspace" -> "\u007f"
         "pageup" -> "\u001b[5~"; "pagedown" -> "\u001b[6~"
         "up" -> "\u001b[A"; "down" -> "\u001b[B"; "right" -> "\u001b[C"; "left" -> "\u001b[D"
+        "insert" -> "\u001b[2~"
+        "f1" -> "\u001bOP"; "f2" -> "\u001bOQ"; "f3" -> "\u001bOR"; "f4" -> "\u001bOS"
+        "f5" -> "\u001b[15~"; "f6" -> "\u001b[17~"; "f7" -> "\u001b[18~"; "f8" -> "\u001b[19~"
+        "f9" -> "\u001b[20~"; "f10" -> "\u001b[21~"; "f11" -> "\u001b[23~"; "f12" -> "\u001b[24~"
         "home" -> "\u001b[H"; "end" -> "\u001b[F"; "delete" -> "\u001b[3~"
         else -> ""
     }

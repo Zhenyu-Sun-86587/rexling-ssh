@@ -32,4 +32,10 @@ class ModelsTest {
         assertTrue(state.sessions.isEmpty())
         assertNull(state.screen)
     }
+    @Test fun functionKeysUseTheStandardTerminalSequences() {
+        val expected=listOf("OP","OQ","OR","OS","[15~","[17~","[18~","[19~","[20~","[21~","[23~","[24~")
+        for ((index,sequence) in expected.withIndex()) assertEquals("\u001b$sequence",TerminalInput.key("f${index+1}"))
+        assertEquals("\u001b[2~",TerminalInput.key("insert"))
+    }
+
 }

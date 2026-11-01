@@ -219,11 +219,21 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,
     keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onKey: (String)->Unit,onKeyboard: ()->Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal=10.dp)) {
+    var expanded by remember {mutableStateOf(false)}
+    val keyScroll=rememberScrollState()
+    LaunchedEffect(expanded) {if(!expanded) keyScroll.scrollTo(0)}
+    LaunchedEffect(keyboardVisible) {if(!keyboardVisible) {expanded=false;keyScroll.scrollTo(0)}}
+    Column(Modifier.fillMaxWidth().padding(horizontal=8.dp)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)))
-        Row(Modifier.fillMaxWidth().height(53.dp).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
-            Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+        Row(Modifier.fillMaxWidth().height(53.dp).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(3.dp),verticalAlignment=Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).fillMaxHeight().horizontalScroll(keyScroll),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
                 DockKey("esc",controlled,description="Escape") {onKey("esc")}
+                Box(Modifier.width(22.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .semantics {contentDescription=if(expanded) "Hide extra keys" else "Show extra keys";stateDescription=if(expanded) "Expanded" else "Collapsed"}
+                    .clickable(enabled=enabled,role=Role.Button) {expanded=!expanded},contentAlignment=Alignment.Center) {
+                    ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(14.dp).graphicsLayer {rotationZ=if(expanded) 180f else 0f})
+                }
                 DockKey("ctrl",controlled,control,onClick=onControl)
                 DockKey("alt",controlled,alt,onClick=onAlt)
                 DockKey("tab",controlled,description="Tab key") {onKey("tab")}
@@ -235,10 +245,17 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             ChromeButton(if(keyboardVisible) ChromeIcon.HIDE_KEYBOARD else ChromeIcon.KEYBOARD,
                 if(!controlled) "Take control and show keyboard" else if(keyboardVisible) "Hide keyboard" else "Show keyboard",enabled,onClick=onKeyboard)
         }
+        if(expanded) {
+            val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"},
+                listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete"))
+            for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.SpaceEvenly) {
+                for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label) {onKey(key)}
+            }
+        }
     }
 }
 @Composable private fun DockKey(label: String,enabled: Boolean,active: Boolean=false,description: String=label,onClick: ()->Unit) {
-    Box(Modifier.width(if(label=="ctrl") 47.dp else 40.dp).fillMaxHeight().clip(RoundedCornerShape(11.dp))
+    Box(Modifier.width(if(label=="ctrl") 40.dp else 34.dp).fillMaxHeight().clip(RoundedCornerShape(11.dp))
         .background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
         .semantics(mergeDescendants=true) {contentDescription=description;selected=active}
         .clickable(enabled=enabled,role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center) {
