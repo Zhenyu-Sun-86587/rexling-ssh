@@ -55,18 +55,26 @@ are a deliberately fixed working set; lint may report newer versions.
    `adb install -r app/build/outputs/apk/debug/app-debug.apk` yourself.
 3. Open **Rex**. Connect to the prefilled server URL, or enter another explicit
    `https://`, `http://`, `wss://`, or `ws://` Rex server address.
-4. Tap the session name at the top left to switch sessions. A session opens its
-   last visited terminal, or its first available one. The top tabs are Rex windows;
-   tap a tab to switch windows. **Panes 1/2 ▾** opens that tab's pane picker.
-   Each tab remembers its last selected pane while the app remains running.
-5. Tap **Control** to enable input and resize the terminal to the phone's
-   viewport. **Release** gives up ownership. Switching terminals also releases
-   the old claim. The compact key row provides Esc, Ctrl, Alt, Tab, arrows and a
-   keyboard button. Session, tab and pane navigation stays visible with the IME.
-6. Open **⋮** for server settings, connection status, terminal dimensions, font
-   size, copy, paste and refresh. Routine status messages live in this menu so
-   the terminal gets more space. Terminal text defaults to **10 sp**; the font-size
-   menu cycles through 8, 10, 12, 14, 16 and 18 sp.
+4. The terminal has one compact top strip. **‹** opens the session picker;
+   the selected tab shows the session name underneath its title (tap that name
+   to switch sessions too). Tap another tab to switch Rex windows, or tap the
+   selected tab title to open its pane picker. Each tab remembers its last pane.
+5. **Swipe left/right across the terminal** for the next/previous pane in that
+   tab. The floating bars and `2/3` label show your position; tap the indicator
+   for the pane picker. Swipes stop at the first/last pane. Vertical drags and
+   multi-finger gestures do not switch panes. Switching releases the old claim.
+6. **+ → New tab** starts a new shell in a Rex window. **+ → New pane** starts
+   a shell beside the current pane in the server's layout, then opens it here.
+   These create real server resources, visible to other Rex clients. Creation
+   uses the server's default shell and is never automatically replayed after a
+   lost reply. Check the tabs/panes before retrying an uncertain creation.
+7. Tap **Type** in the bottom key row to take control and fit the terminal to
+   the viewport. The keyboard icon reopens the IME while controlled. **⋮ →
+   Release terminal control** returns to viewing. Esc, Ctrl, Alt, Tab and arrows
+   remain in the compact key row. Navigation stays available with the IME open.
+8. **⋮** also contains server settings, status, dimensions, font size, copy,
+   paste and refresh. Terminal text defaults to **10 sp**; the font-size menu
+   cycles through 8, 10, 12, 14, 16 and 18 sp.
 
 **Try preview** restores a captured disposable test stream locally. It displays
 an actual Ghostty snapshot and later VT output without requiring a connection.
@@ -137,7 +145,8 @@ The JNI smoke test uses a host JVM and the same native entry points as Kotlin.
 It checks handle lifetime, the worker, real snapshot decoding, Unicode transfer,
 secret exclusion and cleanup. It is not an Android runtime test. APK verification
 checks debug signing, arm64 ELF files, the four JNI exports, 16 KiB load/ZIP
-alignment, packaging, and manifest permissions. See [VALIDATION.md](VALIDATION.md).
+alignment, packaging, and manifest permissions. See [VALIDATION.md](VALIDATION.md)
+and the verified creation methods in [PROTOCOL.md](PROTOCOL.md).
 
 ## Remaining device work
 

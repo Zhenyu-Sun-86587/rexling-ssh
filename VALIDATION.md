@@ -12,9 +12,9 @@ Verified on the development Mac and **API 37 arm64 Android emulator** on
 | Emulator live connection | Authenticated server connection and live terminal visible; control mode and keyboard observed |
 | Emulator crash log | No AndroidRuntime errors or libc fatal entries during smoke run |
 | `assembleDebug` | Passed; debug APK signed |
-| Kotlin model/input/navigation JVM tests | 5 passed |
+| Kotlin model/input/navigation/gesture JVM tests | 9 passed |
 | Native offline unit tests | 9 passed |
-| Explicit real-server actor host test | Passed on the existing Tailscale host |
+| Explicit real-server actor host tests | 2 passed on the existing Tailscale host; lifecycle and tab/pane creation |
 | Actual JNI bridge on host JVM | Passed |
 | Android `lintDebug` | No errors; version/target-scope suggestions remain |
 | Native Clippy with warnings denied | Passed |
@@ -79,3 +79,36 @@ layout's observed IME-visible terminal was 49 by 17. Navigation history unit tes
 also cover removed panes/windows and empty windows. `assembleDebug`, all five
 Kotlin tests and `lintDebug` passed; lint has no errors. The crash log contained
 no AndroidRuntime error or libc fatal entries during these checks.
+
+## Swipe panes and single-strip navigation
+
+The latest layout replaces the former 44 + 36 dp navigation rows with one 48 dp
+strip: session access, scrollable tab pills, a + creation menu and overflow. The
+40 dp key row remains. Pane position is overlaid on the terminal without taking
+viewport height. A newly selected tab scrolls into view. The default font is now
+10 sp (the earlier 14 sp viewport measurements above are historical).
+
+Nine Kotlin tests pass, including horizontal gesture direction, taps vs short
+drags, vertical/cancelled gesture rejection, same-tab neighbours, edge clamping,
+and pane history/fallbacks. The native suite passes eleven tests: eight core,
+one preview and two real-server actor tests. The new actor test creates a tab
+and split pane, opens their snapshots, checks the resulting window/pane counts,
+and rejects stale session/anchor IDs before mutation. It destroys its disposable
+session afterward. Native Clippy with warnings denied also passes.
+
+On the API 37 emulator, ADB swipes selected the next/previous panes and updated
+the floating indicator. A vertical drag and a swipe before the first pane kept
+the current pane. + New pane created and opened pane 2/3; + New tab created and
+opened Terminal 3. Independent server inspection confirmed three windows with
+3, 1 and 1 panes. Emulator input `printf ANDROID_TAB_OK` reached the new shell
+and returned the marker in the independent probe's snapshot. The UI remained
+usable with the IME open. Tests used only the disposable `android-swipe-test`
+workspace; the user's pre-existing terminal received no test input.
+
+The final polished build also verified swiping through all three panes, clamping
+at the last pane, opening the picker from the selected tab title, and restoring
+pane 2/3 after visiting another tab. Session access is a separate target on the
+selected tab's subtitle and the left header button. Both the tab strip and native
+view are clipped to their bounds. The app returned to the original workspace
+and the disposable swipe workspace was destroyed. No Java/native crash entries
+were present during these checks.
