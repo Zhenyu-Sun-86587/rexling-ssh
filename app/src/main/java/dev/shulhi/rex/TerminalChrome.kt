@@ -101,7 +101,6 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
     onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
-    val workPhase=rememberWorkingPhase(working)
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val pager=rememberPagerState(initialPage=selectedIndex,pageCount={sessions.size.coerceAtLeast(1)})
     val latestSelected by rememberUpdatedState(selectedId)
@@ -117,8 +116,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
     Row(Modifier.fillMaxWidth().height(50.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
         if(!expanded) {
-            Box(Modifier.graphicsLayer {alpha=if(working) .8f+.2f*workingPulse(workPhase.value) else 1f}
-                .semantics(mergeDescendants=true) {stateDescription=if(working) "Working" else "Idle"}) {
+            Box(Modifier.semantics(mergeDescendants=true) {stateDescription=if(working) "Working" else "Idle"}) {
                 ProgramStack(programs,paneIndex,framed=true)
             }
             Spacer(Modifier.width(7.dp))
@@ -180,7 +178,6 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     return transition.animateFloat(0f,1f,animationSpec=androidx.compose.animation.core.infiniteRepeatable(
         animation=androidx.compose.animation.core.tween(1200,easing=androidx.compose.animation.core.LinearEasing)),label="Working highlight")
 }
-private fun workingPulse(phase: Float): Float = (1f+kotlin.math.cos(phase*2f*kotlin.math.PI.toFloat()))/2f
 
 @Composable internal fun PositionDots(index: Int,count: Int,modifier: Modifier=Modifier) {
     val first=(index-3).coerceIn(0,(count-7).coerceAtLeast(0))
@@ -207,7 +204,7 @@ private fun workingPulse(phase: Float): Float = (1f+kotlin.math.cos(phase*2f*kot
                 val active=w.id==selectedId
                 val indicatorColor=MaterialTheme.colorScheme.primary
                 val busy=paneWorking(w)
-                val workPhase=rememberWorkingPhase(busy)
+                val workPhase=rememberWorkingPhase(active && busy)
                 val programs=panePrograms(w)
                 val pane=selectedPane(w)
                 val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
@@ -230,9 +227,7 @@ private fun workingPulse(phase: Float): Float = (1f+kotlin.math.cos(phase*2f*kot
                     .selectable(active,enabled,role=Role.Tab) {onSelect(w.id)},horizontalAlignment=Alignment.CenterHorizontally) {
                     Row(Modifier.weight(1f).padding(horizontal=10.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
-                        Box(Modifier.graphicsLayer {alpha=if(!active && busy) .75f+.25f*workingPulse(workPhase.value) else 1f}) {
-                            ProgramStack(programs,pane)
-                        }
+                        ProgramStack(programs,pane)
                         Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,lineHeight=18.sp,
                             style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
                             color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
