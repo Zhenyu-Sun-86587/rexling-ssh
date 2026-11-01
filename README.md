@@ -5,11 +5,10 @@ supplies the UI and a Canvas terminal view. A Rust actor owns the direct
 authenticated WebSocket connections and a native `libghostty-vt` terminal replica.
 There is no bridge, proxy, embedded Rex server, or `rex` executable dependency.
 
-This first build targets **arm64-v8a**, including the Galaxy S22+. It was compiled
-and checked on the Mac, then installed and run on the **API 37 arm64 emulator**.
-A live authenticated Rex terminal was displayed with control mode and the Android
-keyboard. The Galaxy S22+ has not been tested yet.
-
+This build targets **arm64-v8a**, including the Galaxy S22+. The latest mockup
+build was installed on the S22+ over USB. Its bundled terminal font passed a
+real-phone instrumentation test; interaction and appearance smoke checks ran on
+the API 37 arm64 emulator.
 ## Build and open
 
 Open this directory in Android Studio. Prerequisites used for the verified build:
@@ -55,26 +54,29 @@ are a deliberately fixed working set; lint may report newer versions.
    `adb install -r app/build/outputs/apk/debug/app-debug.apk` yourself.
 3. Open **Rex**. Connect to the prefilled server URL, or enter another explicit
    `https://`, `http://`, `wss://`, or `ws://` Rex server address.
-4. The terminal has one compact top strip. **‹** opens the session picker;
-   the selected tab shows the session name underneath its title (tap that name
-   to switch sessions too). Tap another tab to switch Rex windows, or tap the
-   selected tab title to open its pane picker. Each tab remembers its last pane.
-5. **Swipe left/right across the terminal** for the next/previous pane in that
-   tab. The floating bars and `2/3` label show your position; tap the indicator
-   for the pane picker. Swipes stop at the first/last pane. Vertical drags and
-   multi-finger gestures do not switch panes. Switching releases the old claim.
-6. **+ → New tab** starts a new shell in a Rex window. **+ → New pane** starts
-   a shell beside the current pane in the server's layout, then opens it here.
-   These create real server resources, visible to other Rex clients. Creation
-   uses the server's default shell and is never automatically replayed after a
-   lost reply. Check the tabs/panes before retrying an uncertain creation.
-7. Tap **Type** in the bottom key row to take control and fit the terminal to
-   the viewport. The keyboard icon reopens the IME while controlled. **⋮ →
-   Release terminal control** returns to viewing. Esc, Ctrl, Alt, Tab and arrows
-   remain in the compact key row. Navigation stays available with the IME open.
-8. **⋮** also contains server settings, status, dimensions, font size, copy,
-   paste and refresh. Terminal text defaults to **10 sp**; the font-size menu
-   cycles through 8, 10, 12, 14, 16 and 18 sp.
+4. The header is a sideways session strip with neighboring names and position
+   dots. Swipe it to change sessions, tap the name to search the session list,
+   or long-press to jump to the last session. The list puts the current session
+   first, marks the last one, and offers **New** to create a session and shell.
+   Attachment status and tab/pane counts come from Rex; no remote last-used
+   timestamps are fabricated when the server doesn't supply them.
+5. **Swipe the terminal card** to move between panes in the current tab. Adjacent
+   cards use real read-only Ghostty snapshots; the selected pane streams live.
+   The footer and temporary swipe badge show pane position. The split icon in
+   the bottom dock opens the pane list. Switching releases the old claim.
+6. Tabs live in the bottom dock above the keyboard controls. Each whole tab is
+   a single selectable target and remembers its pane. **+ → New tab / New pane**
+   starts a real shell on Rex. These resources are visible in other Rex clients.
+   Creations are sent once, never automatically replayed after an uncertain reply.
+7. **Take over** enables typing and fits the terminal to the viewport. **Release**
+   returns to viewing. The bottom keys provide esc, ctrl, alt, tab and arrows;
+   scroll the key row for additional arrows. The keyboard button opens/hides the
+   IME. Input stays blocked while a different pane's snapshot is still loading.
+8. **⋮ → Appearance** chooses **System**, **Dark**, or **Light**, and saves the
+   choice. Default and standard ANSI colors are themed locally; explicit RGB
+   colors from terminal programs are preserved. No server theme is changed.
+   The menu also provides copy/paste, connection settings and font sizes 8–18 sp.
+   The default is 10 sp in bundled JetBrains Mono NL, independent of OEM fonts.
 
 **Try preview** restores a captured disposable test stream locally. It displays
 an actual Ghostty snapshot and later VT output without requiring a connection.
@@ -121,7 +123,7 @@ state, and falls back to a fresh snapshot if needed. Input with an uncertain
 outcome is never automatically resent. Terminals keep running on Rex while the
 app is away. There is no background/foreground service.
 
-Only the server URL is persisted. Ticket/reconnect tokens remain in native
+The server URL, appearance choice, and current/last session IDs are persisted. Ticket/reconnect tokens remain in native
 memory and are not returned by JNI. Cloud backup and device transfer of app data
 are excluded. The APK requests Internet access, with no analytics or account SDK.
 Plain HTTP is supported for an already secured tailnet listener; the app never
@@ -150,7 +152,7 @@ and the verified creation methods in [PROTOCOL.md](PROTOCOL.md).
 
 ## Remaining device work
 
-The APK is built, not yet proven on the S22+. Verify soft-keyboard/IME composition,
+The font grid was verified on the S22+, and the build was installed there. Continue testing soft-keyboard/IME composition,
 hardware keyboard behavior, font/emoji rendering, insets, rotation, Tailscale DNS,
 network loss and foreground/background transitions on the real phone.
 
@@ -160,6 +162,15 @@ production foreground-session policy are not implemented. Host tests cover the
 core/lifecycle logic. The emulator smoke run covers launch, native rendering and
 a live connection; it does not replace real-phone lifecycle/network-loss tests.
 
+JetBrains Mono NL 2.304 is bundled with its OFL license, pinned revision and
+checksums in the APK license assets.
+
 Ghostty's MIT license is retained in `native/GHOSTTY_LICENSE.txt` and packaged in
 the APK assets. Rust and AndroidX dependencies are declared in Cargo.lock and
 Gradle with their upstream licenses. This is an unofficial client prototype.
+
+The typography regression can be run on a selected connected device with:
+
+```sh
+ANDROID_SERIAL=<device-id> ./scripts/gradle.sh connectedDebugAndroidTest
+```

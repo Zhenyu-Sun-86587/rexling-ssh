@@ -61,3 +61,25 @@ actor never queues a creation for replay during reconnection. If a reply is lost
 the result may be uncertain; view refresh reveals existing resources without
 starting the shell again. Stale session/anchor commands are rejected locally
 before any server mutation, as verified by the native integration test.
+
+## Read-only carousel previews and session details
+
+The actor polls cancellable preview futures on its existing owner thread. A
+preview uses a separately labelled authenticated control connection, attaches
+the current session, obtains the normal data ticket and decodes the real Ghostty
+snapshot through FINISH. It then closes the data/control connections. Preview
+clients never take ownership or send input. At most two neighbors are requested
+per update, with a bounded timeout. One-shot preview frames remain queued until
+JNI polling consumes them; ordinary live-frame publication cannot overwrite them.
+
+Session counts come from attached `session.view` responses. Attachment state
+comes from `client.list` with kinds `["app"]` and its session_ids, connection
+state and authenticated device node. The current client and labelled internal
+preview/summary clients are identified separately. The UI shows known values
+and omits unavailable remote usage dates. New Session calls verified
+`session.create` with one `com.superlogical.terminal.shell` initial window.
+
+Local navigationId values correlate UI requests with completed native selection;
+they are not Rex wire fields. Native cell flags retain default-color and palette
+roles so Android can apply System/Dark/Light without invoking remote set_theme.
+True RGB remains exact. Session and pane snapshots are not persisted to disk.

@@ -2,7 +2,9 @@
 
 Verified on the development Mac and **API 37 arm64 Android emulator** on
 **2026-11-01**. The app was installed and launched on `Medium_Phone_API_37.0`
-(`emulator-5554`). No physical phone was tested. No Rex server settings were changed.
+(`emulator-5554`). The S22+ received the latest build over USB and passed the
+terminal-font instrumentation check. No Rex server settings were changed.
+Older layout descriptions below are retained as historical validation notes.
 
 | Check | Result |
 | --- | --- |
@@ -12,10 +14,12 @@ Verified on the development Mac and **API 37 arm64 Android emulator** on
 | Emulator live connection | Authenticated server connection and live terminal visible; control mode and keyboard observed |
 | Emulator crash log | No AndroidRuntime errors or libc fatal entries during smoke run |
 | `assembleDebug` | Passed; debug APK signed |
-| Kotlin model/input/navigation/gesture JVM tests | 9 passed |
-| Native offline unit tests | 9 passed |
+| Kotlin model/navigation/appearance JVM tests | 16 passed |
+| Native offline unit tests | 10 passed |
 | Explicit real-server actor host tests | 2 passed on the existing Tailscale host; lifecycle and tab/pane creation |
-| Actual JNI bridge on host JVM | Passed |
+| Actual JNI bridge on host JVM | Passed in earlier validation |
+| S22+ typography instrumentation | 1 passed; four bundled styles at every supported size |
+| Latest mockup APK installed on S22+ | USB install returned Success |
 | Android `lintDebug` | No errors; version/target-scope suggestions remain |
 | Native Clippy with warnings denied | Passed |
 | JNI exports and packaged ABI | Four expected JNI exports; arm64-v8a only |
@@ -112,3 +116,35 @@ selected tab's subtitle and the left header button. Both the tab strip and nativ
 view are clipped to their bounds. The app returned to the original workspace
 and the disposable swipe workspace was destroyed. No Java/native crash entries
 were present during these checks.
+
+## Mockup delivery: carousel, appearance and sessions
+
+The delivered UI follows the provided dark/light references: lime/olive accents,
+compact session strip and takeover control, rounded terminal cards, pane swipe
+feedback, bottom tabs and a dock of terminal keys. The session sheet provides
+search, New, current-first ordering, last-session marking and gesture hints.
+The session header supports sideways swiping and long-press return to last.
+
+The S22+'s OEM monospace alias measured M at 19 px and i at 6 px at the tested
+size. The bundled JetBrains Mono NL measured both at 14 px. The real-phone test
+verified all printable ASCII advances in regular/bold/italic/bold-italic at
+8, 10, 12, 14, 16 and 18 sp. Integer cell spacing and RGB/Unicode rendering were
+also inspected in actual app captures. The phone was left available for user
+use; remaining scripted UI checks ran on the emulator.
+
+Emulator captures verified Light and Dark terminal cards, the session sheet
+with actual attachment/count metadata, long-press last-session switching, direct
+bottom-tab taps and an animated pane swipe showing PANE_B. Off-screen frames are
+read-only snapshots, not continuously streamed replicas. Only the selected pane
+is live. Explicit application RGB colors remain unchanged by appearance mode.
+
+The owned-server actor test also validates read-only neighbor snapshot retrieval
+without changing the selected block or ownership, session counts/attachment
+metadata, and creation of a new session and shell. Each host test cleans up its
+own sessions. Navigation request IDs guard rapid tab changes and prevent typing
+until the matching snapshot is ready. The core tests cover exact theme color
+roles. Native tests total 12 (10 offline plus 2 owned-server tests); Clippy passes
+with warnings denied. Android build, all 16 JVM tests and lint pass.
+
+The mockup debug APK was installed over USB on RFCT21390SD (Galaxy S22+) after
+reconnection, with ADB reporting Success. No program-icon work is included.
