@@ -37,6 +37,10 @@ class TerminalView(context: Context) : View(context) {
     private var touchVelocity: VelocityTracker?=null
     var onInput: (String) -> Unit = {}
     var onScroll: (Int) -> Unit = {}
+    var onWheel: (Int,Int,Int,Int,Int) -> Unit = {lines,_,_,_,_->onScroll(lines)}
+    var onActivate: () -> Unit = {}
+    private var wheelCol=0
+    private var wheelRow=0
     var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
         set(value) {val changed=field!=value;field=value;if(changed && width>0 && height>0) reportDimensions(force=true)}
@@ -90,7 +94,7 @@ class TerminalView(context: Context) : View(context) {
 
     init {
         isFocusable = true; isFocusableInTouchMode = true
-        contentDescription = "Terminal output. Tap to type after taking control."
+        contentDescription = "Terminal output. Tap to take control and type."
         metrics()
     }
     private fun metrics() {
@@ -227,7 +231,11 @@ class TerminalView(context: Context) : View(context) {
     private fun scrollByPixels(pixels: Float) {
         scrollPixels+=pixels
         val lines=(scrollPixels/cellHeight).toInt()
-        if(lines!=0) {scrollPixels-=lines*cellHeight;if((screen?.scroll?.available ?: 0)>0) onScroll(lines)}
+        if(lines!=0) {
+            scrollPixels-=lines*cellHeight
+            if(screen?.applicationScroll==true && screen?.scroll?.below==0L) onWheel(lines,wheelCol,wheelRow,desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())
+            else if((screen?.scroll?.available ?: 0)>0) onScroll(lines)
+        }
     }
     override fun computeScroll() {
         if(scrollFling.computeScrollOffset()) {
@@ -239,7 +247,12 @@ class TerminalView(context: Context) : View(context) {
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if(interactive && event.actionMasked==MotionEvent.ACTION_SCROLL) {
             val lines=(-event.getAxisValue(MotionEvent.AXIS_VSCROLL)*3).roundToInt()
-            if(lines!=0) {onScroll(lines);return true}
+            if(lines!=0) {
+                if(screen?.applicationScroll==true && screen?.scroll?.below==0L && event.metaState and KeyEvent.META_SHIFT_ON==0)
+                    onWheel(lines,((event.x-insetHorizontal)/desiredCellWidth).toInt(),((event.y-insetTop)/desiredCellHeight).toInt(),desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())
+                else onScroll(lines)
+                return true
+            }
         }
         return super.onGenericMotionEvent(event)
     }
@@ -258,7 +271,7 @@ class TerminalView(context: Context) : View(context) {
         sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
         touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
+            MotionEvent.ACTION_DOWN -> {wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount != 1) { paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
                 else {
@@ -286,7 +299,7 @@ class TerminalView(context: Context) : View(context) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
             } else when (paneGesture.finish(event.x, event.y)) {
-                PaneGesture.Result.TAP -> { performClick(); keyboard() }
+                PaneGesture.Result.TAP -> performClick()
                 PaneGesture.Result.NEXT -> onPaneSwipe(1)
                 PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
                 PaneGesture.Result.NONE -> Unit
@@ -295,7 +308,7 @@ class TerminalView(context: Context) : View(context) {
         if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {touchVelocity?.recycle();touchVelocity=null}
         return true
     }
-    override fun performClick(): Boolean { super.performClick(); return true }
+    override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate()};return true }
     override fun onCheckIsTextEditor() = controlled
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         if (!controlled) return null

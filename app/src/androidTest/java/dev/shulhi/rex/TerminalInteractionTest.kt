@@ -30,6 +30,29 @@ class TerminalInteractionTest {
         }
         assertTrue(lines<0);assertFalse(paneDrag);assertFalse(typed)
     }
+    @Test fun fullScreenAppDragRoutesWheelWithoutActivationOrTyping() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        var wheels=0;var activated=false;var typed=false;var local=0
+        instrumentation.runOnMainSync {
+            val view=TerminalView(instrumentation.targetContext).apply {
+                screen=TerminalScreen(80,24,null,null,-1,0,emptyList(),TerminalScroll(24,0,24),inputFlags=3)
+                onWheel={lines,_,_,_,_->wheels+=lines};onActivate={activated=true};onInput={typed=true};onScroll={local+=it}
+            }
+            fun event(action: Int,y: Float,time: Long) {val e=MotionEvent.obtain(0,time,action,50f,y,0);view.onTouchEvent(e);e.recycle()}
+            event(MotionEvent.ACTION_DOWN,50f,0);event(MotionEvent.ACTION_MOVE,250f,100);event(MotionEvent.ACTION_UP,250f,200)
+        }
+        assertTrue(wheels<0);assertEquals(0,local);assertFalse(activated);assertFalse(typed)
+    }
+    @Test fun onlyATapRequestsActivation() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation();var activations=0;var panes=0
+        instrumentation.runOnMainSync {
+            val view=TerminalView(instrumentation.targetContext).apply {onActivate={activations++};onPaneDragEnd={_,_->panes++}}
+            fun event(action: Int,x: Float,time: Long) {val e=MotionEvent.obtain(0,time,action,x,50f,0);view.onTouchEvent(e);e.recycle()}
+            event(MotionEvent.ACTION_DOWN,50f,0);event(MotionEvent.ACTION_UP,50f,20)
+            event(MotionEvent.ACTION_DOWN,50f,100);event(MotionEvent.ACTION_MOVE,350f,200);event(MotionEvent.ACTION_UP,350f,300)
+        }
+        assertEquals(1,activations);assertEquals(1,panes)
+    }
     @Test fun packagedAdaptiveLauncherIconInflatesAndDraws() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("Rexlink",context.applicationInfo.loadLabel(context.packageManager).toString())

@@ -119,7 +119,12 @@ class MainActivity : ComponentActivity() {
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
         if(index>=0) client.prefetchPanes(listOfNotNull(blocks.getOrNull(index-1)?.id,blocks.getOrNull(index+1)?.id))
     }
-    LaunchedEffect(controlled) {if(controlled){client.applySize();terminalView?.keyboard()}}
+    LaunchedEffect(controlled,client.keyboardRequest,terminalView) {
+        if(controlled) {
+            client.applySize()
+            if(client.keyboardRequest==displayedBlock && terminalView!=null) {terminalView?.keyboard();client.keyboardShown()}
+        }
+    }
     LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
@@ -175,7 +180,7 @@ class MainActivity : ComponentActivity() {
                         color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     if(blocks.isNotEmpty()) {
                         LiveTerminal(client,blocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
-                            client::type,client::scroll,client::scrollToBottom,client::resize,client::selectBlock,{picker="panes"},{terminalView=it},
+                            client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,client::selectBlock,{picker="panes"},{terminalView=it},
                             Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp))
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
                         Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
@@ -282,9 +287,9 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
 
 @Composable private fun LiveTerminal(client: RexConnection,blocks: List<BlockItem>,chosen: String,liveBlock: String,
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
-    onInput: (String)->Unit,onScroll: (Int)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
+    onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier) {
     val screen by client.terminal.collectAsState()
     TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
-        onInput,onScroll,onBottom,onDimensions,onSelect,onPanes,onView,modifier)
+        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier)
 }

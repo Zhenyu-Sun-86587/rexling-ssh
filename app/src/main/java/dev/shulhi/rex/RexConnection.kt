@@ -29,6 +29,8 @@ internal class RexConnection(application: Application, private val scope: Corout
     val terminal: StateFlow<TerminalScreen?> = mutableTerminal
     var screenDimensions by mutableStateOf<Pair<Int,Int>?>(null)
         private set
+    var keyboardRequest by mutableStateOf("")
+        private set
     var hasScreen by mutableStateOf(false)
         private set
     var controlModifier by mutableStateOf(false)
@@ -114,6 +116,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun connect(server: String) {
         val value = server.trim()
         navigationRequest = NavigationRequest()
+        keyboardRequest=""
         paneFrames=emptyMap()
         lastSessionId=preferences.getString("last_session:$value","").orEmpty()
         preferences.edit { putString("endpoint", value) }
@@ -129,7 +132,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             preferences.edit { putString("last_session:${state.value.endpoint}",old) }
         }
         navigationRequest = NavigationRequest(session = id, id = ++navigationSerial)
-        controlModifier = false; altModifier = false
+        controlModifier = false; altModifier = false;keyboardRequest=""
         command("session", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun selectBlock(id: String) {
@@ -138,7 +141,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
         if (current.windows.none { window -> window.blocks.any { it.id == id } }) return
         navigationRequest = NavigationRequest(block = id, id = ++navigationSerial)
-        controlModifier = false; altModifier = false
+        controlModifier = false; altModifier = false;keyboardRequest=""
         navigation.remember(current.selectedSession, current.windows, id)
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
@@ -200,11 +203,22 @@ internal class RexConnection(application: Application, private val scope: Corout
         if (current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) command("new_pane", "session" to current.selectedSession, "anchor" to current.selectedBlock)
     }
     fun refresh() = command("refresh")
-    fun takeControl() {if(visible) command("take")}
-    fun releaseControl() { controlModifier = false; altModifier = false; if(state.value.selectedBlock.isNotBlank()) command("release") }
+    fun takeControl() {
+        val current=state.value
+        if(visible && current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) {
+            keyboardRequest=current.selectedBlock;command("take")
+        }
+    }
+    fun keyboardShown() {keyboardRequest=""}
+    fun wheel(lines: Int,col: Int,row: Int,cw: Int,ch: Int) {
+        val current=state.value
+        if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
+            command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
+    }
+    fun releaseControl() { controlModifier = false; altModifier = false;keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
         navigationRequest = NavigationRequest()
-        foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false
+        foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false;keyboardRequest=""
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
         command("pause")
     }
@@ -214,7 +228,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun type(text: String) {
         if (!visible || !state.value.controlled || state.value.creating || navigationRequest.pending || text.isEmpty()) return
         val input = TerminalInput.modified(text, controlModifier, altModifier)
-        controlModifier = false; altModifier = false
+        controlModifier = false; altModifier = false;keyboardRequest=""
         command("input", "text" to input)
     }
     fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}

@@ -801,12 +801,7 @@ impl Actor {
                 self.apply_theme().await?;
             }
             "take" => {
-                ensure!(!self.selected_block.is_empty(), "Choose a terminal first");
-                self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
-                self.refresh_view().await?;
-                self.apply_theme().await?;
-                self.notice = "You control this terminal".into();
-                self.publish();
+                self.take_selected().await?;
             }
             "release" => {
                 if let Some(c) = &mut self.control {
@@ -815,6 +810,33 @@ impl Actor {
                 self.controlled = false;
                 self.notice = "Viewing terminal".into();
                 self.publish();
+            }
+            "wheel" => {
+                if !self.visible || self.paused || self.phase!="connected"
+                    || value["block"].as_str()!=Some(self.selected_block.as_str())
+                    || value["session"].as_str()!=Some(self.selected_session.as_str()) {return Ok(());}
+                let lines=value["lines"].as_i64().unwrap_or(0).clamp(-32,32) as i32;
+                if lines==0 {return Ok(());}
+                let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
+                let terminal=replica.terminal()?;let flags=terminal.input_flags()?;
+                let bytes=if flags&1!=0 {
+                    terminal.wheel(lines>0,value["col"].as_i64().unwrap_or(0) as i32,value["row"].as_i64().unwrap_or(0) as i32,
+                        value["cw"].as_u64().unwrap_or(1).clamp(1,1024) as u32,value["ch"].as_u64().unwrap_or(1).clamp(1,1024) as u32)?
+                } else if flags&6==6 {match (flags&8!=0,lines<0) {(true,true)=>b"\x1bOA".to_vec(),(true,false)=>b"\x1bOB".to_vec(),(false,true)=>b"\x1b[A".to_vec(),(false,false)=>b"\x1b[B".to_vec()}}
+                else {terminal.scroll_viewport(lines);self.dirty=true;return Ok(());};
+                if bytes.is_empty(){return Ok(());}
+                let text=String::from_utf8(bytes.repeat(lines.unsigned_abs() as usize)).context("Legacy mouse coordinates cannot be sent as UTF-8 terminal input")?;
+                if !self.controlled {
+                    self.take_selected().await?;
+                    if let (Some(cols),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
+                        && cols>0 && rows>0 {
+                        self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"resize",
+                            json!({"columns":cols.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
+                    }
+                }
+                if let Err(error)=self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"write",json!({"data":text})).await {
+                    self.recover(error);self.notice="Scroll outcome uncertain; wheel input was not resent".into();self.publish();
+                }
             }
             "scroll" => {
                 if value["block"].as_str() != Some(self.selected_block.as_str()) {
@@ -944,6 +966,12 @@ impl Actor {
         self.notice = "Viewing terminal; take control to type".into();
         self.refresh_view().await?;
         Ok(())
+    }
+    async fn take_selected(&mut self) -> Result<()> {
+        ensure!(!self.selected_block.is_empty(),"Choose a terminal first");
+        self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
+        self.refresh_view().await?;self.apply_theme().await?;
+        self.notice="You control this terminal".into();self.publish();Ok(())
     }
     async fn apply_theme(&mut self) -> Result<()> {
         // Rex applies the owner's colors, or queues ours until we take ownership.
@@ -1818,6 +1846,51 @@ mod tests {
             }
         }
         runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned server with python3"]
+    fn live_full_screen_wheel_scrolls_without_terminal_history() {
+        let endpoint=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&endpoint,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let script=r###"import os,tty,re
+original=__import__('termios').tcgetattr(0)
+tty.setraw(0)
+os.write(1,b'\x1b[?1049h\x1b[?1007l\x1b[?1000h\x1b[?1006h\x1b]7501;state=idle:app=codex\x07')
+position=0
+os.write(1,b'\x1b[H\x1b[2JSCROLL_POSITION:0')
+buffer=b''
+while True:
+ data=os.read(0,4096)
+ if not data: break
+ buffer+=data
+ while True:
+  match=re.search(rb'\x1b\[<(64|65);[0-9]+;[0-9]+M',buffer)
+  if not match: break
+  position+=-1 if match[1]==b'64' else 1
+  buffer=buffer[match.end():]
+  os.write(1,('\x1b[H\x1b[2JSCROLL_POSITION:'+str(position)).encode())
+ if len(buffer)>4096: buffer=buffer[-64:]
+"###;
+        let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rexlink-wheel-test-{}",std::process::id()),
+            "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/usr/bin/python3","-u","-c",script]}}}}]}))).unwrap();
+        let id=created["session_id"].as_str().unwrap();let block=created["initial_windows"][0]["block_ids"][0].as_str().unwrap();
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":endpoint})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":id})).unwrap();wait(&app,|v|v["selectedSession"]==id);
+            app.command(json!({"type":"block","id":block})).unwrap();
+            let initial=wait(&app,|v|text(v).contains("SCROLL_POSITION:0"));assert_eq!(initial["controlled"],false);
+            assert_eq!(initial["screen"]["scrollbar"][0],initial["screen"]["scrollbar"][2]);assert_eq!(initial["screen"]["input_flags"].as_u64().unwrap()&3,3);
+            app.command(json!({"type":"wheel","session":id,"block":block,"lines":-3,"col":4,"row":5,"cw":10,"ch":20})).unwrap();
+            wait(&app,|v|v["controlled"]==true && text(v).contains("SCROLL_POSITION:-3"));
+            app.command(json!({"type":"wheel","session":id,"block":block,"lines":2,"col":4,"row":5,"cw":10,"ch":20})).unwrap();
+            wait(&app,|v|text(v).contains("SCROLL_POSITION:-1"));
+            app.command(json!({"type":"wheel","session":id,"block":"stale","lines":-5})).unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+            let state:Value=serde_json::from_str(&app.poll(0).unwrap()).unwrap();assert!(text(&state).contains("SCROLL_POSITION:-1"));
+        }));
+        runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
 }

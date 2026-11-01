@@ -16,7 +16,7 @@ private fun MacrobenchmarkScope.preview() {
     check(device.currentPackageName==APP)
     check(device.wait(Until.hasObject(By.text("Try preview")),5000)) {"Use clean emulator app preferences for the offline benchmark"}
     device.findObject(By.text("Try preview")).click()
-    check(device.wait(Until.hasObject(By.desc("Terminal output. Tap to type after taking control.")),5000))
+    check(device.wait(Until.hasObject(By.desc("Terminal output. Tap to take control and type.")),5000))
     device.waitForIdle()
 }
 @RunWith(AndroidJUnit4::class)
