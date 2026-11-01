@@ -178,3 +178,76 @@ explicit Take over/Release control remains.
 The final APK was installed via USB on RFCT21390SD (Galaxy S22+, SM_S906E),
 with ADB reporting Success. No phone UI automation or program-icon work was
 performed for this delivery. `validation/apk.json` records the installed APK.
+
+
+## Rexlet branding, icons and revised header
+
+The first program-icon APK was installed on RFCT21390SD before header work,
+as requested (ADB Success; SHA256
+`1b9815c34a9589a2d846e54d75f628c4a5dd38d3f344be5a616d1b84039e3f71`).
+It included blue dark mode, 6 dp horizontal / 8 dp top terminal-card padding,
+neutral menus and the centered + button. The + fix centers the 36 dp control
+inside its 41 dp circular background. Surface container/accent roles are explicit
+and dropdowns use the app surface with zero tonal elevation.
+
+The later build is named Rexlet, with the connection-screen subtitle
+“Unofficial Android client for Rex.” The package/application ID is unchanged.
+AAPT and the APK verifier confirm the launcher label. The launcher terminal
+mark uses blue; Rex control connections identify their app as rexlet.
+
+The revised header shows a selected program icon/name and cwd, with the session
+below. Multi-pane tabs use real per-pane icon stacks in the header and bottom
+tabs; single-pane tabs have one icon. The active bottom tab uses a full-width blue underline,
+with touch feedback clipped to rounded tab bounds. Pane swipe feedback
+includes the destination program icon and the footer shows dots alone.
+
+Emulator checks verified both appearances, the new header, multi-pane stacks,
+a swipe from Neovim to a Claude report fixture, pill selection, session picker,
+app branding, and neutral menus. Native read-only metadata recognized actual
+Neovim 0.12.6. Claude/Codex visuals used explicit disposable OSC 7501 fixtures;
+no agent account or existing user terminal was driven. Saved-session startup
+now restores the requested session: the pager's initial page emission no longer
+overrides persisted selection. Phone interaction tests were not performed.
+
+All 20 Kotlin JVM tests and all 16 native tests pass (12 offline, 4 owned-server
+integrations). Clippy with warnings denied, Android debug build and lint pass.
+The renderer/typography instrumentation suite passed all 3 emulator tests during
+this delivery. APK signature, arm64 libraries and 16 KiB alignment pass. All
+changes are committed by scope. The only unrelated untracked file is Android
+Studio's `gradle/gradle-daemon-jvm.properties`.
+
+
+## Scrollback, full-width cards and final voxel icon
+
+The requested voxel dinosaur supersedes the earlier smooth illustration. Its
+original is preserved in `artwork/rexlet/source.png`. Built-in imagegen extracted
+the transparent foreground and cleaned alpha edges; both prompts and checksums
+are recorded alongside it. Android applies the white background and launcher
+mask. The packaged adaptive icon is inflated/drawn in instrumentation and its
+rendered preview is visually inspected.
+
+Cards now span the screen width. Internal padding extends adjacent visible-cell
+backgrounds through all four edges. The emulator's two-color Neovim split verifies
+that the sidebar's color extends left/top while the editor's different color
+extends right/top. The cursor is filled with a contrasting glyph. Header icon
+tiles have distinct dark program colors, bright glyphs, border and subtle shadow.
+The active tab underline spans its tab; the permanent pill fill is removed while
+pressed feedback remains rounded.
+
+Real-server history and viewport round-trip tests pass. Emulator touch scrolling
+shows old HISTORY lines and the Latest button, then returns to live output on tap.
+Vertical drag does not switch panes or type. Instrumentation covers adjacent
+padding colors, dimensions excluding insets, filled cursor, original cell-seam
+and wide-character regressions, typography, and launcher inflation (7 tests).
+All 21 JVM tests and 17 native tests pass (13 offline, 4 owned-server integrations).
+Clippy, debug build, lint, signature and 16 KiB alignment pass. UI tests only use
+disposable sessions, which are removed after validation.
+
+
+Final Rexlet voxel-icon APK installed via USB on Galaxy S22+ RFCT21390SD with
+ADB Success. SHA256:
+`d596333eb0a8d1f1957dc45797c6f3821b777c634582f802696d7625fecf932b`.
+`validation/apk.json` records the signed installed artifact. After replacing the
+artwork, the launcher/gesture instrumentation class passed again and the actual
+192 px adaptive launcher render was visually inspected. The final header also
+renders its session chevron beside the session label.

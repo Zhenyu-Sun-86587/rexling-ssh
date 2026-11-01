@@ -123,3 +123,78 @@ cargo test --locked --manifest-path native/Cargo.toml \
 Neovim's automatic color response behavior is documented in its
 [defaults implementation](https://github.com/neovim/neovim/blob/master/runtime/lua/vim/_core/defaults.lua)
 and [`background` option](https://neovim.io/doc/user/options/#'background').
+
+
+## Program icons and working directories
+
+Verified read-only terminal methods: `com.superlogical.terminal.process` and
+`com.superlogical.terminal.program_status`, each with
+`{session_id, block_id, args:{}}`. `process.foreground` supplies executable name,
+argv0, resolved/invoked executable paths, optional script and cwd. `process.home`
+provides the actual home path; abbreviation checks a complete path boundary.
+Missing foreground cwd stays blank rather than displaying the shell's old cwd.
+When foreground itself is unavailable, child metadata provides the fallback.
+
+`program_status.records` may expose app/effective_app identifiers. Android uses
+those only when record.owner matches the current foreground **pid and name**;
+a record from an exited program cannot incorrectly label the next program.
+Reports remain program-supplied hints, not trusted identity. The app selects
+bundled vector assets by known identifiers. No server-supplied image is fetched
+or executed. Unknown programs fall back to a generic terminal symbol.
+
+A separate authenticated, labelled `rex-android-programs` helper reads metadata
+for the selected session's panes. It never owns blocks, writes input, resizes,
+or sets themes. Its future runs alongside live input/output on the actor's
+existing runtime. Refresh is approximately every four seconds and is brought
+forward by selected-pane process/status APCs. Queries are bounded to 64 panes
+and eight seconds; metadata is cancelled on session change, pause and disconnect.
+Closed/replaced pane lists discard stale metadata. Helper clients are excluded
+from user-facing attachment summaries.
+
+JNI state carries `programs` (block ID → executable identifier candidates) and
+`directories` (block ID → display cwd). It omits process arguments, other
+process/account details and persists neither collection. Header/tab stacks show
+up to three icons, with the selected or remembered pane in front. All panes stay
+available in the picker. Inner programs behind SSH/tmux are only identifiable
+when the server supplies suitable process/report information.
+
+The native regression `live_program_icons_follow_reports_in_selected_and_background_tabs`
+uses disposable OSC 7501 fixtures for Claude/Codex app reports, changes and clears
+them, and verifies that a background tab refreshes without selecting or owning
+it. These are protocol fixtures, not launched coding agents. The existing live
+Neovim test also verifies actual foreground recognition. Identifier mappings,
+stale owners, home-path boundaries and missing/invisible directory text have
+native and Kotlin tests.
+
+SVG paths are from Simple Icons 15.0.0 (CC0), converted to Android vector assets.
+Pinned source URLs/checksums and the license ship in APK assets under `licenses/`.
+The Android label and control client name are Rexlet/rexlet. The package remains
+`dev.shulhi.rex`, preserving the existing installation, preferences and JNI ABI.
+
+
+## Local scrollback and edge rendering
+
+The pinned libghostty-vt exposes `ghostty_terminal_scroll_viewport` and
+`GHOSTTY_TERMINAL_DATA_SCROLLBAR`. Android now uses these on its existing
+replica. Scrollbar total/offset/visible counts are exported with each frame.
+Local `scroll` JNI commands carry the expected block ID; stale targets are
+ignored. Scrolling sends no Rex request or PTY bytes and requires no ownership.
+The native snapshot retains history, not only the live screen. New VT remains
+applied while the history viewport is anchored. Input and paste first return
+the local viewport to the active area; reconnect with a new replica starts live.
+The alternate screen has no terminal history; application-level scrolling is
+not emulated by these local history gestures.
+
+A native round-trip test encodes/imports a 40-line history, scrolls to the top,
+adds live output without moving the viewport, returns to the bottom and verifies
+alternate-screen behavior. The owned-server actor test imports 80 history lines,
+scrolls without ownership, receives new output while anchored, then takes control
+and types to verify return to live output. Android dragging distinguishes vertical
+history scrolling from horizontal pane navigation. Pixel movement accumulates
+into whole terminal rows; flings use Android OverScroller. The Latest control and
+Shift+PageUp/PageDown/mouse wheel also use the local viewport API.
+
+Padding moved into TerminalView so background spans can extend the first/last
+visible rows and columns to the rounded card edges. Each adjacent color is
+preserved separately, including inverse and wide-cell styles. Glyphs/cursor stay
+clipped to the content rectangle. Resizes exclude the insets and footer space.

@@ -1,7 +1,8 @@
 {
   "apk": "app/build/outputs/apk/debug/app-debug.apk",
-  "sha256": "d052408abee316fe1ec5ee22c64810a0531088aa6c547acc47cf95d4692e5d9d",
-  "bytes": 37119073,
+  "application_label": "Rexlet",
+  "sha256": "d596333eb0a8d1f1957dc45797c6f3821b777c634582f802696d7625fecf932b",
+  "bytes": 37147933,
   "signature_verified": true,
   "zip_alignment_16k": true,
   "permissions": [
@@ -21,7 +22,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 4974792,
+      "bytes": 5002752,
       "load_alignment": 16384
     }
   ],

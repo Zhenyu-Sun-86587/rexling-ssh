@@ -1,6 +1,8 @@
-# Rex Android
+# Rexlet
 
-A native Android client for the user's Superlogical Rex server. Kotlin/Compose
+**Unofficial Android client for Rex.**
+
+Rexlet connects directly to the user's Superlogical Rex server. Kotlin/Compose
 supplies the UI and a Canvas terminal view. A Rust actor owns the direct
 authenticated WebSocket connections and a native `libghostty-vt` terminal replica.
 There is no bridge, proxy, embedded Rex server, or `rex` executable dependency.
@@ -62,10 +64,12 @@ are a deliberately fixed working set; lint may report newer versions.
    timestamps are fabricated when the server doesn't supply them.
 5. **Swipe the terminal card** to move between panes in the current tab. Adjacent
    cards use real read-only Ghostty snapshots; the selected pane streams live.
-   The footer and temporary swipe badge show pane position. The split icon in
+   The footer dots show pane position; the temporary swipe badge shows the destination program icon. The split icon in
    the bottom dock opens the pane list. Switching releases the old claim.
 6. Tabs live in the bottom dock above the keyboard controls. Each whole tab is
-   a single selectable target and remembers its pane. **+ → New tab / New pane**
+   a single selectable target and remembers its pane. A full-width underline
+   marks the active tab; touch feedback keeps rounded clipping. Multi-pane tabs stack their program icons, with the
+   remembered pane in front. **+ → New tab / New pane**
    starts a real shell on Rex. These resources are visible in other Rex clients.
    Creations are sent once, never automatically replayed after an uncertain reply.
 7. **Take over** enables typing and fits the terminal to the viewport. **Release**
@@ -74,13 +78,38 @@ are a deliberately fixed working set; lint may report newer versions.
    IME. Input stays blocked while a different pane's snapshot is still loading.
 8. **⋮ → Appearance** chooses **System**, **Dark**, or **Light**, and saves the
    choice. Light uses blue accents, cool gray surfaces and white terminal cards;
-   Dark keeps its lime accent. The selected pane receives Rex's `set_theme`
+   Dark uses blue accents and charcoal surfaces. The selected pane receives Rex's `set_theme`
    request, allowing Neovim to follow terminal appearance. Rex applies it while
    this device owns the pane or it is unowned; another owner's theme stays active
    until you take over. Explicit RGB from programs is preserved. Neovim configs
    that explicitly force `background` or a fixed colorscheme may override this.
    The menu also provides copy/paste, connection settings and font sizes 8–18 sp.
    The default is 10 sp in bundled JetBrains Mono NL, independent of OEM fonts.
+
+Swipe vertically to browse the selected terminal's real Ghostty scrollback,
+including history imported in the initial Rex snapshot. Drag/fling, a mouse
+wheel, and Shift+PageUp/PageDown scroll locally without taking ownership.
+**↓ Latest** jumps to live output; typing/pasting also returns to the bottom.
+Alternate-screen apps have their own scrolling and no terminal scrollback.
+
+Terminal cards span the screen width, aligned with the dock. Their 6 dp side /
+8 dp top content insets extend the adjacent terminal cell backgrounds at each
+edge, including separate sidebar/editor colors. The cursor is a filled block.
+The header program tile uses a contrasting program-colored surface.
+
+The compact header shows the selected program, its working directory (`~` for
+its real home), and the session name underneath. The header and tab icon stacks
+only appear for tabs with more than one pane. The session name still supports
+tap to open the picker, sideways swipe to cycle, and long-press to jump to last.
+
+Bundled logos cover Claude Code, Codex (OpenAI logo), Neovim, Vim, Git, Python
+and Node.js. Git's logo also covers lazygit/tig; the Node icon covers
+npm/pnpm/yarn/Bun/Deno. SSH/mosh, tmux/zellij/screen and top/htop/btop have category
+symbols. Other programs and shells use the terminal fallback. Detection uses
+Rex's foreground process and matching-owner program reports, never tab titles
+or screen-text guessing. Programs inside SSH or a multiplexer may show the
+outer program's icon. Metadata refreshes approximately every four seconds,
+with earlier refresh after selected-pane process/status events.
 
 **Try preview** restores a captured disposable test stream locally. It displays
 an actual Ghostty snapshot and later VT output without requiring a connection.
@@ -178,3 +207,9 @@ The typography regression can be run on a selected connected device with:
 ```sh
 ANDROID_SERIAL=<device-id> ./scripts/gradle.sh connectedDebugAndroidTest
 ```
+
+
+The launcher uses the user-selected voxel dinosaur as an Android adaptive icon.
+Original artwork, checksums and built-in imagegen preparation/cleanup prompts
+are in `artwork/rexlet/`; the transparent foreground is packaged in
+`app/src/main/res/drawable-nodpi/rexlet_dinosaur.png`.
