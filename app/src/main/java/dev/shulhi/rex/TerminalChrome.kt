@@ -119,7 +119,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
             if(!expanded) Row(Modifier.fillMaxWidth().height(19.dp),verticalAlignment=Alignment.CenterVertically) {
                 if(working) {WorkingIndicator();Spacer(Modifier.width(4.dp))}
-                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,letterSpacing=0.sp,maxLines=1,
+                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,
                     overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=if(title.isBlank()) 90.dp else 190.dp))
                 if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
                     fontFamily=MonoUi,fontSize=9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
@@ -141,7 +141,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(if(expanded) 6.dp else 4.dp)) {
                             Box(Modifier.size(if(expanded) 7.dp else 5.dp).background(if(connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
                             Text(item?.label ?: "Connect",fontFamily=MonoUi,fontWeight=if(expanded) FontWeight.Bold else FontWeight.Normal,
-                                fontSize=if(expanded) 12.sp else 9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                                fontSize=if(expanded) 12.sp else 9.sp,lineHeight=if(expanded) 16.sp else 12.sp,
+                                style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                                 color=if(expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier=Modifier.widthIn(max=(pageWidth-if(expanded) 50.dp else 24.dp).coerceAtLeast(10.dp)))
                             ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(if(expanded) 13.dp else 11.dp),MaterialTheme.colorScheme.onSurfaceVariant)
