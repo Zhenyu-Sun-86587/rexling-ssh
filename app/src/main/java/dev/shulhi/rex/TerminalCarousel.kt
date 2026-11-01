@@ -69,20 +69,21 @@ import kotlin.math.roundToInt
             val frame=if(block.id==liveBlock && liveScreen!=null) liveScreen else frames[block.id]
             val position=(i-index)*stride+drag
             key(block.id) {
-                Column(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
+                Box(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
                     translationX=kotlin.math.round(leftPx+position)
                     alpha=1f-(abs(position)/stride).coerceIn(0f,1f)*.48f
                 }.clip(RoundedCornerShape(21.dp)).background(Color(palette.background))
                     .then(if(center) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
-                    Box(Modifier.weight(1f).fillMaxWidth().padding(start=6.dp,end=6.dp,top=8.dp)) {
+                    Box(Modifier.fillMaxSize()) {
                         if(frame!=null) AndroidView(
                             factory={TerminalView(it)},modifier=Modifier.fillMaxSize().clipToBounds(),
                             update={view ->
+                                view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
+                                view.setTerminalPaddingDp(6,8,if(blocks.size>1) 22 else 6)
                                 view.palette=palette;view.textSp=fontSize;view.screen=frame
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
                                 view.onInput=onInput
-                                view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
                                 view.onPaneDrag=if(center) {dx,active ->
                                     if(!settling) {
                                         dragging=active
@@ -98,7 +99,7 @@ import kotlin.math.roundToInt
                             Text(if(center) "Opening terminal…" else block.label,fontFamily=MonoUi,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    Row(Modifier.fillMaxWidth().height(22.dp).clickable(role=Role.Button,onClick=onPanes)
+                    if(blocks.size>1) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(22.dp).clickable(role=Role.Button,onClick=onPanes)
                         .semantics {contentDescription="Pane ${i+1} of ${blocks.size}. Switch pane"},
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.Center) {
                         if(blocks.size>1) {

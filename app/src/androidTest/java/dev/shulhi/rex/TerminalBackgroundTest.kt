@@ -33,6 +33,36 @@ class TerminalBackgroundTest {
             for(x in 2 until result.width-4) assertEquals("background seam at x=$x offset=$offset",expected,result.getPixel(x,y))
         }
     }
+    @Test fun paddingExtendsEachAdjacentCellInsteadOfUsingOneGlobalBackground() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        val colors=listOf(0xff43546a.toInt(),0xff665344.toInt(),0xff314b39.toInt(),0xff513d62.toInt())
+        lateinit var result: Bitmap
+        var reported=0 to 0
+        instrumentation.runOnMainSync {
+            val context=instrumentation.targetContext
+            val grid=TerminalFonts(context).configure(android.graphics.Paint(),10f)
+            val density=context.resources.displayMetrics.density
+            val horizontal=kotlin.math.round(6*density).toInt()
+            val top=kotlin.math.round(8*density).toInt()
+            val bottom=kotlin.math.round(10*density).toInt()
+            val cells=(0..1).flatMap {y->(0..1).map {x->TerminalCell(x,y,"",-1,colors[y*2+x],0,1)}}
+            val view=TerminalView(context).apply {
+                onDimensions={columns,rows->reported=columns to rows}
+                setTerminalPaddingDp(6,8,10)
+                screen=TerminalScreen(2,2,null,null,-1,0,cells)
+            }
+            val w=(2*grid.cellWidth).toInt()+horizontal*2
+            val h=(2*grid.cellHeight).toInt()+top+bottom
+            view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY))
+            view.layout(0,0,w,h)
+            result=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);view.draw(Canvas(result))
+        }
+        assertEquals(2 to 2,reported)
+        assertEquals(colors[0],result.getPixel(1,1))
+        assertEquals(colors[1],result.getPixel(result.width-2,1))
+        assertEquals(colors[2],result.getPixel(1,result.height-2))
+        assertEquals(colors[3],result.getPixel(result.width-2,result.height-2))
+    }
     @Test fun wideCharacterSpacersDoNotEraseTheLeadingCellsBackground() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val expected=0xff394457.toInt()

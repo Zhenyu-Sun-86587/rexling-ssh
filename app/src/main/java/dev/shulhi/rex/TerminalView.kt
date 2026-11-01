@@ -13,7 +13,9 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
+import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import kotlin.math.max
 
 class TerminalView(context: Context) : View(context) {
@@ -49,6 +51,20 @@ class TerminalView(context: Context) : View(context) {
     private var baseline = 0f
     private var dimensions = 0 to 0
     private var composing = ""
+    private var insetHorizontal = 0f
+    private var insetTop = 0f
+    private var insetBottom = 0f
+    private val contentWidth: Float get() = (width - insetHorizontal * 2).coerceAtLeast(1f)
+    private val contentHeight: Float get() = (height - insetTop - insetBottom).coerceAtLeast(1f)
+    fun setTerminalPaddingDp(horizontal: Int, top: Int, bottom: Int) {
+        val density = resources.displayMetrics.density
+        val h = (horizontal * density).roundToInt().toFloat()
+        val t = (top * density).roundToInt().toFloat()
+        val b = (bottom * density).roundToInt().toFloat()
+        if (h == insetHorizontal && t == insetTop && b == insetBottom) return
+        insetHorizontal = h; insetTop = t; insetBottom = b
+        reportDimensions(); invalidate()
+    }
     private val paneGesture = PaneGesture(ViewConfiguration.get(context).scaledTouchSlop.toFloat(), 48f * resources.displayMetrics.density)
 
     init {
@@ -64,7 +80,7 @@ class TerminalView(context: Context) : View(context) {
         reportDimensions()
     }
     private fun reportDimensions() {
-        val next = max(1, floor(width / cellWidth).toInt()) to max(1, floor(height / cellHeight).toInt())
+        val next = max(1, floor(contentWidth / cellWidth).toInt()) to max(1, floor(contentHeight / cellHeight).toInt())
         if (width > 0 && height > 0 && next != dimensions) { dimensions = next; onDimensions(next.first, next.second) }
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { reportDimensions() }
@@ -73,16 +89,22 @@ class TerminalView(context: Context) : View(context) {
         val saved = canvas.save()
         canvas.clipRect(0, 0, width, height)
         canvas.drawColor(palette.background)
+        val visibleColumns = minOf(frame.columns, max(1, ceil(contentWidth / cellWidth).toInt()))
+        val visibleRows = minOf(frame.rows, max(1, ceil(contentHeight / cellHeight).toInt()))
         // Frames are row-major. Merge equal fills and let a wide lead cover its spacer.
         var row = -1
         var start = 0
         var end = 0
         var color = 0
         fun flushBackground() {
-            if (end <= start) return
+            if (end <= start || start >= visibleColumns || row !in 0 until visibleRows) return
             backgroundPaint.color = color
-            canvas.drawRect(start * cellWidth, row * cellHeight, end * cellWidth,
-                (row + 1) * cellHeight, backgroundPaint)
+            // Extend the adjacent visible cell backgrounds through each edge's padding.
+            val left = if(start == 0) 0f else insetHorizontal + start * cellWidth
+            val right = if(end >= visibleColumns) width.toFloat() else insetHorizontal + end * cellWidth
+            val top = if(row == 0) 0f else insetTop + row * cellHeight
+            val bottom = if(row == visibleRows - 1) height.toFloat() else insetTop + (row + 1) * cellHeight
+            canvas.drawRect(left, top, right, bottom, backgroundPaint)
         }
         for (cell in frame.cells) {
             if (cell.y == row && cell.width == 0 && cell.x < end) continue
@@ -94,6 +116,9 @@ class TerminalView(context: Context) : View(context) {
             end = cell.x + max(1, cell.width)
         }
         flushBackground()
+        canvas.save()
+        canvas.clipRect(insetHorizontal, insetTop, width - insetHorizontal, height - insetBottom)
+        canvas.translate(insetHorizontal, insetTop)
         for (cell in frame.cells) {
             if (cell.width == 0 || cell.text.isEmpty() || cell.attributes and 16 != 0) continue
             val x = cell.x * cellWidth; val y = cell.y * cellHeight
@@ -122,6 +147,7 @@ class TerminalView(context: Context) : View(context) {
                 canvas.drawLine(x, y + baseline + 2, x + paint.measureText(composing), y + baseline + 2, paint)
             }
         }
+        canvas.restore()
         canvas.restoreToCount(saved)
     }
     fun hideKeyboard() {
