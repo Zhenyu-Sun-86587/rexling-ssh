@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 data class SessionItem(val id: String, val label: String)
+data class SessionDetail(val attachment: String, val tabs: Int, val panes: Int)
 data class BlockItem(val id: String, val label: String)
 data class WindowItem(val id: String, val label: String, val blocks: List<BlockItem>)
 data class TerminalCell(val x: Int, val y: Int, val text: String, val foreground: Int, val background: Int, val attributes: Int, val width: Int)
@@ -25,18 +26,22 @@ data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, va
     }
 }
 data class AppState(
+    val previewFrames: Map<String, TerminalScreen> = emptyMap(), val sessionDetails: Map<String, SessionDetail> = emptyMap(),
     val revision: Long = 0, val phase: String = "disconnected", val endpoint: String = "",
     val identity: String = "", val error: String = "", val notice: String = "",
     val sessions: List<SessionItem> = emptyList(), val windows: List<WindowItem> = emptyList(),
     val selectedSession: String = "", val selectedBlock: String = "", val controlled: Boolean = false,
-    val screen: TerminalScreen? = null, val creating: Boolean = false,
+    val screen: TerminalScreen? = null, val creating: Boolean = false, val navigationId: Long = 0,
 ) {
     val connected: Boolean get() = phase == "connected"
     companion object {
         fun parse(text: String): AppState {
             val root = JSONObject(text)
             return AppState(
-                revision = root.optLong("revision"), phase = root.optString("phase", "disconnected"),
+                previewFrames = root.optJSONObject("previews")?.let { frames -> frames.keys().asSequence().associateWith { TerminalScreen.parse(frames.getJSONObject(it)) } } ?: emptyMap(),
+                sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->
+                    val d=details.getJSONObject(key);SessionDetail(d.optString("attachment"),d.optInt("tabs"),d.optInt("panes")) } } ?: emptyMap(),
+                revision = root.optLong("revision"), navigationId = root.optLong("navigationId"), phase = root.optString("phase", "disconnected"),
                 endpoint = root.optString("endpoint"), identity = root.optString("identity"),
                 error = root.optString("error"), notice = root.optString("notice"),
                 sessions = root.optJSONArray("sessions").objects { value ->

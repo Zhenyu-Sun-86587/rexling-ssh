@@ -27,6 +27,17 @@ class WorkspaceNavigationTest {
         assertNull(navigation.neighbour(listOf(first, second), "a", 0))
     }
 
+    @Test fun sessionSwipesFollowThePickerOrderAndStopAtTheEdges() {
+        val navigation = WorkspaceNavigation()
+        val sessions = listOf(SessionItem("one", "First"), SessionItem("two", "Second"), SessionItem("three", "Third"))
+        assertEquals("two", navigation.neighbourSession(sessions, "one", 1))
+        assertEquals("two", navigation.neighbourSession(sessions, "three", -1))
+        assertNull(navigation.neighbourSession(sessions, "one", -1))
+        assertNull(navigation.neighbourSession(sessions, "three", 1))
+        assertNull(navigation.neighbourSession(sessions, "missing", 1))
+        assertNull(navigation.neighbourSession(sessions, "one", 0))
+    }
+
     @Test fun closedPanesAndWindowsFallBackToExistingTerminal() {
         val navigation = WorkspaceNavigation()
         navigation.remember("session", listOf(first, second), "b")
