@@ -84,6 +84,7 @@ struct Actor {
     selected_session: String,
     selected_block: String,
     controlled: bool,
+    creating: bool,
     paused: bool,
     retry: Option<tokio::time::Instant>,
     backoff: u64,
@@ -110,6 +111,7 @@ impl Actor {
             selected_session: String::new(),
             selected_block: String::new(),
             controlled: false,
+            creating: false,
             paused: false,
             retry: None,
             backoff: 1,
@@ -122,7 +124,7 @@ impl Actor {
             shared.json=json!({"revision":shared.revision,"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"screen":self.screen,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"controlled":self.controlled}).to_string();
+                "selectedBlock":self.selected_block,"controlled":self.controlled,"creating":self.creating}).to_string();
         }
     }
     async fn run(mut self, mut rx: mpsc::Receiver<Value>) {
@@ -139,6 +141,7 @@ impl Actor {
                     let Some(value)=value else{break;};
                     if value["type"]=="shutdown"{break;}
                     if let Err(e)=self.command(value).await {
+                        self.creating=false;
                         let message=e.to_string();
                         if message.contains("timed out")||message.contains("WebSocket") {
                             self.recover(e);
@@ -481,28 +484,52 @@ impl Actor {
                     .as_str()
                     .context("block ID required")?
                     .to_owned();
+                self.open_block(block).await?;
+            }
+            "new_tab" | "new_pane" => {
+                ensure!(
+                    self.phase == "connected" && !self.paused,
+                    "Connect before creating a terminal"
+                );
                 ensure!(!self.selected_session.is_empty(), "Choose a session first");
-                self.release_selected().await?;
-                if let Some(mut data) = self.data.take() {
-                    let _ = data.close().await;
-                }
-                self.data_resume = None;
-                self.selected_block = block;
-                self.controlled = false;
-                self.screen = Value::Null;
-                let data = Data::open(
-                    self.endpoint.as_ref().context("no server")?,
-                    self.control.as_mut().context("not connected")?,
-                    &self.selected_session,
-                    &self.selected_block,
-                    Trace::default(),
-                )
-                .await?;
-                self.replica = Some(Replica::new(data.nonce));
-                self.data = Some(data);
+                ensure!(
+                    value["session"].as_str() == Some(self.selected_session.as_str()),
+                    "The selected session changed; try again"
+                );
+                let layout = json!({"block":{"flavor":"com.superlogical.terminal.shell"}});
+                let (method, args) = if value["type"] == "new_tab" {
+                    (
+                        "session.new_window",
+                        json!({"session_id":self.selected_session,"window_label":format!("Terminal {}", self.windows.as_array().map_or(0, Vec::len) + 1),"layout":layout,"focus":false}),
+                    )
+                } else {
+                    ensure!(!self.selected_block.is_empty(), "Choose a pane first");
+                    ensure!(
+                        value["anchor"].as_str() == Some(self.selected_block.as_str()),
+                        "The selected pane changed; try again"
+                    );
+                    (
+                        "session.new_split",
+                        json!({"session_id":self.selected_session,"anchor_id":self.selected_block,"direction":"horizontal","side":"after","layout":layout,"focus":false}),
+                    )
+                };
+                self.creating = true;
                 self.error.clear();
-                self.notice = "Viewing terminal; take control to type".into();
-                self.refresh_view().await?;
+                self.publish();
+                // Creation is sent once. A lost reply must never duplicate a shell.
+                let result = self
+                    .control
+                    .as_mut()
+                    .context("not connected")?
+                    .call(method, args)
+                    .await?;
+                let block = result["block_ids"][0]
+                    .as_str()
+                    .context("Server created no terminal block")?
+                    .to_owned();
+                self.open_block(block).await?;
+                self.creating = false;
+                self.publish();
             }
             "take" => {
                 ensure!(!self.selected_block.is_empty(), "Choose a terminal first");
@@ -598,6 +625,31 @@ impl Actor {
             }
             other => anyhow::bail!("Unknown command: {other}"),
         }
+        Ok(())
+    }
+    async fn open_block(&mut self, block: String) -> Result<()> {
+        ensure!(!self.selected_session.is_empty(), "Choose a session first");
+        self.release_selected().await?;
+        if let Some(mut data) = self.data.take() {
+            let _ = data.close().await;
+        }
+        self.data_resume = None;
+        self.selected_block = block;
+        self.controlled = false;
+        self.screen = Value::Null;
+        let data = Data::open(
+            self.endpoint.as_ref().context("no server")?,
+            self.control.as_mut().context("not connected")?,
+            &self.selected_session,
+            &self.selected_block,
+            Trace::default(),
+        )
+        .await?;
+        self.replica = Some(Replica::new(data.nonce));
+        self.data = Some(data);
+        self.error.clear();
+        self.notice = "Viewing terminal; take control to type".into();
+        self.refresh_view().await?;
         Ok(())
     }
     async fn release_selected(&mut self) -> Result<()> {
@@ -749,6 +801,86 @@ mod tests {
             });
             app.command(json!({"type":"release"})).unwrap();
             wait(&app, |v| v["controlled"] == false);
+            app.command(json!({"type":"disconnect"})).unwrap();
+            wait(&app, |v| v["phase"] == "disconnected");
+        }));
+        runtime
+            .block_on(writer.call("session.destroy", json!({"session_id":id})))
+            .unwrap();
+        runtime.block_on(writer.close()).unwrap();
+        result.unwrap();
+    }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_actor_creates_tabs_and_panes_and_rejects_stale_targets() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut writer = runtime
+            .block_on(Control::connect(
+                Endpoint::new(&server, Duration::from_secs(10)).unwrap(),
+                None,
+                Trace::default(),
+            ))
+            .unwrap();
+        let created = runtime.block_on(writer.call("session.create", json!({
+            "label":format!("rex-android-create-test-{}", std::process::id()),
+            "initial_windows":[{"window_label":"Original", "layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}}]
+        }))).unwrap();
+        let id = created["session_id"].as_str().unwrap();
+        let original = created["initial_windows"][0]["block_ids"][0]
+            .as_str()
+            .unwrap();
+        runtime.block_on(writer.attach(id)).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let app = Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":server}))
+                .unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":id})).unwrap();
+            wait(&app, |v| v["selectedSession"] == id);
+            app.command(json!({"type":"block","id":original})).unwrap();
+            wait(&app, |v| !v["screen"].is_null());
+            app.command(json!({"type":"new_tab","session":"stale-session"}))
+                .unwrap();
+            wait(&app, |v| {
+                v["error"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("selected session changed")
+            });
+            app.command(json!({"type":"new_tab","session":id})).unwrap();
+            let tab = wait(&app, |v| {
+                v["windows"].as_array().is_some_and(|w| w.len() == 2)
+                    && v["selectedBlock"] != original
+                    && !v["screen"].is_null()
+                    && v["creating"] == false
+            });
+            let new_block = tab["selectedBlock"].as_str().unwrap();
+            app.command(json!({"type":"new_pane","session":id,"anchor":"stale-pane"}))
+                .unwrap();
+            wait(&app, |v| {
+                v["error"]
+                    .as_str()
+                    .unwrap_or("")
+                    .contains("selected pane changed")
+            });
+            app.command(json!({"type":"new_pane","session":id,"anchor":new_block}))
+                .unwrap();
+            let pane = wait(&app, |v| {
+                v["windows"].as_array().is_some_and(|windows| {
+                    windows
+                        .iter()
+                        .any(|w| w["blocks"].as_array().is_some_and(|b| b.len() == 2))
+                }) && v["selectedBlock"] != new_block
+                    && !v["screen"].is_null()
+                    && v["creating"] == false
+            });
+            assert_eq!(pane["windows"][0]["blocks"].as_array().unwrap().len(), 1);
+            assert_eq!(pane["windows"][1]["blocks"].as_array().unwrap().len(), 2);
+            assert!(pane["error"].as_str().unwrap().is_empty());
             app.command(json!({"type":"disconnect"})).unwrap();
             wait(&app, |v| v["phase"] == "disconnected");
         }));
