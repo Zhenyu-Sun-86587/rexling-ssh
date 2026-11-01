@@ -55,7 +55,7 @@ import kotlin.math.roundToInt
             Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
             Column(Modifier.weight(1f)) {
                 Text(target.session.label,fontFamily=MonoUi,fontWeight=FontWeight.Bold,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                Text(target.server.label+" · "+(target.detail?.let {"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded"),
+                Text((target.detail?.let {"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded"),
                     fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2)
             }
             when {closing->CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=1.5.dp)

@@ -31,4 +31,17 @@ class SessionCatalogTest {
         assertEquals(SessionDetail("this device",1,1),targets[0].detail)
         assertEquals(SessionDetail("on laptop",3,4),targets[1].detail)
     }
+    @Test fun groupsPutCurrentServerThenCurrentSessionFirst() {
+        val targets=listOf(SessionTarget(linux,SessionItem("1","shell")),SessionTarget(mac,SessionItem("1","other")),SessionTarget(mac,SessionItem("2","editor")))
+        val groups=SessionCatalog.groups(targets,targets[2].key,"")
+        assertEquals(listOf("b","a"),groups.map {it.server.id})
+        assertEquals(listOf("2","1"),groups[0].sessions.map {it.session.id})
+    }
+    @Test fun groupSearchMatchesServersAndDropsEmptyGroups() {
+        val targets=listOf(SessionTarget(linux,SessionItem("1","shell")),SessionTarget(mac,SessionItem("1","editor")))
+        assertEquals(listOf("b"),SessionCatalog.groups(targets,"","Mac").map {it.server.id})
+        assertEquals("editor",SessionCatalog.groups(targets,"","editor").single().sessions.single().session.label)
+        assertTrue(SessionCatalog.groups(targets,"","missing").isEmpty())
+    }
+
 }

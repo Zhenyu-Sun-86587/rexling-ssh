@@ -253,11 +253,17 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
                     focusedIndicatorColor=Color.Transparent,unfocusedIndicatorColor=Color.Transparent))
             Spacer(Modifier.height(9.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                val ordered=targets.sortedBy {if(it.key==current) 0 else 1}.filter{it.session.label.contains(search,ignoreCase=true) || it.server.label.contains(search,ignoreCase=true)}
-                if(ordered.isEmpty()) Text("No matching sessions",Modifier.padding(15.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                ordered.forEach {target->key(target.key) {
-                    SessionRow(target,current==target.key,last==target.key,closing==target.key,
-                        onSelect={onSelect(target.key)},onClose={closeTarget=target})
+                val groups=SessionCatalog.groups(targets,current,search)
+                if(groups.isEmpty()) Text("No matching sessions",Modifier.padding(15.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)
+                groups.forEach {group->key(group.server.id) {
+                    Row(Modifier.fillMaxWidth().padding(start=11.dp,end=11.dp,top=13.dp,bottom=5.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text(group.server.label,Modifier.weight(1f),fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(group.sessions.size.toString(),fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    group.sessions.forEach {target->key(target.key) {
+                        SessionRow(target,current==target.key,last==target.key,closing==target.key,
+                            onSelect={onSelect(target.key)},onClose={closeTarget=target})
+                    }}
                 }}
             }
             if(error.isNotBlank()) Text(error,Modifier.padding(vertical=10.dp),color=MaterialTheme.colorScheme.error,fontSize=11.sp)

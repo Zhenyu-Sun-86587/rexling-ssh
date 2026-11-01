@@ -7,7 +7,14 @@ internal data class SessionTarget(val server: ServerProfile,val session: Session
 }
 internal fun sessionKey(serverId: String,sessionId: String): String="${serverId.length}:$serverId$sessionId"
 
+internal data class SessionGroup(val server: ServerProfile,val sessions: List<SessionTarget>)
 internal object SessionCatalog {
+    fun groups(targets: List<SessionTarget>,current: String,query: String): List<SessionGroup> {
+        val currentServer=targets.firstOrNull {it.key==current}?.server?.id
+        return targets.filter {it.session.label.contains(query,true) || it.server.label.contains(query,true)}
+            .groupBy {it.server.id}.values.map {items->SessionGroup(items.first().server,items.sortedBy {if(it.key==current) 0 else 1})}
+            .sortedBy {if(it.server.id==currentServer) 0 else 1}
+    }
     fun collect(servers: List<ServerProfile>,states: Map<String,AppState>): List<SessionTarget> = servers.flatMap {server->
         val state=states[server.id]
         if(state?.connected!=true) emptyList() else state.sessions.map {session->
