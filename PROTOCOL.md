@@ -239,3 +239,56 @@ arguments `server_a`, `server_b`, `session_a`, `session_b`; it intentionally ski
 without explicit fixture arguments. It writes only to those fixtures and checks
 host-isolated input, hidden-view rejection, shared session routing/jump-last,
 independent disconnect and lifecycle recovery. Destroy fixtures after running.
+
+
+## Notified local display updates (RXT1)
+
+This is a private JNI transport inside Rexlet, separate from Rex's control/data
+wire formats. Rex authentication, snapshots and VT streams are unchanged.
+`awaitUpdate(handle, afterRevision, timeoutMs)` waits on a condition variable
+without holding the native handle registry. Publish and destroy wake readers.
+`readUpdate` coalesces to the newest state, with one decoder per handle. JNI
+commands and the legacy diagnostic `poll` API remain JSON; production live
+screen delivery uses UTF-8 binary changed rows.
+
+The little-endian packet begins `RXT1`, revision u64, metadata length u32 and
+metadata UTF-8 bytes. Unchanged metadata has length zero. The frame flag is:
+0 unchanged, 1 no frame, 2 row delta, 3 full replacement. Flags 2/3 carry columns
+and rows u16, cursor x/y i32 (-1 hidden), foreground/background ARGB u32, then
+scroll total/offset/visible u64. A changed-row count u16 follows. Each row has
+its y and cell count u16; cells contain x u16, width u8, attributes/foreground/
+background u32, and length-prefixed UTF-8 text (u32 length). Unchanged rows retain
+their Kotlin list identity. Missing rows are empty in full replacements.
+
+The encoder compares against the last delivered frame, so skipped native
+revisions are safe. Unknown bases, dimensions or pane identity changes force a
+full frame. The decoder validates bounds, row uniqueness, lengths, flags and
+revisions before committing its new base. Preview snapshots remain one-shot
+bounded JSON metadata and are not repeatedly attached to live frame updates.
+No reconnect tokens, data tickets or terminal process arguments are added.
+
+A visible native actor coalesces extraction at 16 ms while dirty; clean actors
+only perform maintenance. A hidden actor keeps applying incoming VT and updating
+session metadata but does not extract screen frames. Selecting it requests a
+fresh frame. Android waits for revisions on IO, decodes away from the UI thread,
+and publishes visible frames on the display clock. Metadata flows omit screen
+and revision churn. Pane movement reads translation in the graphics layer.
+
+## Closing sessions from the picker
+
+Installed server API discovery confirms `session.destroy {session_id}` closes
+all windows/blocks and hangs up their programs. The caller must be attached;
+missing sessions fail with `session_not_found`. A short-lived authenticated
+`rex-android-close` control client attaches to the explicitly confirmed target,
+sends destroy once and closes. It takes no block ownership and does not move
+the main client's viewed session when closing an inactive session. Errors or
+uncertain replies are reported, never automatically replayed. The normal
+session list/events synchronize all connected clients afterward.
+
+The UI binds confirmations to both server endpoint and server-qualified session
+ID, rejects stale targets, and prevents duplicate closes while one is pending.
+Both swipe directions reveal Close; the row menu and accessibility action offer
+the same operation. Cancel sends no mutation. The previous-session marker is
+plain text and the old footer gesture hints are removed. Closing the current
+session opens another available session through the existing selection logic.
+Disconnect and Forget remain local connection/profile actions in Servers.

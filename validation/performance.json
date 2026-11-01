@@ -1,0 +1,145 @@
+{
+  "date": "2026-11-01",
+  "environment": {
+    "device": "Medium_Phone_API_37.0, emulator-5554",
+    "android_api": 37,
+    "physical_device": false
+  },
+  "renderer": {
+    "before": {
+      "workload": "100x50 one row changed, software Canvas",
+      "samples": 100,
+      "median_ms": 8.127,
+      "p95_ms": 8.644084
+    },
+    "after": {
+      "workload": "100x50 one row changed, software Canvas",
+      "samples": 100,
+      "median_ms": 0.843792,
+      "p95_ms": 1.802916
+    },
+    "median_reduction_percent": 89.62,
+    "scope": "Identical isolated software Canvas draw workload; not whole-app timing"
+  },
+  "input_delivery": {
+    "samples": 10,
+    "median_ms": 17.769,
+    "p95_ms": 33.984542,
+    "metric": "input dispatch to Android terminal state, includes network"
+  },
+  "wire_payload": {
+    "workload": "100x50 cells, one row changed; local JNI payload only",
+    "full_bytes": 100265,
+    "delta_bytes": 2072
+  },
+  "macrobenchmark_before_translation_deferral": [
+    {
+      "name": "terminalGestures",
+      "metrics": {
+        "frameCount": {
+          "minimum": 204.0,
+          "maximum": 206.0,
+          "median": 206.0,
+          "coefficientOfVariation": 0.005338426486405127,
+          "runs": [
+            206.0,
+            204.0,
+            206.0,
+            204.0,
+            206.0
+          ]
+        }
+      },
+      "sampled_metrics": {
+        "frameDurationCpuMs": {
+          "P50": 1.7089375,
+          "P90": 17.4418755,
+          "P95": 18.370770999999998,
+          "P99": 26.710124999999998
+        },
+        "frameOverrunMs": {
+          "P50": -7.96635,
+          "P90": 11.011396,
+          "P95": 12.050051,
+          "P99": 14.511774749999999
+        }
+      }
+    },
+    {
+      "name": "coldStartupWithProfile",
+      "metrics": {
+        "timeToInitialDisplayMs": {
+          "minimum": 492.3045,
+          "maximum": 731.908709,
+          "median": 583.848042,
+          "coefficientOfVariation": 0.1483404228239599,
+          "runs": [
+            564.902167,
+            638.160625,
+            492.3045,
+            731.908709,
+            583.848042
+          ]
+        }
+      },
+      "sampled_metrics": {}
+    },
+    {
+      "name": "coldStartupWithoutProfile",
+      "metrics": {
+        "timeToInitialDisplayMs": {
+          "minimum": 524.865958,
+          "maximum": 609.462166,
+          "median": 588.291375,
+          "coefficientOfVariation": 0.058281624876339054,
+          "runs": [
+            609.462166,
+            524.865958,
+            588.291375,
+            587.418,
+            605.167459
+          ]
+        }
+      },
+      "sampled_metrics": {}
+    }
+  ],
+  "startup_interpretation": "With/without profile timings overlap; no material emulator startup gain established.",
+  "limits": [
+    "Emulator results are not S22+ frame-rate, startup or battery measurements.",
+    "Input timing ends at Android terminal state publication, before the final screen pixel.",
+    "Gesture benchmark uses the offline preview and pane edge drags, not a remote full-screen application."
+  ],
+  "macrobenchmark_after_translation_deferral": {
+    "name": "terminalGestures",
+    "metrics": {
+      "frameCount": {
+        "minimum": 199.0,
+        "maximum": 206.0,
+        "median": 205.0,
+        "coefficientOfVariation": 0.014926920165455809,
+        "runs": [
+          205.0,
+          205.0,
+          206.0,
+          201.0,
+          199.0
+        ]
+      }
+    },
+    "sampled_metrics": {
+      "frameDurationCpuMs": {
+        "P50": 1.7107085,
+        "P90": 12.872937,
+        "P95": 17.47935475,
+        "P99": 26.4519643
+      },
+      "frameOverrunMs": {
+        "P50": -6.533761,
+        "P90": -0.23488799999999999,
+        "P95": 10.11204375,
+        "P99": 14.5043653
+      }
+    }
+  }
+}

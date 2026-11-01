@@ -1,9 +1,20 @@
 {
-  "apk": "app/build/outputs/apk/debug/app-debug.apk",
+  "apk": "app/build/outputs/apk/release/app-release.apk",
   "application_label": "Rexlet",
-  "sha256": "8c337154936573817467dd6fac58d3012f6654a3e651883f9b9731f7e171db00",
-  "bytes": 40996753,
+  "sha256": "152fd90a9c1fc1548a1673e65f301f86c04f2b6d7c99d755eb66d6f1474c21d6",
+  "bytes": 15806134,
   "signature_verified": true,
+  "debuggable": false,
+  "art_profiles": [
+    {
+      "name": "assets/dexopt/baseline.prof",
+      "bytes": 6054
+    },
+    {
+      "name": "assets/dexopt/baseline.profm",
+      "bytes": 568
+    }
+  ],
   "zip_alignment_16k": true,
   "permissions": [
     "android.permission.INTERNET",
@@ -22,7 +33,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 5002752,
+      "bytes": 5030760,
       "load_alignment": 16384
     }
   ],

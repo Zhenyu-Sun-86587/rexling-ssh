@@ -14,11 +14,11 @@ Older layout descriptions below are retained as historical validation notes.
 | Emulator live connection | Authenticated server connection and live terminal visible; control mode and keyboard observed |
 | Emulator crash log | No AndroidRuntime errors or libc fatal entries during smoke run |
 | `assembleDebug` | Passed; debug APK signed |
-| Kotlin model/navigation/appearance JVM tests | 29 passed |
-| Native offline unit tests | 13 passed |
-| Explicit real-server actor host tests | 5 passed, including separate Mac/Linux hosts |
+| Kotlin model/navigation/appearance JVM tests | 31 passed |
+| Native offline unit tests | 16 passed |
+| Explicit real-server actor host tests | 6 passed, including separate Mac/Linux hosts and session closing |
 | Actual JNI bridge on host JVM | Passed in earlier validation |
-| Android instrumentation | 9 emulator tests passed; earlier base-font check passed on S22+ |
+| Android instrumentation | 11 emulator tests passed; earlier base-font check passed on S22+ |
 | Latest mockup APK installed on S22+ | USB install returned Success |
 | Android `lintDebug` | No errors; version/target-scope suggestions remain |
 | Native Clippy with warnings denied | Passed |
@@ -298,3 +298,78 @@ ADB returned Success. APK SHA256:
 `validation/apk.json` records this signed artifact (40996753 bytes).
 Changes are committed separately for fonts, tile rendering, content spacing,
 multiple connections, cross-server sessions, compact chrome and documentation.
+
+
+## Performance pass, rectangular icons and session actions
+
+The live display path uses condition-variable revision notifications and binary
+row deltas instead of periodic full-screen JSON polling. Metadata and terminal
+flows are separate; a live two-host assertion confirms that terminal output alone
+does not publish new chrome state. One initial test raced the first program
+metadata result; it now waits for that independent result before measuring screen
+updates. Hidden hosts apply VT without extracting frames and publish a fresh
+screen when selected. Native tests verify this without losing hidden output.
+Handle destruction wakes waiting readers; JNI waits release the global registry
+before blocking, so other server handles remain usable.
+
+Terminal rows cache drawing commands. Compatible ASCII text is batched and other
+glyph advances use a bounded cache; unchanged rows retain their list identity.
+A pixel regression compares cached versus fresh drawing and proves that changing
+one row records only that row. Existing color seams, wide glyphs, padding, cursor,
+Nerd Font and typography checks pass. Pane translation reads state in the graphics
+layer, and destination badges only recompose when the destination changes.
+
+Measurements are saved in `validation/performance.json`:
+
+| Workload | Result |
+| --- | --- |
+| Dense 100×50 terminal, one changed row, software Canvas median | 8.127 → 0.844 ms (about 90% less CPU draw time) |
+| Same renderer workload p95 | 8.644 → 1.803 ms |
+| Local full-frame / one-row JNI packet | 100,265 / 2,072 bytes |
+| Input dispatch → Android terminal state, including network, 10 samples | median 17.769 ms; p95 33.985 ms |
+| Optimized cold startup with / without Baseline Profile | median 583.848 / 588.291 ms; overlapping distributions |
+| Offline gesture frame CPU p50 / p95 after translation deferral | 1.711 / 17.479 ms |
+
+These are emulator results, not S22+ performance guarantees. The draw workload
+is isolated software rendering; input timing ends before final pixel display.
+The gesture workload is offline preview pane-edge dragging. Its long frame tail
+still needs physical-device profiling; no blanket 60/120 fps or battery claim is
+made. Profile installation/packaging is verified, but the emulator did not establish
+a material startup gain from profiles alone. Raw Perfetto traces remain in the
+ignored benchmark build output. An offline rerun initially found the live-fixture
+preferences; it was rerun successfully after resetting only the test emulator.
+
+The baseline generator records the real offline startup → terminal → appearance
+journey. It produced 17,986 rules; R8 rewrites these into the packaged ART profile.
+The release is non-debuggable, minified and resource-shrunk. It keeps the existing
+sideload signing identity and package, preserving phone preferences. The separate
+optimized variant adds profiling support. The generator script rejects phone
+serials because Gradle's connected-test cleanup may uninstall the target app/data.
+
+Header/tab tiles are now compact landscape rectangles with white rims, program
+colors, reflection highlights and rounded corners. A disposable two-pane release
+session verified both swipe directions, destination icons and stacked tiles.
+Dark and Light visuals were inspected on owned fixtures. The session sheet uses
+plain “previous” text and has no footer gesture hints. Either swipe direction
+reveals Close; ⋮ and accessibility actions expose it too. Confirmation includes
+session/server names and explains that all programs will end. Cancel sent no
+mutation; confirmation closed only the disposable target. The inactive-session
+native test preserves the viewed session; another closes the current session.
+The actual installed server schema is in `validation/session-destroy-schema.json`.
+
+Final checks: 31 JVM tests, 22 native tests (16 offline + 6 owned-server tests),
+11 Android instrumentation tests, one successful profile-generation journey and
+three Macrobenchmark tests pass. The affected gesture benchmark passed again
+after translation deferral. Debug/release builds, lint, native Clippy and the
+host JVM JNI smoke pass. Release verification checks the six JNI exports,
+arm64 libraries, signature, 16 KiB ELF/ZIP alignment, non-debuggable manifest and
+packaged ART profile. No phone UI automation was performed.
+
+Final release APK: `app/build/outputs/apk/release/app-release.apk`,
+15806134 bytes. SHA256:
+`152fd90a9c1fc1548a1673e65f301f86c04f2b6d7c99d755eb66d6f1474c21d6`.
+ADB installed this build on Galaxy S22+ RFCT21390SD; the installed base APK's
+SHA256 was read back and matched. `validation/apk.json` records that artifact.
+The emulator received the same release, its original preferences were restored,
+and only disposable test sessions/panes were removed. Existing user sessions,
+server settings and authentication remain intact. Changes are committed by scope.

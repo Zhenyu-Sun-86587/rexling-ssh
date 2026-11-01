@@ -7,10 +7,11 @@ supplies the UI and a Canvas terminal view. A Rust actor owns the direct
 authenticated WebSocket connections and a native `libghostty-vt` terminal replica.
 There is no bridge, proxy, embedded Rex server, or `rex` executable dependency.
 
-This build targets **arm64-v8a**, including the Galaxy S22+. The latest mockup
-build was installed on the S22+ over USB. Its bundled terminal font passed a
-real-phone instrumentation test; interaction and appearance smoke checks ran on
-the API 37 arm64 emulator.
+This build targets **arm64-v8a**, including the Galaxy S22+. The latest optimized
+release build was installed on the S22+ over USB. Base-font checks passed earlier
+on the real phone; current Nerd Font, renderer, networking and interaction
+regressions run on the API 37 arm64 emulator.
+
 ## Build and open
 
 Open this directory in Android Studio. Prerequisites used for the verified build:
@@ -21,14 +22,22 @@ Open this directory in Android Studio. Prerequisites used for the verified build
 - Python 3.9+ and `curl`.
 
 ```sh
+./scripts/gradle.sh assembleRelease
+# Development build with instrumentation support:
 ./scripts/gradle.sh assembleDebug
 ```
 
-The APK is produced at:
+The release APK is produced at:
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/release/app-release.apk
 ```
+
+Local release builds use R8 code/resource optimization, packaged Baseline/Startup
+Profiles, and the existing development signing identity so they can update this
+prototype without clearing its data. They are non-debuggable. Production signing
+can be configured separately when publishing. The `optimized` variant has the
+same optimization settings plus shell profiling for benchmarks.
 
 The Gradle `preBuild` task runs `scripts/build_native.py`. It downloads
 checksum-verified Ghostty/Zig source and tools, cross-compiles Ghostty, builds the
@@ -53,7 +62,7 @@ are a deliberately fixed working set; lint may report newer versions.
    VPN routing. The app uses the Android network stack and your existing tailnet
    identity; it does not embed a second VPN or send identity headers.
 2. Install the debug APK through Android Studio, or later run
-   `adb install -r app/build/outputs/apk/debug/app-debug.apk` yourself.
+   `adb install -r app/build/outputs/apk/release/app-release.apk` yourself.
 3. Open **Rexlet**. Connect to the prefilled server URL, or enter another explicit
    `https://`, `http://`, `wss://`, or `ws://` Rex server address.
 4. **⋮ → Servers** saves additional hosts and keeps them connected together.
@@ -61,7 +70,11 @@ are a deliberately fixed working set; lint may report newer versions.
    sessions across connected servers, grouped in saved-server order. Server
    names distinguish the sessions. Tap the name to search the combined list,
    or long-press to jump to the last session, including on another server. The list searches both session and server names, puts the current session
-   first, marks the last one, and offers **New** to create a session and shell.
+   first, marks the previous one with plain text, and offers **New** to create a
+   session and shell. Swipe a list row either way to reveal **Close**, or use its
+   ⋮ menu. Confirmation names the session and server: closing ends every program
+   in that session. Switching away keeps programs running; Disconnect belongs
+   to the server sheet and only closes this app's connection.
    Attachment status and tab/pane counts come from Rex; no remote last-used
    timestamps are fabricated when the server doesn't supply them.
 5. **Swipe the terminal card** to move between panes in the current tab. Adjacent
@@ -100,7 +113,8 @@ Terminal cards span the screen width, aligned with the dock. Their 12 dp side /
 8 dp top content insets extend the adjacent terminal cell backgrounds at each
 edge, including separate sidebar/editor colors. The cursor is a filled block.
 The header and tab program tiles use matching reflective faces, thin rims and
-program colors. These are gradient highlights, without live backdrop blur.
+program colors. Their compact rectangular faces have white rims. These are
+gradient highlights, without live backdrop blur.
 
 The 50 dp header shows the selected program, its working directory (`~` for
 its real home), and the session name underneath. Multiple panes stack their program tiles; single-pane tabs show one smaller tile. The session name still supports
@@ -123,7 +137,7 @@ It is a read-only preview, not a simulated shell.
 
 ```text
 Compose UI + TerminalView (Android Canvas / IME)
-    │ JNI commands and revisioned display state
+    │ JNI commands + notified binary row updates
     ▼
 Rust worker thread + current-thread Tokio runtime
     ├─ Rex control WebSocket: methods, identity, sessions, input, ownership
@@ -140,7 +154,7 @@ Existing authenticated Rex server
   adapts native linking. The source is self-contained here.
 - `native/rex-jni/`: JNI handles, bounded command queue, connection/lifecycle
   recovery and display-state serialization. All connections and the non-Send
-  Ghostty handle stay on one native owner thread.
+  Ghostty handle stay on their server's native owner thread.
 - `native/ghostty-source.json`: pinned Ghostty revision
   `f54340ad77814fe319d136e5e915d6a48de8dd23`, Zig 0.17.0, URLs and checksums.
 - `app/`: independent RexConnection instances retain a native actor and terminal
@@ -150,8 +164,12 @@ Existing authenticated Rex server
   Switching releases the old claim while retaining its connection and viewport.
   Lifecycle pause/resume applies to every connected host.
 - `app/`: Compose session picker and a Canvas view of Ghostty's cells. JNI state
-  is polled only while foregrounded and is transferred only when its revision
-  changes. The renderer preserves cell RGB colors, common styles, graphemes,
+  uses revision notifications and binary deltas for live screen rows. Metadata
+  and live terminal flows are separate, so terminal output does not recompose
+  the header or session catalog. Visible delivery follows the display clock;
+  hidden hosts keep their streams but skip screen extraction until selected.
+  The renderer caches unchanged row drawing commands and glyph advances, batches
+  compatible ASCII runs, and preserves cell RGB colors, common styles, graphemes,
   wide-cell spacing and cursor position.
 
 The server's terminal answers PTY queries; the replica installs no reply callback.
@@ -191,7 +209,7 @@ REX_TEST_SERVER=https://rex.taildaac1.ts.net \
 The JNI smoke test uses a host JVM and the same native entry points as Kotlin.
 It checks handle lifetime, the worker, real snapshot decoding, Unicode transfer,
 secret exclusion and cleanup. It is not an Android runtime test. APK verification
-checks debug signing, arm64 ELF files, the four JNI exports, 16 KiB load/ZIP
+checks APK signing, arm64 ELF files, the six JNI exports, 16 KiB load/ZIP
 alignment, packaging, and manifest permissions. See [VALIDATION.md](VALIDATION.md)
 and the verified creation methods in [PROTOCOL.md](PROTOCOL.md).
 
@@ -227,3 +245,39 @@ The launcher uses the user-selected voxel dinosaur as an Android adaptive icon.
 Original artwork, checksums and built-in imagegen preparation/cleanup prompts
 are in `artwork/rexlet/`; the transparent foreground is packaged in
 `app/src/main/res/drawable-nodpi/rexlet_dinosaur.png`.
+
+
+## Performance checks
+
+`validation/performance.json` records emulator measurements, workload definitions
+and limits. A fixed 100×50 dense screen with one changing row reduced software
+Canvas drawing from about 8.1 ms to 0.84 ms median. This is a renderer measurement,
+not a whole-app or physical-phone speed multiplier. Input-to-Android-state
+latency is measured separately against disposable owned fixtures and includes
+the network; it does not measure the final displayed pixel. Macrobenchmark
+captures cold startup and terminal gesture frame timing, with Perfetto traces.
+The emulator showed no material startup difference from profiles alone.
+
+Reproduce on a dedicated emulator (Gradle's test runner may uninstall its target
+app and data; the profile helper deliberately rejects phone serials):
+
+```sh
+python3 scripts/generate_profiles.py --serial emulator-5554
+./scripts/gradle.sh assembleOptimized assembleRelease
+ANDROID_SERIAL=emulator-5554 ./scripts/gradle.sh :benchmark:connectedOptimizedAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=dev.shulhi.rex.benchmark.TerminalBenchmark \
+  -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.suppressErrors=EMULATOR
+python3 scripts/verify_apk.py --apk app/build/outputs/apk/release/app-release.apk --require-release
+```
+
+Profiles come from the actual offline startup → terminal → appearance journey.
+`app/src/main/baseline-prof.txt` and `startup-prof.txt` contain the measured rules;
+R8 rewrites and compiles them into the release APK. Fresh test-emulator preferences
+are required for the offline journey. Benchmark output lives under ignored
+`benchmark/build/outputs/connected_android_test_additional_output/`.
+For representative startup/frame timing, use a separate physical test device;
+these emulator results do not establish S22+ frame-rate or battery guarantees.
+
+
+The benchmark setup follows Android's [Macrobenchmark guidance](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview)
+and [Baseline Profile guidance](https://developer.android.com/topic/performance/baselineprofiles/create-baselineprofile).
