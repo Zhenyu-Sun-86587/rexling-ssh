@@ -75,7 +75,7 @@ pub fn encode(state: &mut Shared, after: u64) -> Vec<u8> {
     }
     let base = &state.wire;
     let reset = after != base.revision || base.key != state.key;
-    let mut out = b"RXT1".to_vec();
+    let mut out = b"RXT2".to_vec();
     u64le(&mut out, state.revision);
     let previews = std::mem::take(&mut state.pending_previews);
     if reset || base.metadata != state.json || !previews.is_empty() {
@@ -121,6 +121,7 @@ pub fn encode(state: &mut Shared, after: u64) -> Vec<u8> {
             ] {
                 u64le(&mut out, v);
             }
+            out.push(frame.input_flags);
             let next = rows(frame);
             let old = previous.map(|old| rows(old));
             let changed: Vec<_> = next
@@ -196,6 +197,7 @@ mod wire_tests {
             scroll_total: 50,
             scroll_offset: 0,
             scroll_visible: 50,
+            input_flags: 0,
         }
     }
     #[test]

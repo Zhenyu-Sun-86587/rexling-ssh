@@ -13,7 +13,8 @@ internal class TerminalUpdates {
     fun decode(bytes: ByteArray): AppState {
         require(bytes.size in 17..134217728) {"Invalid terminal packet size"}
         val data=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        require(data.int==0x31545852) {"Unsupported terminal packet"}
+        val version=data.int
+        require(version==0x31545852 || version==0x32545852) {"Unsupported terminal packet"}
         val nextRevision=data.long;require(nextRevision>revision)
         fun text(): String {val n=data.int;require(n>=0 && n<=data.remaining());val raw=ByteArray(n);data.get(raw);return raw.toString(Charsets.UTF_8)}
         val metadata=text()
@@ -26,6 +27,7 @@ internal class TerminalUpdates {
                 require(columns>0 && rows>0 && columns.toLong()*rows<=2_000_000)
                 val x=data.int;val y=data.int;val fg=data.int;val bg=data.int
                 val scroll=TerminalScroll(data.long,data.long,data.long)
+                val inputFlags=if(version==0x32545852) data.get().toInt() and 0xff else 0
                 val previous=state.screen
                 if(flag==2) require(previous!=null && previous.columns==columns && previous.rows==rows) {"Missing terminal delta base"}
                 val lines=if(flag==2) previous!!.lines.toMutableList() else MutableList<List<TerminalCell>>(rows){emptyList()}
@@ -42,7 +44,7 @@ internal class TerminalUpdates {
                     }
                 }
                 if(flag==3) require(changed==rows)
-                TerminalScreen(columns,rows,x.takeIf {it>=0},y.takeIf {it>=0},fg,bg,lines.flatten(),scroll,lines)
+                TerminalScreen(columns,rows,x.takeIf {it>=0},y.takeIf {it>=0},fg,bg,lines.flatten(),scroll,lines,inputFlags)
             }
             else->error("Invalid terminal frame flag $flag")
         }

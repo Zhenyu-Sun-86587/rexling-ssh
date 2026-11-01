@@ -10,6 +10,7 @@ typedef struct {
   uint16_t columns, rows, cursor_x, cursor_y;
   uint8_t cursor_visible, foreground[3], background[3];
   uint64_t scroll_total, scroll_offset, scroll_visible;
+  uint8_t input_flags;
 } RpFrame;
 typedef struct {
   GhosttyTerminal terminal;
@@ -149,6 +150,38 @@ void rp_scroll(RpTerminal *t, int32_t lines, int bottom) {
   behavior.value.delta = lines;
   ghostty_terminal_scroll_viewport(t->terminal, behavior);
 }
+int rp_input_flags(RpTerminal *t, uint8_t *flags) {
+  bool mouse=false;
+  GhosttyTerminalScreen screen=GHOSTTY_TERMINAL_SCREEN_PRIMARY;
+  GhosttyTerminalModeConfig alt={.mode=GHOSTTY_MODE_ALT_SCROLL},cursor={.mode=GHOSTTY_MODE_DECCKM};
+  int r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_MOUSE_TRACKING,&mouse);
+  if(r==0) r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_ACTIVE_SCREEN,&screen);
+  if(r==0) r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_MODE,&alt);
+  if(r==0) r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_MODE,&cursor);
+  *flags=(mouse?1:0)|(screen==GHOSTTY_TERMINAL_SCREEN_ALTERNATE?2:0)|(alt.value?4:0)|(cursor.value?8:0);
+  return r;
+}
+int rp_wheel(RpTerminal *t,int down,int col,int row,uint32_t cw,uint32_t ch,char *out,size_t capacity,size_t *len) {
+  GhosttyMouseEncoder encoder=NULL;GhosttyMouseEvent event=NULL;
+  uint16_t cols=0,rows=0;*len=0;
+  int r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_COLS,&cols);
+  if(r==0) r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_ROWS,&rows);
+  if(r==0) r=ghostty_mouse_encoder_new(NULL,&encoder);
+  if(r==0) r=ghostty_mouse_event_new(NULL,&event);
+  if(r==0) {
+    if(col<0)col=0;if(col>=cols)col=cols-1;if(row<0)row=0;if(row>=rows)row=rows-1;
+    if(cw==0)cw=1;if(ch==0)ch=1;
+    GhosttyMouseEncoderSize geometry=GHOSTTY_INIT_SIZED(GhosttyMouseEncoderSize);
+    geometry.screen_width=cols*cw;geometry.screen_height=rows*ch;geometry.cell_width=cw;geometry.cell_height=ch;
+    ghostty_mouse_encoder_setopt_from_terminal(encoder,t->terminal);
+    ghostty_mouse_encoder_setopt(encoder,GHOSTTY_MOUSE_ENCODER_OPT_SIZE,&geometry);
+    ghostty_mouse_event_set_action(event,GHOSTTY_MOUSE_ACTION_PRESS);
+    ghostty_mouse_event_set_button(event,down?GHOSTTY_MOUSE_BUTTON_FIVE:GHOSTTY_MOUSE_BUTTON_FOUR);
+    ghostty_mouse_event_set_position(event,(GhosttyMousePosition){(col+.5f)*cw,(row+.5f)*ch});
+    r=ghostty_mouse_encoder_encode(encoder,event,out,capacity,len);
+  }
+  ghostty_mouse_event_free(event);ghostty_mouse_encoder_free(encoder);return r;
+}
 int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   int r = ghostty_render_state_update(t->render, t->terminal);
   if (r != 0) return r;
@@ -165,6 +198,7 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   frame->scroll_total=scrollbar.total;
   frame->scroll_offset=scrollbar.offset;
   frame->scroll_visible=scrollbar.len;
+  r=rp_input_flags(t,&frame->input_flags);if(r!=0)return r;
   frame->cursor_x=cursor.viewport_x; frame->cursor_y=cursor.viewport_y;
   frame->cursor_visible=cursor.visible && cursor.viewport_has_value;
   memcpy(frame->foreground,&colors.foreground,3);

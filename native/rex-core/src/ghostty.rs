@@ -25,6 +25,7 @@ struct RawFrame {
     scroll_total: u64,
     scroll_offset: u64,
     scroll_visible: u64,
+    input_flags: u8,
 }
 unsafe extern "C" {
     fn rp_new(cols: u16, rows: u16, out: *mut *mut c_void) -> i32;
@@ -45,6 +46,8 @@ unsafe extern "C" {
     fn rp_encode(term: *mut c_void, out: *mut *mut u8, len: *mut usize) -> i32;
     fn rp_bytes_free(bytes: *mut u8, len: usize);
     fn rp_scroll(term: *mut c_void, lines: i32, bottom: i32);
+    fn rp_input_flags(term: *mut c_void, flags: *mut u8) -> i32;
+    fn rp_wheel(term: *mut c_void, down: i32, col: i32, row: i32, cw: u32, ch: u32, out: *mut u8, capacity: usize, len: *mut usize) -> i32;
     fn rp_frame(
         term: *mut c_void,
         frame: *mut RawFrame,
@@ -78,6 +81,7 @@ pub struct Frame {
     pub scroll_total: u64,
     pub scroll_offset: u64,
     pub scroll_visible: u64,
+    pub input_flags: u8,
 }
 impl Frame {
     pub fn text(&self) -> String {
@@ -252,6 +256,14 @@ impl Terminal {
     pub fn encode(&mut self) -> Result<Vec<u8>> {
         self.buffer(true)
     }
+    pub fn input_flags(&mut self) -> Result<u8> {
+        let mut flags=0;check(unsafe {rp_input_flags(self.handle.as_ptr(),&mut flags)},"input modes")?;Ok(flags)
+    }
+    pub fn wheel(&mut self,down: bool,col: i32,row: i32,cw: u32,ch: u32) -> Result<Vec<u8>> {
+        let mut bytes=[0u8;64];let mut len=0;
+        check(unsafe {rp_wheel(self.handle.as_ptr(),i32::from(down),col,row,cw,ch,bytes.as_mut_ptr(),bytes.len(),&mut len)},"wheel encoding")?;
+        ensure!(len<=bytes.len(),"mouse encoder exceeded buffer");Ok(bytes[..len].to_vec())
+    }
     pub fn scroll_viewport(&mut self, lines: i32) {
         unsafe { rp_scroll(self.handle.as_ptr(), lines, 0) };
     }
@@ -317,6 +329,7 @@ impl Terminal {
             scroll_total: raw.scroll_total,
             scroll_offset: raw.scroll_offset,
             scroll_visible: raw.scroll_visible,
+            input_flags: raw.input_flags,
             cells,
         })
     }
@@ -576,4 +589,15 @@ mod tests {
         assert_ne!(bg.attributes & 1024, 0);
         assert_eq!((bg.attributes >> 19) & 255, 2);
     }
+    #[test] fn mouse_modes_survive_snapshots_and_encode_wheel_direction() {
+        let mut terminal=Terminal::new(80,24).unwrap();
+        terminal.write(b"\x1b[?1049h\x1b[?1007l\x1b[?1000h\x1b[?1006h").unwrap();
+        assert_eq!(terminal.input_flags().unwrap()&7,3);
+        assert_eq!(terminal.wheel(false,4,5,10,20).unwrap(),b"\x1b[<64;5;6M");
+        assert_eq!(terminal.wheel(true,4,5,10,20).unwrap(),b"\x1b[<65;5;6M");
+        let snapshot=terminal.encode().unwrap();let (mut restored,_)=Terminal::decode(&snapshot).unwrap();
+        assert_eq!(restored.frame().unwrap().input_flags&7,3);
+        restored.write(b"\x1b[?1000l\x1b[?1007h").unwrap();assert_eq!(restored.input_flags().unwrap()&7,6);
+    }
+
 }

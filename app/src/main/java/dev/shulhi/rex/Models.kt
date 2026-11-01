@@ -12,7 +12,8 @@ data class TerminalScroll(val total: Long=0,val offset: Long=0,val visible: Long
     val below: Long get()=(available-offset).coerceAtLeast(0)
 }
 data class TerminalCell(val x: Int, val y: Int, val text: String, val foreground: Int, val background: Int, val attributes: Int, val width: Int)
-data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>, val scroll: TerminalScroll = TerminalScroll(), val lines: List<List<TerminalCell>> = cells.groupBy {it.y}.let {groups->List(rows){groups[it].orEmpty()}}) {
+data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>, val scroll: TerminalScroll = TerminalScroll(), val lines: List<List<TerminalCell>> = cells.groupBy {it.y}.let {groups->List(rows){groups[it].orEmpty()}}, val inputFlags: Int=0) {
+    val applicationScroll: Boolean get()=inputFlags and 1!=0 || inputFlags and 6==6
     fun plainText(): String = (0 until rows).joinToString("\n") { y ->
         cells.asSequence().filter { it.y == y && it.width > 0 }.joinToString("") { it.text.ifEmpty { " " } }.trimEnd()
     }.trimEnd()
@@ -27,7 +28,7 @@ data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, va
             }
             val scroll=value.optJSONArray("scrollbar")
             return TerminalScreen(columns, rows, cursor?.getInt(0), cursor?.getInt(1), argb(value.getInt("foreground")), argb(value.getInt("background")), cells,
-                TerminalScroll(scroll?.optLong(0) ?: 0,scroll?.optLong(1) ?: 0,scroll?.optLong(2) ?: 0))
+                TerminalScroll(scroll?.optLong(0) ?: 0,scroll?.optLong(1) ?: 0,scroll?.optLong(2) ?: 0),inputFlags=value.optInt("input_flags"))
         }
     }
 }

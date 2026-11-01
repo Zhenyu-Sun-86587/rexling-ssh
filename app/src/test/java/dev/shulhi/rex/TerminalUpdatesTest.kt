@@ -40,4 +40,13 @@ class TerminalUpdatesTest {
         assertTrue(runCatching {decoder.decode(full)}.isFailure)
         assertEquals(1L,decoder.revision)
     }
+    @Test fun versionTwoCarriesApplicationInputModes() {
+        val legacy=packet(1,3,mapOf(0 to "x",1 to "y"))
+        val at=17+44 // frame flag/header, then input-mode byte before changed-row count
+        val current=legacy.copyOfRange(0,at)+byteArrayOf(3)+legacy.copyOfRange(at,legacy.size)
+        current[3]='2'.code.toByte()
+        val frame=TerminalUpdates().decode(current).screen!!
+        assertEquals(3,frame.inputFlags);assertTrue(frame.applicationScroll)
+    }
+
 }
