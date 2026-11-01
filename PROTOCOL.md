@@ -323,7 +323,10 @@ Clean Linux and configured Mac theme assertions pass through takeover/resume.
 The tested Mac command-session process metadata reports /usr/bin/login rather
 than nvim; exact foreground recognition is asserted on the Linux fixture only.
 
-A remote grid wider than the current card uses a temporary fitted font grid.
-Resize reports always use the requested font size, avoiding fit/resize feedback.
+The user's font size stays fixed. An explicit content tap takes control and sends
+the requested phone columns/rows with the takeover command, resizing the canonical
+PTY so full-screen programs redraw/reflow. Opening a tab does not take ownership;
+a wider terminal owned elsewhere can remain cropped until the user takes control.
 When a neighbor preview becomes active, dimensions are replayed even if its View
-size did not change. A colored last-column regression verifies the right edge.
+size did not change. Regressions verify the fixed font and requested grid. The
+pane indicator reserves 14 dp, down from 22 dp, reducing the gap above its dots.

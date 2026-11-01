@@ -412,3 +412,23 @@ ADB returned Success and the installed APK SHA256 matched:
 The artifact is `app/build/outputs/apk/release/app-release.apk` (15584982 bytes),
 with signature, arm64 libraries, 16 KiB alignment and ART profiles verified.
 `validation/apk.json` records it. App settings and saved connections were preserved.
+
+
+## Fixed-font reflow correction
+
+The automatic zoom-to-fit approach was rejected after delivery. It is removed:
+font size stays fixed while viewing desktop-width terminals. The user's selected
+policy is explicit takeover/reflow on content tap, not automatic control when a
+tab opens. The cached phone columns/rows now accompany takeover, resizing the
+actual PTY so its program redraws. A disposable 160-column terminal was tapped
+and reported 63 columns afterward, with the keyboard visible and the requested
+font preserved. The affected six Android renderer regressions pass, including
+a pixel assertion that wide remote frames do not shrink the font cells. Build,
+JVM checks, lint and Clippy pass. No extra broad benchmark pass was added.
+
+The multi-pane content/footer reservation is reduced from 22 dp to 14 dp; Latest
+moves with it. This reduces the space between terminal content and pane dots.
+The corrected release was installed on S22+ RFCT21390SD (ADB Success), and its
+installed APK hash matches `validation/apk.json`:
+`611bc0c2f3e2b8772f9aba4de6fcbcd468513e587b55b7251387673a3da3a3ef`.
+The prior zoom-to-fit screenshots/claims above are historical, not current policy.
