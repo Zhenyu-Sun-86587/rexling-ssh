@@ -38,4 +38,26 @@ class ModelsTest {
         assertEquals("\u001b[2~",TerminalInput.key("insert"))
     }
 
+    @Test fun shiftAndCombinedModifiersUseTerminalKeyParameters() {
+        assertEquals("\u001b[1;2D",TerminalInput.modified(TerminalInput.key("left"),false,false,true))
+        assertEquals("\u001b[1;6C",TerminalInput.key("right",control=true,shift=true))
+        assertEquals("\u001b[1;8A",TerminalInput.key("up",control=true,alt=true,shift=true))
+        assertEquals("\u001b[Z",TerminalInput.key("tab",shift=true))
+        assertEquals("\u001b[15;2~",TerminalInput.key("f5",shift=true))
+        assertEquals("\u001b[1;2P",TerminalInput.key("f1",shift=true))
+        assertEquals("\u001b[3;6~",TerminalInput.key("delete",control=true,shift=true))
+        assertEquals("A!_?",TerminalInput.modified("a1-/",false,false,true))
+        assertEquals("\u001b[1;2D",TerminalInput.modified("\u001b[1;2D",false,false,false))
+    }
+    @Test fun shiftTapIsOneShotWhileHoldSurvivesRepeatedKeysAndCancelClearsIt() {
+        val tapped=ShiftKeyState().press().release()
+        assertTrue(tapped.active);assertFalse(tapped.consume().active)
+        assertFalse(tapped.press().release().active)
+        val held=ShiftKeyState().press().consume().consume()
+        assertTrue(held.active);assertFalse(held.release().active)
+        assertFalse(ShiftKeyState().press().release(cancelled=true).active)
+        assertFalse(tapped.press().release(cancelled=true).active)
+        assertFalse("A late finger-up after navigation must not relatch Shift",ShiftKeyState().release().active)
+    }
+
 }

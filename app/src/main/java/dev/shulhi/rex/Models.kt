@@ -84,19 +84,44 @@ private fun argb(rgb: Int): Int = rgb or (0xff shl 24)
 private fun <T> JSONArray?.objects(map: (Any) -> T): List<T> = if (this == null) emptyList() else (0 until length()).map { map(get(it)) }
 
 object TerminalInput {
-    fun modified(text: String, control: Boolean, alt: Boolean): String {
-        val input = if (control && text.length == 1 && text[0].code in 0x40..0x7f) ((text[0].code and 0x1f).toChar()).toString() else text
-        return if (alt) "\u001b$input" else input
+    private val keys=mapOf(
+        "esc" to "\u001b", "tab" to "\t", "enter" to "\r", "backspace" to "\u007f",
+        "pageup" to "\u001b[5~", "pagedown" to "\u001b[6~",
+        "up" to "\u001b[A", "down" to "\u001b[B", "right" to "\u001b[C", "left" to "\u001b[D",
+        "insert" to "\u001b[2~", "delete" to "\u001b[3~", "home" to "\u001b[H", "end" to "\u001b[F",
+        "f1" to "\u001bOP", "f2" to "\u001bOQ", "f3" to "\u001bOR", "f4" to "\u001bOS",
+        "f5" to "\u001b[15~", "f6" to "\u001b[17~", "f7" to "\u001b[18~", "f8" to "\u001b[19~",
+        "f9" to "\u001b[20~", "f10" to "\u001b[21~", "f11" to "\u001b[23~", "f12" to "\u001b[24~")
+    fun modified(text: String, control: Boolean, alt: Boolean, shift: Boolean=false): String {
+        keys.entries.firstOrNull {it.value==text}?.let {return key(it.key,control,alt,shift)}
+        val shifted=if(shift && !text.startsWith("\u001b")) text.map {c->
+            val plain="`1234567890-=[]\\;',./"
+            val upper="~!@#$%^&*()_+{}|:\"<>?"
+            val i=plain.indexOf(c)
+            when {i>=0->upper[i];c in 'a'..'z'->c.uppercaseChar();else->c}
+        }.joinToString("") else text
+        val input=if(control && shifted.length==1 && shifted[0].code in 0x40..0x7f)
+            ((shifted[0].code and 0x1f).toChar()).toString() else shifted
+        return if(alt) "\u001b$input" else input
     }
-    fun key(name: String): String = when (name) {
-        "esc" -> "\u001b"; "tab" -> "\t"; "enter" -> "\r"; "backspace" -> "\u007f"
-        "pageup" -> "\u001b[5~"; "pagedown" -> "\u001b[6~"
-        "up" -> "\u001b[A"; "down" -> "\u001b[B"; "right" -> "\u001b[C"; "left" -> "\u001b[D"
-        "insert" -> "\u001b[2~"
-        "f1" -> "\u001bOP"; "f2" -> "\u001bOQ"; "f3" -> "\u001bOR"; "f4" -> "\u001bOS"
-        "f5" -> "\u001b[15~"; "f6" -> "\u001b[17~"; "f7" -> "\u001b[18~"; "f8" -> "\u001b[19~"
-        "f9" -> "\u001b[20~"; "f10" -> "\u001b[21~"; "f11" -> "\u001b[23~"; "f12" -> "\u001b[24~"
-        "home" -> "\u001b[H"; "end" -> "\u001b[F"; "delete" -> "\u001b[3~"
-        else -> ""
+    fun key(name: String, control: Boolean=false, alt: Boolean=false, shift: Boolean=false): String {
+        val sequence=keys[name] ?: return ""
+        val modifier=1+(if(shift) 1 else 0)+(if(alt) 2 else 0)+(if(control) 4 else 0)
+        if(modifier==1) return sequence
+        if(name=="tab" && shift) return (if(alt) "\u001b" else "")+"\u001b[Z"
+        if(sequence.startsWith("\u001b[") || sequence.startsWith("\u001bO")) {
+            val body=sequence.substring(2)
+            return if(body.endsWith("~")) "\u001b[${body.dropLast(1)};$modifier~" else "\u001b[1;$modifier${body.last()}"
+        }
+        val input=if(control && name=="backspace") "\b" else sequence
+        return if(alt) "\u001b$input" else input
     }
+}
+
+/** A short tap latches one Shift; holding keeps it active until release. */
+internal data class ShiftKeyState(val latched: Boolean=false,val held: Boolean=false,val used: Boolean=false) {
+    val active: Boolean get()=latched || held
+    fun press()=copy(held=true,used=false)
+    fun release(cancelled: Boolean=false)=if(!held) this else ShiftKeyState(latched=if(cancelled || used) false else !latched)
+    fun consume()=copy(latched=false,used=held)
 }

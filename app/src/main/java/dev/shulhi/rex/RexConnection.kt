@@ -37,6 +37,8 @@ internal class RexConnection(application: Application, private val scope: Corout
         private set
     var altModifier by mutableStateOf(false)
         private set
+    private var shiftState by mutableStateOf(ShiftKeyState())
+    val shiftModifier: Boolean get()=shiftState.active
     var navigationRequest by mutableStateOf(NavigationRequest())
         private set
     private val navigation = WorkspaceNavigation()
@@ -47,7 +49,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) resetModifiers();command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -81,6 +83,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                     }
                                     preferences.edit {putString("current_session:${next.endpoint}",next.selectedSession)}
                                 }
+                                if(!next.controlled || old.selectedBlock!=next.selectedBlock) resetModifiers()
                                 mutableState.value = next
                                 mutableTerminal.value=next.screen
                                 hasScreen=next.screen!=null
@@ -113,7 +116,9 @@ internal class RexConnection(application: Application, private val scope: Corout
             setState(state.value.copy(error=error))
         }
     }
+    private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
+        resetModifiers()
         val value = server.trim()
         navigationRequest = NavigationRequest()
         keyboardRequest=""
@@ -122,7 +127,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         preferences.edit { putString("endpoint", value) }
         command("connect", "server" to value)
     }
-    fun disconnect() { navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         if (id == (navigationRequest.session ?: state.value.selectedSession)) return
@@ -132,7 +137,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             preferences.edit { putString("last_session:${state.value.endpoint}",old) }
         }
         navigationRequest = NavigationRequest(session = id, id = ++navigationSerial)
-        controlModifier = false; altModifier = false;keyboardRequest=""
+        controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         command("session", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun selectBlock(id: String) {
@@ -141,7 +146,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
         if (current.windows.none { window -> window.blocks.any { it.id == id } }) return
         navigationRequest = NavigationRequest(block = id, id = ++navigationSerial)
-        controlModifier = false; altModifier = false;keyboardRequest=""
+        controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         navigation.remember(current.selectedSession, current.windows, id)
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
@@ -206,14 +211,14 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun closePane(session: String,id: String) {
         val current=state.value
         if(current.connected && !current.creating && !navigationRequest.pending && session==current.selectedSession) {
-            if(id==current.selectedBlock) {controlModifier=false;altModifier=false;keyboardRequest=""}
+            if(id==current.selectedBlock) {controlModifier=false;altModifier=false;shiftState=ShiftKeyState();keyboardRequest=""}
             command("close_pane","session" to session,"id" to id)
         }
     }
     fun closeTab(session: String,id: String,blocks: List<String>) {
         val current=state.value
         if(current.connected && !current.creating && !navigationRequest.pending && session==current.selectedSession) {
-            if(current.selectedBlock in blocks) {controlModifier=false;altModifier=false;keyboardRequest=""}
+            if(current.selectedBlock in blocks) {controlModifier=false;altModifier=false;shiftState=ShiftKeyState();keyboardRequest=""}
             command("close_tab","session" to session,"id" to id,"blocks" to org.json.JSONArray(blocks))
         }
     }
@@ -230,20 +235,23 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
             command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
     }
-    fun releaseControl() { controlModifier = false; altModifier = false;keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
+    fun releaseControl() { controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
         navigationRequest = NavigationRequest()
-        foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false;keyboardRequest=""
+        foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
         command("pause")
     }
     fun resume() { foreground = true; command("resume") }
     fun toggleControl() { controlModifier = !controlModifier }
     fun toggleAlt() { altModifier = !altModifier }
+    fun toggleShift() {shiftState=ShiftKeyState(latched=!shiftState.active)}
+    fun pressShift() {shiftState=shiftState.press()}
+    fun releaseShift(cancelled: Boolean) {shiftState=shiftState.release(cancelled)}
     fun type(text: String) {
         if (!visible || !state.value.controlled || state.value.creating || navigationRequest.pending || text.isEmpty()) return
-        val input = TerminalInput.modified(text, controlModifier, altModifier)
-        controlModifier = false; altModifier = false;keyboardRequest=""
+        val input = TerminalInput.modified(text, controlModifier, altModifier, shiftModifier)
+        controlModifier = false; altModifier = false;shiftState=shiftState.consume();keyboardRequest=""
         command("input", "text" to input)
     }
     fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}

@@ -441,7 +441,7 @@ class TerminalView(context: Context) : View(context) {
             KeyEvent.KEYCODE_MOVE_HOME -> "home"; KeyEvent.KEYCODE_MOVE_END -> "end"
             else -> null
         }
-        if (named != null) { onInput(TerminalInput.key(named)); return true }
+        if (named != null) { onInput(TerminalInput.key(named,event.isCtrlPressed,event.isAltPressed,event.isShiftPressed)); return true }
         val point = event.unicodeChar
         if (point != 0 && point and KeyCharacterMapCompat.COMBINING_ACCENT == 0) {
             onInput(TerminalInput.modified(String(Character.toChars(point)), event.isCtrlPressed, event.isAltPressed)); return true
