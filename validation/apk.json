@@ -1,8 +1,8 @@
 {
   "apk": "app/build/outputs/apk/debug/app-debug.apk",
   "application_label": "Rexlet",
-  "sha256": "d596333eb0a8d1f1957dc45797c6f3821b777c634582f802696d7625fecf932b",
-  "bytes": 37147933,
+  "sha256": "8c337154936573817467dd6fac58d3012f6654a3e651883f9b9731f7e171db00",
+  "bytes": 40996753,
   "signature_verified": true,
   "zip_alignment_16k": true,
   "permissions": [

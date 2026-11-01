@@ -198,3 +198,44 @@ Padding moved into TerminalView so background spans can extend the first/last
 visible rows and columns to the rounded card edges. Each adjacent color is
 preserved separately, including inverse and wide-cell styles. Glyphs/cursor stay
 clipped to the content rectangle. Resizes exclude the insets and footer space.
+
+
+## Multiple direct servers and shared session navigation
+
+Each saved host owns an independent native Session actor, control/data sockets,
+resume state and Ghostty replica. There is no multiplexing proxy or new server
+API. The coordinator saves host profiles and routes server-qualified local UI
+keys to the correct connection. Identical session IDs on different hosts cannot
+collide. Only the original Rex session ID is sent to that host. The header and
+search picker flatten connected hosts in saved order; disconnected hosts are
+omitted. Long-press history can return to a session on another host.
+
+Switching the visible host releases the old block claim, keeps its sockets and
+terminal state, and blocks stale hidden-view input/resize callbacks. Hidden
+hosts continue polling at a lower cadence. Foreground/background lifecycle
+applies to every connected actor. Releasing without a selected block is ignored.
+Disconnect/Forget only affect the selected local connection/profile; they never
+delete remote sessions. New sessions are created on the currently viewed host.
+
+Integration used two distinct existing owned endpoints:
+`https://rex.taildaac1.ts.net` (Linux, server API 7) and
+`https://shulhi-mbp-rex.taildaac1.ts.net` (Mac, server API 9, accepted the existing
+7–8 client negotiation). Both authenticated directly over the existing Tailscale
+HTTPS listeners. No server configuration or authentication settings changed.
+
+Reproduce the native two-host test with explicitly owned servers:
+
+```sh
+REX_TEST_SERVER=https://rex.taildaac1.ts.net \
+REX_TEST_SECOND_SERVER=https://shulhi-mbp-rex.taildaac1.ts.net \
+GHOSTTY_PREFIX="$PWD/.build/ghostty-host" CARGO_TARGET_DIR="$PWD/.build/rust" \
+cargo test --locked --manifest-path native/Cargo.toml \
+  live_two_servers_isolate_input_selection_and_lifecycle -- --ignored
+```
+
+The native test creates and destroys its own sessions. Android MultiServerTest
+requires two pre-created disposable shell fixtures passed as instrumentation
+arguments `server_a`, `server_b`, `session_a`, `session_b`; it intentionally skips
+without explicit fixture arguments. It writes only to those fixtures and checks
+host-isolated input, hidden-view rejection, shared session routing/jump-last,
+independent disconnect and lifecycle recovery. Destroy fixtures after running.

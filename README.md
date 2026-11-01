@@ -54,11 +54,13 @@ are a deliberately fixed working set; lint may report newer versions.
    identity; it does not embed a second VPN or send identity headers.
 2. Install the debug APK through Android Studio, or later run
    `adb install -r app/build/outputs/apk/debug/app-debug.apk` yourself.
-3. Open **Rex**. Connect to the prefilled server URL, or enter another explicit
+3. Open **Rexlet**. Connect to the prefilled server URL, or enter another explicit
    `https://`, `http://`, `wss://`, or `ws://` Rex server address.
-4. The header is a sideways session strip with neighboring names and position
-   dots. Swipe it to change sessions, tap the name to search the session list,
-   or long-press to jump to the last session. The list puts the current session
+4. **⋮ → Servers** saves additional hosts and keeps them connected together.
+   Switch hosts in that sheet, or swipe the header session name through all
+   sessions across connected servers, grouped in saved-server order. Server
+   names distinguish the sessions. Tap the name to search the combined list,
+   or long-press to jump to the last session, including on another server. The list searches both session and server names, puts the current session
    first, marks the last one, and offers **New** to create a session and shell.
    Attachment status and tab/pane counts come from Rex; no remote last-used
    timestamps are fabricated when the server doesn't supply them.
@@ -84,7 +86,9 @@ are a deliberately fixed working set; lint may report newer versions.
    until you take over. Explicit RGB from programs is preserved. Neovim configs
    that explicitly force `background` or a fixed colorscheme may override this.
    The menu also provides copy/paste, connection settings and font sizes 8–18 sp.
-   The default is 10 sp in bundled JetBrains Mono NL, independent of OEM fonts.
+   The default is 10 sp in bundled JetBrainsMonoNL Nerd Font Mono, independent
+   of OEM fonts. Powerline, devicons and Nerd Font symbols use one terminal cell;
+   the shell/editor must emit them. No font installation is needed on the server.
 
 Swipe vertically to browse the selected terminal's real Ghostty scrollback,
 including history imported in the initial Rex snapshot. Drag/fling, a mouse
@@ -92,14 +96,14 @@ wheel, and Shift+PageUp/PageDown scroll locally without taking ownership.
 **↓ Latest** jumps to live output; typing/pasting also returns to the bottom.
 Alternate-screen apps have their own scrolling and no terminal scrollback.
 
-Terminal cards span the screen width, aligned with the dock. Their 6 dp side /
+Terminal cards span the screen width, aligned with the dock. Their 12 dp side /
 8 dp top content insets extend the adjacent terminal cell backgrounds at each
 edge, including separate sidebar/editor colors. The cursor is a filled block.
-The header program tile uses a contrasting program-colored surface.
+The header and tab program tiles use matching reflective faces, thin rims and
+program colors. These are gradient highlights, without live backdrop blur.
 
-The compact header shows the selected program, its working directory (`~` for
-its real home), and the session name underneath. The header and tab icon stacks
-only appear for tabs with more than one pane. The session name still supports
+The 50 dp header shows the selected program, its working directory (`~` for
+its real home), and the session name underneath. Multiple panes stack their program tiles; single-pane tabs show one smaller tile. The session name still supports
 tap to open the picker, sideways swipe to cycle, and long-press to jump to last.
 
 Bundled logos cover Claude Code, Codex (OpenAI logo), Neovim, Vim, Git, Python
@@ -139,6 +143,12 @@ Existing authenticated Rex server
   Ghostty handle stay on one native owner thread.
 - `native/ghostty-source.json`: pinned Ghostty revision
   `f54340ad77814fe319d136e5e915d6a48de8dd23`, Zig 0.17.0, URLs and checksums.
+- `app/`: independent RexConnection instances retain a native actor and terminal
+  state for each saved connected server. The RexModel coordinator routes
+  server-qualified session keys to their owning connection; only actual session
+  IDs reach Rex. Hidden-view input callbacks cannot type into another host.
+  Switching releases the old claim while retaining its connection and viewport.
+  Lifecycle pause/resume applies to every connected host.
 - `app/`: Compose session picker and a Canvas view of Ghostty's cells. JNI state
   is polled only while foregrounded and is transferred only when its revision
   changes. The renderer preserves cell RGB colors, common styles, graphemes,
@@ -156,7 +166,9 @@ state, and falls back to a fresh snapshot if needed. Input with an uncertain
 outcome is never automatically resent. Terminals keep running on Rex while the
 app is away. There is no background/foreground service.
 
-The server URL, appearance choice, and current/last session IDs are persisted. Ticket/reconnect tokens remain in native
+Saved server names/URLs, desired connected hosts, the active server, appearance,
+and current/last session IDs are persisted. Disconnect affects one host; Forget
+removes its local profile and never deletes remote sessions. Ticket/reconnect tokens remain in native
 memory and are not returned by JNI. Cloud backup and device transfer of app data
 are excluded. The APK requests Internet access, with no analytics or account SDK.
 Plain HTTP is supported for an already secured tailnet listener; the app never
@@ -189,14 +201,16 @@ The font grid was verified on the S22+, and the build was installed there. Conti
 hardware keyboard behavior, font/emoji rendering, insets, rotation, Tailscale DNS,
 network loss and foreground/background transitions on the real phone.
 
-The current UI shows the active viewport. Scrollback navigation, touch selection,
+Touch selection,
 mouse reporting, graphics rendering, modern keyboard-protocol encoding and a
 production foreground-session policy are not implemented. Host tests cover the
 core/lifecycle logic. The emulator smoke run covers launch, native rendering and
 a live connection; it does not replace real-phone lifecycle/network-loss tests.
 
-JetBrains Mono NL 2.304 is bundled with its OFL license, pinned revision and
-checksums in the APK license assets.
+JetBrainsMonoNL Nerd Font Mono 3.5.1 (base JetBrains Mono 2.304) is bundled
+in regular/bold/italic/bold-italic, with its OFL, Nerd Fonts license/attributions,
+release URL and checksums in the APK license assets. UI labels retain the smaller
+unpatched JetBrains Mono family.
 
 Ghostty's MIT license is retained in `native/GHOSTTY_LICENSE.txt` and packaged in
 the APK assets. Rust and AndroidX dependencies are declared in Cargo.lock and

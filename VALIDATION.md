@@ -14,11 +14,11 @@ Older layout descriptions below are retained as historical validation notes.
 | Emulator live connection | Authenticated server connection and live terminal visible; control mode and keyboard observed |
 | Emulator crash log | No AndroidRuntime errors or libc fatal entries during smoke run |
 | `assembleDebug` | Passed; debug APK signed |
-| Kotlin model/navigation/appearance JVM tests | 16 passed |
-| Native offline unit tests | 10 passed |
-| Explicit real-server actor host tests | 2 passed on the existing Tailscale host; lifecycle and tab/pane creation |
+| Kotlin model/navigation/appearance JVM tests | 29 passed |
+| Native offline unit tests | 13 passed |
+| Explicit real-server actor host tests | 5 passed, including separate Mac/Linux hosts |
 | Actual JNI bridge on host JVM | Passed in earlier validation |
-| S22+ typography instrumentation | 1 passed; four bundled styles at every supported size |
+| Android instrumentation | 9 emulator tests passed; earlier base-font check passed on S22+ |
 | Latest mockup APK installed on S22+ | USB install returned Success |
 | Android `lintDebug` | No errors; version/target-scope suggestions remain |
 | Native Clippy with warnings denied | Passed |
@@ -251,3 +251,50 @@ ADB Success. SHA256:
 artwork, the launcher/gesture instrumentation class passed again and the actual
 192 px adaptive launcher render was visually inspected. The final header also
 renders its session chevron beside the session label.
+
+
+## Nerd Fonts, reflective tiles and connected-server navigation
+
+The terminal now bundles JetBrainsMonoNL Nerd Font Mono 3.5.1, base 2.304, in
+four styles. The release archive SHA256 is
+`04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf`.
+The source record, per-file hashes, licenses and attribution table ship in APK
+assets. Emulator typography tests verify ASCII and Nerd Font glyphs including
+Powerline, folder/terminal/devicons and supplementary U+F031D at all supported
+sizes and styles, each using exactly one terminal cell. No server-side font
+installation is required. Program tiles now share colored gradient faces,
+reflective highlights, a thin rim and shadow in the header and tabs.
+
+Saved servers retain independent native connections and terminal state. Real
+Mac and Linux endpoints authenticated through existing Tailscale HTTPS listeners.
+A native two-host regression verifies independent input, selection, disconnect
+and lifecycle. Android ViewModel instrumentation verifies two live actors,
+hidden-view input rejection, combined session selection, cross-server last-session
+history and removal of disconnected hosts from the catalog. JVM tests cover
+colliding session IDs on separate hosts, stable server grouping, disconnected
+hosts, loading-location preservation and correct per-host attachment counts.
+The previous test fixtures no longer existed at the first rerun; fresh owned
+fixtures were created and the complete instrumentation suite then passed.
+
+A real emulator header swipe crossed from the last Linux session to the first
+Mac session without takeover or typing; long-press returned to the Linux test
+session. The combined picker then selected the disposable Mac fixture. Dark and
+Light screenshots were inspected only on the fixtures. The header is 50 dp
+(previously 58 dp); front tiles are 30 dp in the header and 18 dp in tabs. The
+full-width terminal card retains 12 dp inner side padding, and the active tab
+uses a plain full-width 2 dp blue line with rounded touch feedback.
+
+Final verification: 29 JVM tests, 9 Android emulator instrumentation tests,
+18 native tests (13 offline + 5 live, unchanged native implementation), Clippy
+with warnings denied, debug APK/test APK builds, lint, signing and 16 KiB
+alignment all pass. The emulator's previous app preferences were restored and
+only the two newly created disposable server sessions were destroyed. Existing
+user sessions and server configuration remain intact. No phone UI automation
+was performed for this delivery.
+
+The final build was installed on Galaxy S22+ RFCT21390SD (SM_S906E) via USB;
+ADB returned Success. APK SHA256:
+`8c337154936573817467dd6fac58d3012f6654a3e651883f9b9731f7e171db00`.
+`validation/apk.json` records this signed artifact (40996753 bytes).
+Changes are committed separately for fonts, tile rendering, content spacing,
+multiple connections, cross-server sessions, compact chrome and documentation.
