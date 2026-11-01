@@ -366,3 +366,26 @@ F1-F4 use SS3 P/Q/R/S; F5-F12 use CSI 15/17/18/19/20/21/23/24~. Collapse or hidi
 the system keyboard resets the horizontal strip to Esc. Input still requires
 ownership. The pane overlay no longer arms an untimed toast when a swipe settles
 back to the same pane.
+
+
+## Shell identity, working state and keyboard reveal
+
+Known shell executables (fish/zsh/bash/etc.) keep their executable name as the
+header/default tab title. Their OSC title often repeats cwd, which already has
+a dedicated directory caption. Non-shell applications retain their reported task
+titles, and explicitly named tabs remain unchanged.
+
+Program status records with state=working and a matching foreground PID/name
+supply the `working` block-ID list in local metadata. Idle/blocked/done/error,
+cleared records and stale owners do not animate. No title-text heuristic is used.
+The active tab's existing blue underline gets a moving highlight; background
+working tabs and the header pulse their existing program tiles. No indicator
+adds width. Animation values are consumed in drawing/layer updates, and idle
+programs have no animation clock. Captions use explicit line heights without
+font padding so the session chevron aligns with the small text.
+
+The keyboard's leading chevron starts offscreen before Esc. A rightward swipe
+reveals it; collapse or hiding the IME restores the offset that hides it again.
+Normal keys share the available width, with a slightly wider Ctrl key and 3 dp
+gaps. The normal row has a minimum width for narrow displays and remains
+scrollable. The existing key palette and disabled-state opacity are preserved.

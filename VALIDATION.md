@@ -465,3 +465,35 @@ ADB returned Success; its installed base APK SHA256 matched the verified build:
 `354a19dbc7c1cee51df9706cac961b4a1105629ae0ecd92f56825c75a7d773ea`.
 `validation/apk.json` records signature, profiles and arm64 alignment checks.
 Saved phone connections and settings were preserved. Changes are committed per scope.
+
+
+## Shell captions, working underline and corrected keyboard reveal
+
+37 JVM tests pass, including shell-directory duplication and preserving Codex
+and custom task titles. All 19 offline native tests and the affected live
+selected/background program-status test pass; the live test transitions working
+to cleared and rejects stale ownership. Clippy with warnings denied and release
+build/lint pass. No unrelated full live or performance rerun was added.
+
+Emulator checks verify the chevron starts hidden before Esc, a rightward drag
+reveals it, F12 is available when expanded, and collapse hides the chevron again.
+The ordinary keys fill the width to the keyboard control. An initial gap assertion
+was corrected for Android's expanded minimum touch bounds (which can overlap
+slightly); screenshot inspection confirms the actual 3 dp painted gap. A drag
+starting farther from the system back edge verified the reveal gesture.
+
+Two screenshots of the active working tab showed 2,327 changed pixels within
+its bounds, verifying animation without extra indicator space. An idle report
+stopped the working state. The shell fixture visibly shows fish once as the
+header program and ~ as its separate directory. The final shell check was resumed
+after the standalone launcher instrumentation stopped the test activity; it
+passed after relaunch. The adaptive launcher test passed, and its rendered icon
+was visually checked. Only owned disposable fixtures were driven and removed;
+the emulator's original preferences were restored.
+
+The cropped dinosaur was prepared with built-in imagegen; source, hashes and
+prompt are in artwork/rexlink. Android supplies the white adaptive background.
+The final release was installed on S22+ RFCT21390SD with ADB Success; the installed
+base APK hash matches validation/apk.json:
+`f9b4d12bc54f8f19180ce105740a7b51a62bbc58e0784c7cd97cddf6f2a59b08`.
+Saved phone settings and connections were preserved. Changes are committed by scope.
