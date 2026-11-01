@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
     LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-            SessionHeader(state.sessions,displayedSession,window?.label.orEmpty(),state.connected,state.connected&&!state.creating,
+            SessionHeader(state.sessions,displayedSession,state.connected,state.connected&&!state.creating,
                 controlled,ready&&state.screen!=null,{picker="sessions"},model::selectSession,model::jumpLastSession,
                 {if(controlled) model.releaseControl() else model.takeControl()},expanded=picker=="sessions",menu={
                     Box {

@@ -93,7 +93,7 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
 internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font.jetbrains_mono_bold,FontWeight.Bold))
 
 @OptIn(ExperimentalFoundationApi::class)
-@Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String, windowTitle: String,
+@Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
     connected: Boolean, enabled: Boolean, controlled: Boolean, canControl: Boolean,
     onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, expanded: Boolean=false, menu: @Composable ()->Unit) {
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
@@ -133,8 +133,6 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
           }
         }
         if(!expanded) {
-        if(windowTitle.isNotBlank()) Text("/ $windowTitle",Modifier.widthIn(max=80.dp).padding(start=4.dp,end=9.dp),
-            fontFamily=MonoUi,fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
         Box(Modifier.height(31.dp).clip(RoundedCornerShape(18.dp))
             .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(canControl) .45f else .15f),RoundedCornerShape(18.dp))
             .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)

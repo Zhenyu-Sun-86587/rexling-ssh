@@ -98,13 +98,11 @@ import kotlin.math.roundToInt
                             Text(if(center) "Opening terminal…" else block.label,fontFamily=MonoUi,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    Row(Modifier.fillMaxWidth().height(30.dp).clickable(role=Role.Button,onClick=onPanes)
+                    Row(Modifier.fillMaxWidth().height(22.dp).clickable(role=Role.Button,onClick=onPanes)
                         .semantics {contentDescription="Pane ${i+1} of ${blocks.size}. Switch pane"},
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.Center) {
                         if(blocks.size>1) {
                             PositionDots(i,blocks.size)
-                            Spacer(Modifier.width(9.dp))
-                            Text("pane ${i+1}/${blocks.size} · swipe to switch",fontSize=9.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -117,10 +115,7 @@ import kotlin.math.roundToInt
                     Box(Modifier.size(29.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary),contentAlignment=Alignment.Center) {
                         Text((candidate+1).toString(),fontFamily=MonoUi,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onPrimary,fontSize=14.sp)
                     }
-                    Column {
-                        Text(blocks[candidate].label,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
-                        Text("pane ${candidate+1} / ${blocks.size}",fontFamily=MonoUi,fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    Text(blocks[candidate].label,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
                 }
                 Spacer(Modifier.height(9.dp));PositionDots(candidate,blocks.size)
             }
