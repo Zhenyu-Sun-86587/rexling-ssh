@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,29 +42,45 @@ import kotlin.math.roundToInt
     var dragging by remember {mutableStateOf(false)}
     var settling by remember {mutableStateOf(false)}
     var toast by remember {mutableStateOf(false)}
+    var settlingTarget by remember {mutableStateOf<String?>(null)}
     val latestSelect by rememberUpdatedState(onSelect)
     val index=blocks.indexOfFirst {it.id==visualId}.coerceAtLeast(0)
-    LaunchedEffect(selectedBlock) {if(!settling && !dragging) {visualId=selectedBlock;drag=0f}}
-    LaunchedEffect(visualId) {toast=true;delay(1000);toast=false}
+    LaunchedEffect(selectedBlock,settling,dragging) {
+        if(!settling && !dragging && visualId!=selectedBlock) {
+            Snapshot.withMutableSnapshot {visualId=selectedBlock;settlingTarget=selectedBlock;drag=0f;toast=true}
+        }
+    }
+    // Start the dismissal timer only after motion ends, without hiding the badge
+    // between the animation and its post-switch display.
+    LaunchedEffect(visualId,toast,dragging,settling) {
+        if(toast && !dragging && !settling) {delay(1000);toast=false}
+    }
     BoxWithConstraints(modifier.clipToBounds()) {
         val cardWidth=maxWidth.coerceAtLeast(80.dp)
         val cardLeft=0.dp
         val stride=with(LocalDensity.current){(cardWidth+8.dp).toPx()}
         val leftPx=with(LocalDensity.current){cardLeft.toPx()}
-        val candidate by remember(index,stride,blocks.size) {derivedStateOf {
-            (index+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
+        val candidate by remember(stride,blocks) {derivedStateOf {
+            if(settling || toast) blocks.indexOfFirst {it.id==(settlingTarget ?: visualId)}.coerceAtLeast(0) else {
+                val current=blocks.indexOfFirst {it.id==visualId}.coerceAtLeast(0)
+                (current+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
+            }
         }}
         val flingSpeed=with(LocalDensity.current){450.dp.toPx()}
         fun finish(dx: Float,velocity: Float) {
             val step=if(dx < -stride*.18f || (dx< -20f && velocity < -flingSpeed)) 1 else if(dx > stride*.18f || (dx>20f && velocity>flingSpeed)) -1 else 0
             val target=(index+step).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
-            dragging=false;toast=false;settling=true
+            Snapshot.withMutableSnapshot {
+                settlingTarget=blocks.getOrNull(target)?.id;toast=target!=index;settling=true;dragging=false
+            }
             if(target!=index) blocks.getOrNull(target)?.let {latestSelect(it.id)}
             scope.launch {
                 val animation=Animatable(drag)
                 animation.animateTo(if(target==index) 0f else if(target>index) -stride else stride,tween(190)) {drag=value}
-                if(target!=index) visualId=blocks[target].id
-                drag=0f;settling=false
+                Snapshot.withMutableSnapshot {
+                    if(target!=index) visualId=blocks[target].id
+                    drag=0f;settling=false
+                }
             }
         }
         for(i in (index-1).coerceAtLeast(0)..(index+1).coerceAtMost(blocks.lastIndex)) {
@@ -92,7 +110,7 @@ import kotlin.math.roundToInt
                                 view.onScroll=if(center && block.id==liveBlock) onScroll else {_->}
                                 view.onPaneDrag=if(center) {dx,active ->
                                     if(!settling) {
-                                        dragging=active
+                                        dragging=active;toast=false
                                         drag=if((index==0&&dx>0)||(index==blocks.lastIndex&&dx<0)) dx*.2f else dx
                                         if(!active) drag=0f
                                     }
@@ -122,7 +140,8 @@ import kotlin.math.roundToInt
             }
         }
         if((dragging || settling || toast) && blocks.size>1 && blocks.getOrNull(candidate)!=null) {
-            Column(Modifier.align(Alignment.BottomCenter).padding(bottom=58.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+            Column(Modifier.align(Alignment.BottomCenter).padding(bottom=58.dp)
+                .semantics {contentDescription="Pane switch indicator";stateDescription=blocks[candidate].id},horizontalAlignment=Alignment.CenterHorizontally) {
                 Row(Modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal=15.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     val program=programs[blocks[candidate].id] ?: ProgramIdentity.Terminal
