@@ -77,6 +77,7 @@ impl Drop for Session {
 }
 
 type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Value)>>>>>;
+type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 struct Actor {
     shared: Arc<Mutex<Shared>>,
@@ -106,6 +107,9 @@ struct Actor {
     dirty: bool,
     preview_task: Option<PreviewTask>,
     summary_task: Option<SummaryTask>,
+    program_task: Option<ProgramTask>,
+    programs: Value,
+    program_refresh: tokio::time::Instant,
     preview_updates: BTreeMap<String, Value>,
     session_details: Value,
 }
@@ -139,6 +143,9 @@ impl Actor {
             dirty: false,
             preview_task: None,
             summary_task: None,
+            program_task: None,
+            programs: json!({}),
+            program_refresh: tokio::time::Instant::now(),
             preview_updates: BTreeMap::new(),
             session_details: json!({}),
         }
@@ -149,7 +156,7 @@ impl Actor {
             shared.json=json!({"revision":shared.revision,"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"screen":self.screen,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -207,10 +214,22 @@ impl Actor {
                     self.summary_task=None;
                     if let Ok(details)=result {self.session_details=details;self.publish();}
                 },
+                result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.program_task=None;
+                    if let Ok(programs)=result {self.programs=programs;self.publish();}
+                },
                 _=async {if active {paint.tick().await;}else{pending::<()>().await;}}=>{
                     if self.retry.is_some_and(|at|at<=tokio::time::Instant::now())&&!self.paused {
                         self.retry=None;
                         if let Err(e)=self.reconnect().await{self.recover(e);}
+                    }
+                    if self.phase=="connected" && self.program_task.is_none() && !self.selected_session.is_empty()
+                        && self.program_refresh<=tokio::time::Instant::now()
+                    {
+                        let ids=self.windows.as_array().into_iter().flatten().flat_map(|w|
+                            w["blocks"].as_array().into_iter().flatten().filter_map(|b|b["id"].as_str().map(str::to_owned))).collect();
+                        self.program_task=Some(program_task(self.endpoint.clone().unwrap(),self.selected_session.clone(),ids));
+                        self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
                     }
                     if self.dirty {
                         self.dirty=false;
@@ -238,8 +257,10 @@ impl Actor {
     async fn disconnect(&mut self) {
         self.preview_task = None;
         self.summary_task = None;
+        self.program_task = None;
         self.preview_updates.clear();
         self.session_details = json!({});
+        self.programs = json!({});
         self.retry = None;
         self.control_token = None;
         self.data_resume = None;
@@ -254,6 +275,7 @@ impl Actor {
     fn lose_connections(&mut self) {
         self.preview_task = None;
         self.summary_task = None;
+        self.program_task = None;
         if let Some(c) = self.control.take() {
             self.control_token = c.token().map(str::to_owned);
             drop(c);
@@ -360,7 +382,27 @@ impl Actor {
             }
             windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks}));
         }
-        self.windows = json!(windows);
+        let next = json!(windows);
+        let ids = |windows: &Value| -> Vec<String> {
+            windows
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|w| {
+                    w["blocks"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|b| b["id"].as_str().map(str::to_owned))
+                })
+                .collect()
+        };
+        if ids(&self.windows) != ids(&next) {
+            self.program_task = None;
+            self.programs = json!({});
+            self.program_refresh = tokio::time::Instant::now();
+        }
+        self.windows = next;
         if !self.selected_block.is_empty() && !selected_exists {
             self.data = None;
             self.data_resume = None;
@@ -436,6 +478,17 @@ impl Actor {
                     .as_str()
                     .zip(self.control.as_ref().and_then(|c| c.client_id()))
                     .is_some_and(|(owner, client)| owner == client);
+            }
+            if matches!(
+                event["type"].as_str(),
+                Some(
+                    "process_changed"
+                        | "program_status_changed"
+                        | "program_status_removed"
+                        | "child_exited"
+                )
+            ) {
+                self.program_refresh = tokio::time::Instant::now();
             }
             if event["type"] == "child_exited" {
                 self.notice = format!("Program exited ({})", event["exit_code"]);
@@ -591,6 +644,9 @@ impl Actor {
             "session" => {
                 self.preview_task = None;
                 self.summary_task = None;
+                self.program_task = None;
+                self.programs = json!({});
+                self.program_refresh = tokio::time::Instant::now();
                 self.preview_updates.clear();
                 let session = value["id"]
                     .as_str()
@@ -882,6 +938,64 @@ fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Previe
         .context("pane preview timed out")?
     })
 }
+// Only executable identifiers cross JNI. No cwd, user IDs or command arguments.
+fn program_candidates(process: &Value, status: &Value) -> Value {
+    let foreground = &process["foreground"];
+    let mut names: Vec<String> = Vec::new();
+    let mut add = |value: &Value| {
+        if let Some(name) = value.as_str().filter(|s| !s.is_empty()) {
+            let name: String = name.chars().take(512).collect();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    };
+    if foreground["pid"].is_number() && foreground["name"].is_string() {
+        for record in status["records"].as_array().into_iter().flatten() {
+            // Never label a new foreground program using an old status record.
+            if record["owner"]["pid"] == foreground["pid"]
+                && record["owner"]["name"] == foreground["name"]
+            {
+                add(&record["effective_app"]);
+                add(&record["app"]);
+            }
+        }
+    }
+    let source = if foreground.is_object() {
+        foreground
+    } else {
+        &process["child"]
+    };
+    for key in ["script", "argv0", "invoked_path", "path", "name"] {
+        add(&source[key]);
+    }
+    json!(names)
+}
+fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> ProgramTask {
+    Box::pin(async move {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            let mut control = Control::connect(endpoint, None, Trace::default()).await?;
+            control
+                .call("client.set_label", json!({"label":"rex-android-programs"}))
+                .await?;
+            control.attach(&session).await?;
+            let mut programs = serde_json::Map::new();
+            for id in ids.into_iter().take(64) {
+                if let Ok(process) = control.terminal(&session, &id, "process", json!({})).await {
+                    let status = control
+                        .terminal(&session, &id, "program_status", json!({}))
+                        .await
+                        .unwrap_or(Value::Null);
+                    programs.insert(id, program_candidates(&process, &status));
+                }
+            }
+            let _ = control.close().await;
+            Ok::<_, anyhow::Error>(Value::Object(programs))
+        })
+        .await
+        .context("program metadata timed out")?
+    })
+}
 fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask {
     Box::pin(async move {
         tokio::time::timeout(Duration::from_secs(8), async {
@@ -903,7 +1017,9 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
                 let mut lost = false;
                 for client in clients.as_array().into_iter().flatten() {
                     if client["info"]["label"].as_str().is_some_and(|s| {
-                        s.starts_with("rex-android-preview") || s.starts_with("rex-android-summary")
+                        s.starts_with("rex-android-preview")
+                            || s.starts_with("rex-android-summary")
+                            || s.starts_with("rex-android-programs")
                     }) {
                         continue;
                     }
@@ -993,6 +1109,27 @@ fn frame_json(frame: Frame) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn program_candidates_ignore_stale_status_owners_and_private_process_fields() {
+        let process = json!({"foreground":{"pid":12,"name":"node","script":"/tools/agent.js","argv0":"node","cwd":"/private/work","argv":["secret"]}});
+        let status = json!({"records":[
+            {"app":"wrong-pid","owner":{"pid":11,"name":"node"}},
+            {"app":"reused-pid","owner":{"pid":12,"name":"python"}},
+            {"effective_app":"claude-code","owner":{"pid":12,"name":"node"}}
+        ]});
+        assert_eq!(
+            program_candidates(&process, &status),
+            json!(["claude-code", "/tools/agent.js", "node"])
+        );
+        assert_eq!(
+            program_candidates(
+                &json!({"foreground":null,"child":{"argv0":"-fish","name":"fish"}}),
+                &status
+            ),
+            json!(["-fish", "fish"])
+        );
+        assert_eq!(program_candidates(&json!({}), &status), json!([]));
+    }
     #[test]
     fn offline_preview_runs_on_the_owner_thread_and_polls_by_revision() {
         let session = Session::spawn().unwrap();
@@ -1197,6 +1334,81 @@ mod tests {
             app.command(json!({"type":"theme","args":theme(false)}))
                 .unwrap();
             wait(&app, |v| text(v).contains("BG=dark"));
+            wait(&app, |v| {
+                v["programs"][block].as_array().is_some_and(|a| {
+                    a.iter().any(|n| {
+                        n.as_str()
+                            .is_some_and(|n| n == "nvim" || n.ends_with("/nvim"))
+                    })
+                })
+            });
+            app.command(json!({"type":"disconnect"})).unwrap();
+            wait(&app, |v| v["phase"] == "disconnected");
+        }));
+        runtime
+            .block_on(writer.call("session.destroy", json!({"session_id":id})))
+            .unwrap();
+        runtime.block_on(writer.close()).unwrap();
+        result.unwrap();
+    }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_program_icons_follow_reports_in_selected_and_background_tabs() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut writer = runtime
+            .block_on(Control::connect(
+                Endpoint::new(&server, Duration::from_secs(10)).unwrap(),
+                None,
+                Trace::default(),
+            ))
+            .unwrap();
+        let script = r#"stty -echo; printf '\033]7501;state=idle:app=claude-code\007ICON_READY\n'; while IFS= read -r line; do case "$line" in codex) printf '\033]7501;state=idle:app=codex\007';; clear) printf '\033]7501;state=clear\007';; esac; done"#;
+        let created=runtime.block_on(writer.call("session.create",json!({
+            "label":format!("rex-android-program-test-{}",std::process::id()),
+            "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}},
+                {"layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}}]
+        }))).unwrap();
+        let id = created["session_id"].as_str().unwrap();
+        let first = created["initial_windows"][0]["block_ids"][0]
+            .as_str()
+            .unwrap();
+        let second = created["initial_windows"][1]["block_ids"][0]
+            .as_str()
+            .unwrap();
+        runtime.block_on(writer.attach(id)).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let app = Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":server}))
+                .unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":id})).unwrap();
+            wait(&app, |v| v["selectedSession"] == id);
+            app.command(json!({"type":"block","id":first})).unwrap();
+            wait(&app, |v| {
+                text(v).contains("ICON_READY") && v["programs"][first][0] == "claude-code"
+            });
+            runtime
+                .block_on(writer.terminal(id, first, "write", json!({"data":"codex\n"})))
+                .unwrap();
+            wait(&app, |v| v["programs"][first][0] == "codex");
+            app.command(json!({"type":"block","id":second})).unwrap();
+            wait(&app, |v| {
+                v["selectedBlock"] == second && !v["screen"].is_null()
+            });
+            runtime
+                .block_on(writer.terminal(id, first, "write", json!({"data":"clear\n"})))
+                .unwrap();
+            let updated = wait(&app, |v| {
+                v["programs"][first].as_array().is_some_and(|a| {
+                    !a.is_empty() && a.iter().all(|x| x != "codex" && x != "claude-code")
+                })
+            });
+            assert_eq!(updated["selectedBlock"], second);
+            assert_eq!(updated["controlled"], false);
             app.command(json!({"type":"disconnect"})).unwrap();
             wait(&app, |v| v["phase"] == "disconnected");
         }));
@@ -1286,6 +1498,11 @@ mod tests {
             let summary = wait(&app, |v| v["sessionDetails"][id]["tabs"] == 2);
             assert_eq!(summary["sessionDetails"][id]["panes"], 3);
             assert_eq!(summary["sessionDetails"][id]["attachment"], "this device");
+            let metadata = wait(&app, |v| {
+                v["programs"].as_object().is_some_and(|p| p.len() == 3)
+            });
+            assert_eq!(metadata["selectedBlock"], pane["selectedBlock"]);
+            assert_eq!(metadata["controlled"], pane["controlled"]);
 
             app.command(json!({"type":"new_session","label":format!("rex-android-new-session-test-{}",std::process::id())})).unwrap();
             let fresh = wait(&app, |v| {
