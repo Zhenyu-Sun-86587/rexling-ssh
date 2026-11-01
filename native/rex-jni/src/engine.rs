@@ -971,6 +971,10 @@ impl Actor {
         ensure!(!self.selected_block.is_empty(),"Choose a terminal first");
         self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
         self.refresh_view().await?;self.apply_theme().await?;
+        // A focus notification makes programs re-query even if set_theme was
+        // deduplicated because the canonical terminal already had these colors.
+        self.control.as_mut().context("not connected")?.call("block.event",json!({"session_id":self.selected_session,"block_id":self.selected_block,
+            "event":{"type":"focus","payload":{"action":"in"}}})).await?;
         self.notice="You control this terminal".into();self.publish();Ok(())
     }
     async fn apply_theme(&mut self) -> Result<()> {
@@ -1437,11 +1441,16 @@ mod tests {
                 Trace::default(),
             ))
             .unwrap();
+        let mut nvim_command=vec![std::env::var("REX_TEST_NVIM_BIN").unwrap_or_else(|_|"nvim".into())];
+        if std::env::var_os("REX_TEST_NVIM_CONFIGURED").is_none(){nvim_command.push("--clean".into());}
+        let indicator=if std::env::var_os("REX_TEST_NVIM_CONFIGURED").is_some() {
+            "lua vim.defer_fn(function() local function bg() vim.api.nvim_echo({{'BG='..vim.o.background}},false,{}) end; vim.api.nvim_create_autocmd('OptionSet',{pattern='background',callback=bg}); bg() end,1500)"
+        } else {"set laststatus=2 statusline=BG=%{&background}"};
+        nvim_command.extend(["-n","-i","NONE","-c",indicator].map(str::to_owned));
         let created = runtime.block_on(writer.call("session.create", json!({
             "label":format!("rex-android-nvim-test-{}",std::process::id()),
             "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell",
-                "options":{"shell":"none","command":["/bin/sh","-c",
-                    "exec nvim --clean -n -i NONE -c 'set laststatus=2 statusline=BG=%{&background}'"]}}}}]
+                "options":{"shell":"none","command":nvim_command}}}}]
         }))).unwrap();
         let id = created["session_id"].as_str().unwrap();
         let block = created["initial_windows"][0]["block_ids"][0]
@@ -1506,7 +1515,9 @@ mod tests {
             app.command(json!({"type":"theme","args":theme(false)}))
                 .unwrap();
             wait(&app, |v| text(v).contains("BG=dark"));
-            wait(&app, |v| {
+            // Command-session foreground metadata on the tested Mac server reports
+            // /usr/bin/login. Keep strict recognition coverage on the Linux fixture.
+            if std::env::var_os("REX_TEST_NVIM_BIN").is_none() {wait(&app, |v| {
                 v["programs"][block].as_array().is_some_and(|a| {
                     a.iter().any(|n| {
                         n.as_str()
@@ -1514,6 +1525,7 @@ mod tests {
                     })
                 })
             });
+            }
             app.command(json!({"type":"disconnect"})).unwrap();
             wait(&app, |v| v["phase"] == "disconnected");
         }));
