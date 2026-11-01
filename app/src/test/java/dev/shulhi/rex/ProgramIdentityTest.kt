@@ -52,4 +52,16 @@ class ProgramIdentityTest {
         assertEquals("Terminal 3",ProgramIdentity.Terminal.tabTitle("","",3))
     }
 
+    @Test fun shellsShowExecutableNamesInsteadOfRepeatingTheirDirectoryTitles() {
+        for (executable in listOf("-fish", "/bin/zsh", "/bin/bash", "/usr/bin/dash", "pwsh.exe")) {
+            val shell=ProgramIdentity.resolve(listOf(executable))
+            assertEquals(shell.title,shell.paneTitle("shell","~/code/project"))
+            assertEquals(shell.title,shell.tabTitle("shell","shell",1,"~/code/project"))
+            assertEquals("deploy",shell.tabTitle("deploy","shell",1,"~/code/project"))
+        }
+        assertEquals("fish",ProgramIdentity.resolve(listOf("-fish")).paneTitle("shell","~"))
+        assertEquals("Investigate Rex protocol",ProgramIdentity.resolve(listOf("codex")).paneTitle("shell","Investigate Rex protocol"))
+        assertEquals("Custom task",ProgramIdentity.resolve(listOf("my-agent")).paneTitle("shell","Custom task"))
+    }
+
 }

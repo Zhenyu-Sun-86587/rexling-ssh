@@ -10,9 +10,13 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String) {
         ProgramKind.NODE -> "node"; ProgramKind.SSH -> "ssh"; ProgramKind.TMUX -> "tmux"
         ProgramKind.MONITOR -> "monitor"; ProgramKind.TERMINAL -> label
     }
+    /** Shell OSC titles usually describe cwd; keep the executable name above the directory. */
+    private val isShell: Boolean get() = kind == ProgramKind.TERMINAL &&
+        label.lowercase(Locale.ROOT).removeSuffix(".exe") in shellNames
+
     /** A task title is presentation only; executable identity still chooses the icon. */
     fun paneTitle(paneLabel: String, reportedTitle: String = ""): String =
-        reportedTitle.takeIf { it.isNotBlank() } ?: paneLabel.takeUnless(::genericTitle) ?: title
+        if (isShell) title else reportedTitle.takeIf { it.isNotBlank() } ?: paneLabel.takeUnless(::genericTitle) ?: title
 
     /** Explicit tab names stay put; defaults follow the remembered focused pane. */
     fun tabTitle(windowLabel: String, paneLabel: String, number: Int, reportedTitle: String = ""): String {
@@ -22,6 +26,7 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String) {
     }
 
     companion object {
+        private val shellNames = setOf("fish", "zsh", "bash", "sh", "dash", "ash", "ksh", "mksh", "tcsh", "csh", "nu", "nushell", "pwsh", "powershell", "cmd")
         private val defaultTitle = Regex("(?:Window [0-9a-f]+|Terminal \\d+)", RegexOption.IGNORE_CASE)
         private fun genericTitle(value: String): Boolean = value.isBlank() ||
             value.lowercase(Locale.ROOT) in setOf("shell", "terminal", "window") || defaultTitle.matches(value)
