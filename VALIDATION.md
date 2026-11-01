@@ -547,3 +547,12 @@ The installed S22+ release hash was read back and matched:
 `561e5fdc370b01568cfef5f33d89c9259cc1258380cf1b2dea56624f206c573c`.
 This supersedes the briefly installed opaque paper-icon build. The final APK
 signature, non-debuggable setting, native alignment and ART profiles are verified.
+
+
+## Close controls and shareable release — 2026-11-01
+
+Targeted live native close test passed: stale-session and changed-tab guards, background ownership preservation, repeated missing-pane close, active-neighbor selection and final empty session. Clippy with warnings denied passed. Debug/release builds, release lint and 42 JVM tests passed, including fresh-install/legacy-server migration checks.
+
+Emulator checks exercised tab long-press and pane-picker close, cancellation and confirmation. The last-pane helper initially indexed an omitted `windows` field; the empty-session check was corrected to accept the server's omitted field. Fresh-install setup and offline preview were checked. Physical interaction remains for user testing.
+
+The optimized, non-debuggable release is copied to `dist/Rexlink-0.1.0-arm64-release.apk` with a SHA256 sidecar. Signature, native alignment and ART profiles passed verification. Installed S22+ base APK readback matches SHA256 `3782dee4540e3afb23baf54a7f1ddf23c22f7865dde2cf0c08c332da99d7c5a1`. Existing phone data was preserved. Fresh installs no longer contain a preset personal server.

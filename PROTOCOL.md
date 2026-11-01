@@ -417,3 +417,10 @@ and Display-P3 colors into packaged PNG tiles. Runtime Android rendering needs
 no browser or network request. Supported kinds use those tiles in the header,
 tabs, pane picker and swipe preview; unsupported kinds retain their fallback.
 The user's final transparent launcher PNG is copied exactly, preserving alpha.
+
+
+## Closing tabs and panes
+
+Verified `block.close` with explicit `session_id` and `block_id`, and `session.close_window` with explicit `session_id` and `window_id`. A tab close ends every program in the window; closing its final pane also removes that window. The session can remain empty, and `session.view` may omit `windows` then.
+
+Commands bind the selected session and explicit target. Tab confirmation also binds the pane-ID list and rejects changed membership before sending. Typed `not_found` / `session_not_found` are treated as already gone; uncertain network failures are not retried. Background closes preserve the active stream and control. Closing the selected target opens a neighbor read-only, without resizing or taking ownership.
