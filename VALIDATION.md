@@ -579,3 +579,12 @@ Updated shareable APK: `dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `5b0b7c8e9
 Connected, ready terminals now retain full keyboard icon contrast when not owned. Interactivity still requires ownership. Disconnected/busy controls retain their inactive styling. Program catalog tiles were already independent of ownership and are unchanged.
 
 All six emulator keyboard tests pass. The added regression compares every toolbar pixel before/after switching to read-only mode, then asserts disabled semantics and no emitted input when those keys are tapped. The 44 JVM tests, debug/release builds, release lint and APK checks pass. Updated shareable release SHA256: `62c65b9d404789bc45b35e0367eefb6665cc51c12ae7ab5694369bcd7066bd02`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; existing settings preserved.
+
+
+## Pane indicator continuity and pointer ownership toggle — 2026-11-02
+
+The swipe badge retains the target pane through settling and the timed display; its dismissal timer starts after motion. Animation handoff state updates together, and badge identity stays bound to the target instead of briefly using an old composition index. Derived state preserves the existing efficient animation rendering. Cancelled gestures clear the badge without resurrecting it.
+
+Two manual-clock emulator tests pass: sampling 22 frames across the handoff verifies continuous visibility and target identity, and a cancelled gesture stays dismissed after settling and the old timeout. A third test verifies take/release action semantics, selected state and the long-press label on the pointer-only ownership toggle. The intermediate cached-index variant failed a handoff assertion and was corrected before delivery. No eye icon is used for ownership.
+
+All 44 JVM tests, debug/release builds and release lint pass; APK checks pass. Updated shareable artifact SHA256: `7e29850bb61ee16cc9826022faa646be72733fb89d90d1d4cc012ee27ed5c19f`. Installed on S22+ RFCT21390SD with matching installed base APK hash; settings preserved.
