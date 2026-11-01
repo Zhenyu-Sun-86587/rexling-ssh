@@ -118,6 +118,9 @@ struct Actor {
     directories: Value,
     titles: Value,
     working: Value,
+    title_owners: Value,
+    title_events: BTreeMap<String, Value>,
+    process_events: BTreeMap<String, Value>,
     program_refresh: tokio::time::Instant,
     preview_updates: BTreeMap<String, Value>,
     session_details: Value,
@@ -159,6 +162,9 @@ impl Actor {
             directories: json!({}),
             titles: json!({}),
             working: json!([]),
+            title_owners: json!({}),
+            title_events: BTreeMap::new(),
+            process_events: BTreeMap::new(),
             program_refresh: tokio::time::Instant::now(),
             preview_updates: BTreeMap::new(),
             session_details: json!({}),
@@ -193,6 +199,11 @@ impl Actor {
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         heartbeat.tick().await;
         loop {
+            // RPC replies can carry earlier events; consume those before reading the socket again.
+            if let Some(event)=self.control.as_mut().and_then(|c|c.events.pop_front()) {
+                if let Err(error)=self.event(event).await {self.recover(error);}
+                continue;
+            }
             let active = !self.paused;
             tokio::select! {
                 value=rx.recv()=>{
@@ -244,7 +255,7 @@ impl Actor {
                 },
                 result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.program_task=None;
-                    if let Ok(details)=result {self.programs=details["programs"].clone();self.directories=details["directories"].clone();self.titles=details["titles"].clone();self.working=details["working"].clone();self.publish();}
+                    if let Ok(details)=result {self.apply_program_details(details);self.publish();}
                 },
                 _=async {if active {tokio::time::sleep_until(if self.dirty && self.visible {render_at}else{maintenance_at}).await;}else{pending::<()>().await;}}=>{
                     let now=tokio::time::Instant::now();
@@ -271,7 +282,6 @@ impl Actor {
                             }
                         }
                     }
-                    if let Some(c)=&mut self.control {c.drain_events();}
                 },
                 _=async {if active {heartbeat.tick().await;}else{pending::<()>().await;}}=>{
                     let result=async {
@@ -292,7 +302,7 @@ impl Actor {
         self.preview_updates.clear();
         self.session_details = json!({});
         self.programs = json!({});
-        self.directories = json!({});self.titles=json!({});self.working=json!([]);
+        self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
         self.retry = None;
         self.control_token = None;
         self.data_resume = None;
@@ -432,7 +442,7 @@ impl Actor {
         if ids(&self.windows) != ids(&next) {
             self.program_task = None;
             self.programs = json!({});
-            self.directories = json!({});self.titles=json!({});self.working=json!([]);
+            self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
             self.program_refresh = tokio::time::Instant::now();
         }
         self.windows = next;
@@ -459,6 +469,40 @@ impl Actor {
         self.set_view(&view);
         self.publish();
         Ok(())
+    }
+    fn apply_program_details(&mut self, details: Value) {
+        self.programs=details["programs"].clone();self.directories=details["directories"].clone();
+        self.titles=details["titles"].clone();self.working=details["working"].clone();
+        self.title_owners=details["owners"].clone();
+        for (id,owner) in &self.process_events {
+            if !same_process(&self.title_owners[id],owner) {self.titles[id]=json!("");}
+            self.title_owners[id]=owner.clone();
+        }
+        // A slow polling response must never replace a newer streamed title frame.
+        for (id,event) in &self.title_events {
+            if same_process(&self.title_owners[id],&event["owner"]) {self.titles[id]=json!(display_title(event));}
+        }
+    }
+    fn program_event(&mut self, id: &str, name: &str, payload: &Value) {
+        if !self.windows.as_array().into_iter().flatten().any(|w|
+            w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==id)) {return;}
+        match name {
+            "process_changed" => {
+                let owner=json!({"pid":payload["foreground"]["pid"],"name":payload["foreground"]["name"]});
+                self.title_owners[id]=owner.clone();self.process_events.insert(id.into(),owner);
+                if self.title_events.get(id).is_some_and(|event|!same_process(&self.title_owners[id],&event["owner"])) {
+                    self.title_events.remove(id);self.titles[id]=json!("");
+                }
+                self.program_refresh=tokio::time::Instant::now();
+            }
+            "title_changed" => {
+                if self.title_owners[id]["pid"].is_number() && !same_process(&self.title_owners[id],&payload["owner"]) {return;}
+                self.title_events.insert(id.into(),payload.clone());
+                if same_process(&self.title_owners[id],&payload["owner"]) {self.titles[id]=json!(display_title(payload));}
+            }
+            "program_status_changed" | "program_status_removed" | "child_exited" => self.program_refresh=tokio::time::Instant::now(),
+            _=>()
+        }
     }
     async fn event(&mut self, event: Value) -> Result<()> {
         let event = &event["payload"];
@@ -489,6 +533,14 @@ impl Actor {
         }
         if event["type"] == "session_event" {
             let inner = &event["payload"]["event"];
+            if inner["type"]=="block_event" {
+                let block=&inner["payload"];
+                if block["creator_name"]=="com.superlogical.terminal"
+                    && event["payload"]["session_id"]==self.selected_session
+                    && let (Some(id),Some(name))=(block["block_id"].as_str(),block["name"].as_str()) {
+                    self.program_event(id,name,&block["payload"]);
+                }
+            }
             if matches!(
                 inner["type"].as_str(),
                 Some("session_view_changed" | "block_owner_changed" | "block_closed")
@@ -503,32 +555,19 @@ impl Actor {
         let Some(replica) = self.replica.as_mut() else {
             return;
         };
-        for event in replica.events.drain(..) {
-            if event["type"] == "resize"
-                && let Some(owner) = event.get("owner")
-            {
-                self.controlled = owner
-                    .as_str()
-                    .zip(self.control.as_ref().and_then(|c| c.client_id()))
-                    .is_some_and(|(owner, client)| owner == client);
+        let events: Vec<_>=replica.events.drain(..).collect();
+        let changed=!events.is_empty();
+        for event in events {
+            if event["type"] == "resize" && let Some(owner) = event.get("owner") {
+                self.controlled=owner.as_str().zip(self.control.as_ref().and_then(|c|c.client_id())).is_some_and(|(owner,client)|owner==client);
             }
-            if matches!(
-                event["type"].as_str(),
-                Some(
-                    "process_changed"
-                        | "title_changed"
-                        | "program_status_changed"
-                        | "program_status_removed"
-                        | "child_exited"
-                )
-            ) {
-                self.program_refresh = tokio::time::Instant::now();
-            }
-            if event["type"] == "child_exited" {
-                self.notice = format!("Program exited ({})", event["exit_code"]);
-            }
+            let id=self.selected_block.clone();
+            if let Some(name)=event["type"].as_str() {self.program_event(&id,name,&event);}
+            if event["type"] == "child_exited" {self.notice=format!("Program exited ({})",event["exit_code"]);}
         }
+        if changed {self.publish();}
     }
+
     async fn command(&mut self, value: Value) -> Result<()> {
         match value["type"].as_str().context("command type missing")? {
             "connect" => {
@@ -645,7 +684,7 @@ impl Actor {
                     self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);
                     self.data=None;self.data_resume=None;self.replica=None;self.screen=None;self.controlled=false;
                     self.preview_task=None;self.program_task=None;self.summary_task=None;
-                    self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);self.preview_updates.clear();
+                    self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();self.preview_updates.clear();
                 }
                 self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
                 self.creating=false;self.notice="Session closed".into();self.publish();
@@ -706,7 +745,7 @@ impl Actor {
                 self.summary_task = None;
                 self.program_task = None;
                 self.programs = json!({});
-                self.directories = json!({});self.titles=json!({});self.working=json!([]);
+                self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
                 self.program_refresh = tokio::time::Instant::now();
                 self.preview_updates.clear();
                 let session = value["id"]
@@ -1091,6 +1130,8 @@ fn program_candidates(process: &Value, status: &Value) -> Value {
     }
     json!(names)
 }
+fn same_process(a: &Value,b: &Value) -> bool {a["pid"].is_number() && a["name"].is_string() && a["pid"]==b["pid"] && a["name"]==b["name"]}
+fn display_title(event: &Value) -> String {event["title"].as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(256).collect()}
 fn program_working(process: &Value, status: &Value) -> bool {
     let foreground=&process["foreground"];
     foreground["pid"].is_number() && foreground["name"].is_string() &&
@@ -1101,10 +1142,10 @@ fn program_title(process: &Value, status: &Value, terminal: &Value) -> String {
     let foreground=&process["foreground"];
     let owned=|record: &Value| foreground["pid"].is_number() && foreground["name"].is_string()
         && record["owner"]["pid"]==foreground["pid"] && record["owner"]["name"]==foreground["name"];
-    let title=status["records"].as_array().into_iter().flatten()
-        .filter(|r| r["id"].as_str().is_none_or(str::is_empty) && owned(r))
-        .find_map(|r| r["title"].as_str().filter(|t| !t.trim().is_empty()))
-        .or_else(|| owned(terminal).then(|| terminal["title"].as_str()).flatten()).unwrap_or("");
+    let title=owned(terminal).then(|| terminal["title"].as_str().filter(|t| !t.trim().is_empty())).flatten()
+        .or_else(|| status["records"].as_array().into_iter().flatten()
+            .filter(|r| r["id"].as_str().is_none_or(str::is_empty) && owned(r))
+            .find_map(|r| r["title"].as_str().filter(|t| !t.trim().is_empty()))).unwrap_or("");
     title.chars().filter(|c| !c.is_control()).take(256).collect()
 }
 fn program_directory(process: &Value) -> String {
@@ -1142,6 +1183,7 @@ fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Progra
             let mut directories = serde_json::Map::new();
             let mut titles = serde_json::Map::new();
             let mut working = Vec::new();
+            let mut owners = serde_json::Map::new();
             for id in ids.into_iter().take(64) {
                 if let Ok(process) = control.terminal(&session, &id, "process", json!({})).await {
                     let status = control
@@ -1149,6 +1191,7 @@ fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Progra
                         .await
                         .unwrap_or(Value::Null);
                     let terminal=control.terminal(&session,&id,"title",json!({})).await.unwrap_or(Value::Null);
+                    owners.insert(id.clone(),json!({"pid":process["foreground"]["pid"],"name":process["foreground"]["name"]}));
                     if program_working(&process,&status) {working.push(id.clone());}
                     titles.insert(id.clone(),json!(program_title(&process,&status,&terminal)));
                     directories.insert(id.clone(), json!(program_directory(&process)));
@@ -1156,7 +1199,7 @@ fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Progra
                 }
             }
             let _ = control.close().await;
-            Ok::<_, anyhow::Error>(json!({"programs":programs,"directories":directories,"titles":titles,"working":working}))
+            Ok::<_, anyhow::Error>(json!({"programs":programs,"directories":directories,"titles":titles,"working":working,"owners":owners}))
         })
         .await
         .context("program metadata timed out")?
@@ -1321,17 +1364,38 @@ mod tests {
         assert_eq!(program_candidates(&json!({}), &status), json!([]));
     }
     #[test]
-    fn program_titles_prefer_root_tasks_and_reject_stale_owners() {
+    fn program_titles_prefer_live_terminal_titles_and_reject_stale_owners() {
         let process=json!({"foreground":{"pid":12,"name":"codex"}});
         let terminal=json!({"owner":{"pid":12,"name":"codex"},"title":"Terminal task"});
         let status=json!({"records":[
             {"owner":{"pid":11,"name":"codex"},"title":"Old task"},
             {"owner":{"pid":12,"name":"codex"},"id":"worker","title":"Child task"},
             {"owner":{"pid":12,"name":"codex"},"title":"Investigate Rex protocol"}]});
-        assert_eq!(program_title(&process,&status,&terminal),"Investigate Rex protocol");
+        assert_eq!(program_title(&process,&status,&terminal),"Terminal task");
+        assert_eq!(program_title(&process,&status,&json!({})),"Investigate Rex protocol");
         assert_eq!(program_title(&process,&json!({}),&terminal),"Terminal task");
         assert_eq!(program_title(&process,&json!({}),&json!({"owner":{"pid":12,"name":"fish"},"title":"Old shell"})),"");
         assert_eq!(program_title(&json!({}),&status,&terminal),"");
+    }
+    #[test]
+    fn streamed_titles_survive_stale_polling_and_reject_previous_processes() {
+        let session=Session::spawn().unwrap();
+        let mut actor=Actor::new(session.shared.clone(),session.updates.clone());
+        actor.windows=json!([{"blocks":[{"id":"a"}]}]);
+        let owner=json!({"pid":12,"name":"codex"});
+        let details=json!({"programs":{},"directories":{},"titles":{"a":"Static task"},"working":[],"owners":{"a":owner}});
+        actor.apply_program_details(details.clone());
+        actor.program_event("a","title_changed",&json!({"owner":owner,"title":"⠋ Task"}));
+        assert_eq!(actor.titles["a"],"⠋ Task");
+        actor.apply_program_details(details.clone());
+        assert_eq!(actor.titles["a"],"⠋ Task");
+        actor.program_event("a","title_changed",&json!({"owner":{"pid":11,"name":"codex"},"title":"Old task"}));
+        actor.apply_program_details(details.clone());
+        assert_eq!(actor.titles["a"],"⠋ Task");
+        actor.program_event("a","title_changed",&json!({"owner":owner,"title":""}));
+        actor.apply_program_details(details.clone());assert_eq!(actor.titles["a"],"");
+        actor.program_event("a","process_changed",&json!({"foreground":{"pid":13,"name":"fish"}}));
+        actor.apply_program_details(details);assert_eq!(actor.titles["a"],"");
     }
     #[test]
     fn working_indicator_requires_a_live_foreground_owner_and_working_report() {
@@ -1617,7 +1681,7 @@ mod tests {
                 Trace::default(),
             ))
             .unwrap();
-        let script = r#"stty -echo; printf '\033]7501;state=idle:app=claude-code:title=Rmlyc3QgdGFzaw==\007ICON_READY\n'; while IFS= read -r line; do case "$line" in codex) printf '\033]7501;state=working:app=codex:title=SW52ZXN0aWdhdGUgUmV4IHByb3RvY29s\007';; clear) printf '\033]7501;state=clear\007';; esac; done"#;
+        let script = r#"stty -echo; printf '\033]7501;state=idle:app=claude-code:title=Rmlyc3QgdGFzaw==\007ICON_READY\n'; while IFS= read -r line; do case "$line" in codex) printf '\033]7501;state=working:app=codex:title=SW52ZXN0aWdhdGUgUmV4IHByb3RvY29s\007';; frame1) printf '\033]2;⠋ Investigate Rex protocol\007';; frame2) printf '\033]2;⠙ Investigate Rex protocol\007';; frame3) printf '\033]2;⠹ Investigate Rex protocol\007';; clear) printf '\033]7501;state=clear\007';; esac; done"#;
         let created=runtime.block_on(writer.call("session.create",json!({
             "label":format!("rex-android-program-test-{}",std::process::id()),
             "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}},
@@ -1646,10 +1710,18 @@ mod tests {
                 .block_on(writer.terminal(id, first, "write", json!({"data":"codex\n"})))
                 .unwrap();
             wait(&app, |v| v["programs"][first][0] == "codex" && v["titles"][first]=="Investigate Rex protocol" && v["working"].as_array().is_some_and(|ids|ids.iter().any(|id|id==first)));
+            for (command,title) in [("frame1","⠋ Investigate Rex protocol"),("frame2","⠙ Investigate Rex protocol"),("frame3","⠹ Investigate Rex protocol")] {
+                let started=std::time::Instant::now();
+                runtime.block_on(writer.terminal(id,first,"write",json!({"data":format!("{command}\n")}))).unwrap();
+                wait(&app,|v|v["titles"][first]==title);
+                assert!(started.elapsed()<Duration::from_millis(700),"Title was delayed until metadata polling");
+            }
             app.command(json!({"type":"block","id":second})).unwrap();
             wait(&app, |v| {
                 v["selectedBlock"] == second && !v["screen"].is_null()
             });
+            runtime.block_on(writer.terminal(id,first,"write",json!({"data":"frame1\n"}))).unwrap();
+            wait(&app,|v|v["titles"][first]=="⠋ Investigate Rex protocol" && v["selectedBlock"]==second);
             runtime
                 .block_on(writer.terminal(id, first, "write", json!({"data":"clear\n"})))
                 .unwrap();
