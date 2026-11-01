@@ -74,7 +74,7 @@ import kotlin.math.roundToInt
                     alpha=1f-(abs(position)/stride).coerceIn(0f,1f)*.48f
                 }.clip(RoundedCornerShape(21.dp)).background(Color(palette.background))
                     .then(if(center) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
-                    Box(Modifier.weight(1f).fillMaxWidth().padding(start=14.dp,end=14.dp,top=15.dp)) {
+                    Box(Modifier.weight(1f).fillMaxWidth().padding(start=6.dp,end=6.dp,top=8.dp)) {
                         if(frame!=null) AndroidView(
                             factory={TerminalView(it)},modifier=Modifier.fillMaxSize().clipToBounds(),
                             update={view ->
