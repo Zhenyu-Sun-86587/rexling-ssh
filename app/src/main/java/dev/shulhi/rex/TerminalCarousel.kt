@@ -45,8 +45,8 @@ import kotlin.math.roundToInt
     LaunchedEffect(selectedBlock) {if(!settling && !dragging) {visualId=selectedBlock;drag=0f}}
     LaunchedEffect(visualId) {toast=true;delay(1000);toast=false}
     BoxWithConstraints(modifier.clipToBounds()) {
-        val cardWidth=(maxWidth-28.dp).coerceAtLeast(80.dp)
-        val cardLeft=14.dp
+        val cardWidth=maxWidth.coerceAtLeast(80.dp)
+        val cardLeft=0.dp
         val stride=with(LocalDensity.current){(cardWidth+8.dp).toPx()}
         val leftPx=with(LocalDensity.current){cardLeft.toPx()}
         val candidate=(index+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
