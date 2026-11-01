@@ -157,7 +157,7 @@ class MainActivity : ComponentActivity() {
                     if(state.error.isNotBlank()) Text(state.error,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(10.dp),
                         color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     if(blocks.isNotEmpty()) {
-                        TerminalCarousel(blocks,chosen,liveBlock,state.screen,model.paneFrames,controlled,fontSize.toFloat(),
+                        TerminalCarousel(blocks,chosen,liveBlock,state.screen,model.paneFrames,state.programs,controlled,fontSize.toFloat(),
                             model::type,model::resize,model::selectBlock,{picker="panes"},{terminalView=it},
                             Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp))
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {

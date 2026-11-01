@@ -30,7 +30,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable internal fun TerminalCarousel(blocks: List<BlockItem>,selectedBlock: String,liveBlock: String,
-    liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,controlled: Boolean,fontSize: Float,
+    liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier) {
     val palette=LocalTerminalPalette.current
@@ -112,10 +112,12 @@ import kotlin.math.roundToInt
             Column(Modifier.align(Alignment.BottomCenter).padding(bottom=58.dp),horizontalAlignment=Alignment.CenterHorizontally) {
                 Row(Modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal=15.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(29.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary),contentAlignment=Alignment.Center) {
-                        Text((candidate+1).toString(),fontFamily=MonoUi,fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onPrimary,fontSize=14.sp)
+                    val program=programs[blocks[candidate].id] ?: ProgramIdentity.Terminal
+                    Box(Modifier.size(29.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
+                        ProgramIcon(program,Modifier.size(20.dp))
                     }
-                    Text(blocks[candidate].label,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                    Text(blocks[candidate].label.takeUnless {it=="shell" || it=="Terminal"} ?: program.title,
+                        fontWeight=FontWeight.SemiBold,fontSize=13.sp)
                 }
                 Spacer(Modifier.height(9.dp));PositionDots(candidate,blocks.size)
             }
