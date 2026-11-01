@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -98,7 +99,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 @Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
     connected: Boolean, enabled: Boolean, controlled: Boolean, canControl: Boolean,
     programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
-    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, title: String="", expanded: Boolean=false, menu: @Composable ()->Unit) {
+    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val pager=rememberPagerState(initialPage=selectedIndex,pageCount={sessions.size.coerceAtLeast(1)})
@@ -117,6 +118,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         if(!expanded) {ProgramStack(programs,paneIndex,framed=true);Spacer(Modifier.width(7.dp))}
         Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
             if(!expanded) Row(Modifier.fillMaxWidth().height(19.dp),verticalAlignment=Alignment.CenterVertically) {
+                if(working) {WorkingIndicator();Spacer(Modifier.width(4.dp))}
                 Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,letterSpacing=0.sp,maxLines=1,
                     overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=if(title.isBlank()) 90.dp else 190.dp))
                 if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
@@ -164,6 +166,20 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
+/** Read animation state only during drawing, so terminal chrome does not recompose every tick. */
+@Composable private fun WorkingIndicator() {
+    val transition=androidx.compose.animation.core.rememberInfiniteTransition(label="Program working")
+    val phase=transition.animateFloat(0f,1f,animationSpec=androidx.compose.animation.core.infiniteRepeatable(
+        animation=androidx.compose.animation.core.tween(1000,easing=androidx.compose.animation.core.LinearEasing)),label="Working dots")
+    val color=MaterialTheme.colorScheme.primary
+    Canvas(Modifier.size(16.dp,6.dp).semantics {contentDescription="Program working"}) {
+        repeat(3) {i ->
+            val wave=(1f+kotlin.math.cos((phase.value-i/3f)*2f*kotlin.math.PI.toFloat()))/2f
+            drawCircle(color.copy(alpha=.3f+.7f*wave),1.4.dp.toPx(),Offset((3+i*5).dp.toPx(),size.height/2))
+        }
+    }
+}
+
 @Composable internal fun PositionDots(index: Int,count: Int,modifier: Modifier=Modifier) {
     val first=(index-3).coerceIn(0,(count-7).coerceAtLeast(0))
     Row(modifier,horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -176,7 +192,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},add: @Composable ()->Unit) {
+    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},add: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -203,6 +219,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     Row(Modifier.weight(1f).padding(horizontal=10.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                         ProgramStack(programs,pane)
+                        if(paneWorking(w)) WorkingIndicator()
                         Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,lineHeight=18.sp,
                             style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
                             color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,

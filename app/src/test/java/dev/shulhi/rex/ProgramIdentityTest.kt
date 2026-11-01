@@ -26,6 +26,8 @@ class ProgramIdentityTest {
         assertTrue(AppState.parse("{}").directories.isEmpty())
         assertEquals("Task title",AppState.parse("""{"titles":{"a":"Task \u202etitle\n"}}""").titles["a"])
         assertTrue(AppState.parse("{}").titles.isEmpty())
+        assertEquals(setOf("a"),AppState.parse("""{"working":["a"]}""").workingBlocks)
+        assertTrue(AppState.parse("{}").workingBlocks.isEmpty())
         assertEquals("claude",ProgramIdentity.resolve(listOf("claude-code")).title)
     }
     @Test fun programMetadataSurvivesAnOrdinaryStateUpdateWithoutInventingPrograms() {
