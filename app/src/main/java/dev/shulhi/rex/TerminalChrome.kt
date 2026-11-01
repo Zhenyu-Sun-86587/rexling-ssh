@@ -98,7 +98,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 @Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
     connected: Boolean, enabled: Boolean, controlled: Boolean, canControl: Boolean,
     programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
-    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, expanded: Boolean=false, menu: @Composable ()->Unit) {
+    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, title: String="", expanded: Boolean=false, menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val pager=rememberPagerState(initialPage=selectedIndex,pageCount={sessions.size.coerceAtLeast(1)})
@@ -117,8 +117,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         if(!expanded) {ProgramStack(programs,paneIndex,framed=true);Spacer(Modifier.width(7.dp))}
         Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
             if(!expanded) Row(Modifier.fillMaxWidth().height(22.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text(program.title,fontWeight=FontWeight.Bold,fontSize=13.sp,letterSpacing=0.sp,maxLines=1,
-                    overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=90.dp))
+                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,letterSpacing=0.sp,maxLines=1,
+                    overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=if(title.isBlank()) 90.dp else 190.dp))
                 if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
                     fontFamily=MonoUi,fontSize=9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -176,7 +176,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,add: @Composable ()->Unit) {
+    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},add: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -191,7 +191,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 val programs=panePrograms(w)
                 val pane=selectedPane(w)
                 val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
-                val title=w.label.takeUnless {it.isBlank() || it.startsWith("Window ")} ?: w.blocks.firstOrNull()?.label ?: "Terminal ${i+1}"
+                val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
                 Column(Modifier.height(44.dp).width(IntrinsicSize.Max).widthIn(min=70.dp,max=185.dp)
                     .drawWithContent {
                         drawContent()

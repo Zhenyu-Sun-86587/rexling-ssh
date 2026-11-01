@@ -130,7 +130,7 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
                 controlled,ready&&client.hasScreen,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
-                {if(controlled) client.releaseControl() else client.takeControl()},expanded=picker=="sessions",menu={
+                {if(controlled) client.releaseControl() else client.takeControl()},title=(state.programs[chosen] ?: ProgramIdentity.Terminal).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
@@ -188,7 +188,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
-                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,{picker="panes"},panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,add={
+                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,{picker="panes"},panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},add={
                                 Box {
                                     Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
                                         ChromeButton(ChromeIcon.ADD,"Add terminal",ready){add=true}

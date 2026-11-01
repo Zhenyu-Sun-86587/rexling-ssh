@@ -10,7 +10,21 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String) {
         ProgramKind.NODE -> "node"; ProgramKind.SSH -> "ssh"; ProgramKind.TMUX -> "tmux"
         ProgramKind.MONITOR -> "monitor"; ProgramKind.TERMINAL -> label
     }
+    /** A task title is presentation only; executable identity still chooses the icon. */
+    fun paneTitle(paneLabel: String, reportedTitle: String = ""): String =
+        reportedTitle.takeIf { it.isNotBlank() } ?: paneLabel.takeUnless(::genericTitle) ?: title
+
+    /** Explicit tab names stay put; defaults follow the remembered focused pane. */
+    fun tabTitle(windowLabel: String, paneLabel: String, number: Int, reportedTitle: String = ""): String {
+        if (!genericTitle(windowLabel)) return windowLabel
+        val focused=paneTitle(paneLabel,reportedTitle)
+        return if (focused != Terminal.title) focused else windowLabel.takeIf { it.isNotBlank() } ?: "Terminal $number"
+    }
+
     companion object {
+        private val defaultTitle = Regex("(?:Window [0-9a-f]+|Terminal \\d+)", RegexOption.IGNORE_CASE)
+        private fun genericTitle(value: String): Boolean = value.isBlank() ||
+            value.lowercase(Locale.ROOT) in setOf("shell", "terminal", "window") || defaultTitle.matches(value)
         val Terminal = ProgramIdentity(ProgramKind.TERMINAL, "Terminal")
         fun resolve(candidates: List<String>): ProgramIdentity {
             for (candidate in candidates) {

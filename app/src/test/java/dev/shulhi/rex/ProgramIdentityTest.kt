@@ -24,6 +24,8 @@ class ProgramIdentityTest {
         assertEquals("~/code/project",state.directories["a"])
         assertEquals("/tmp/hidden",state.directories["b"])
         assertTrue(AppState.parse("{}").directories.isEmpty())
+        assertEquals("Task title",AppState.parse("""{"titles":{"a":"Task \u202etitle\n"}}""").titles["a"])
+        assertTrue(AppState.parse("{}").titles.isEmpty())
         assertEquals("claude",ProgramIdentity.resolve(listOf("claude-code")).title)
     }
     @Test fun programMetadataSurvivesAnOrdinaryStateUpdateWithoutInventingPrograms() {
@@ -33,4 +35,21 @@ class ProgramIdentityTest {
         assertNull(state.programs["c"])
         assertTrue(AppState.parse("{}").programs.isEmpty())
     }
+    @Test fun defaultTabsFollowTheirFocusedProgramWhileCustomNamesStayPut() {
+        val codex=ProgramIdentity.resolve(listOf("codex"))
+        val nvim=ProgramIdentity.resolve(listOf("nvim"))
+        for (label in listOf("shell", "Shell", "Terminal", "Terminal 2", "Window 1", "Window 494741a8", "")) {
+            assertEquals("codex",codex.tabTitle(label,"shell",1))
+            assertEquals("nvim",nvim.tabTitle(label,"shell",1))
+        }
+        assertEquals("Investigate Rex protocol",codex.tabTitle("shell","shell",1,"Investigate Rex protocol"))
+        assertEquals("Investigate Rex protocol",codex.paneTitle("shell","Investigate Rex protocol"))
+        assertEquals("deploy",codex.tabTitle("deploy","shell",1,"Investigate Rex protocol"))
+        assertEquals("deploy",codex.tabTitle("deploy","shell",1))
+        assertEquals("Window management",codex.tabTitle("Window management","shell",1))
+        assertEquals("shell",ProgramIdentity.Terminal.tabTitle("shell","shell",1))
+        assertEquals("build",ProgramIdentity.Terminal.tabTitle("","build",1))
+        assertEquals("Terminal 3",ProgramIdentity.Terminal.tabTitle("","",3))
+    }
+
 }
