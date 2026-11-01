@@ -56,13 +56,13 @@ import kotlin.math.roundToInt
         fun finish(dx: Float,velocity: Float) {
             val step=if(dx < -stride*.18f || (dx< -20f && velocity < -flingSpeed)) 1 else if(dx > stride*.18f || (dx>20f && velocity>flingSpeed)) -1 else 0
             val target=(index+step).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
-            dragging=false;settling=true
+            dragging=false;toast=false;settling=true
             if(target!=index) blocks.getOrNull(target)?.let {latestSelect(it.id)}
             scope.launch {
                 val animation=Animatable(drag)
                 animation.animateTo(if(target==index) 0f else if(target>index) -stride else stride,tween(190)) {drag=value}
                 if(target!=index) visualId=blocks[target].id
-                drag=0f;settling=false;toast=true
+                drag=0f;settling=false
             }
         }
         for(i in (index-1).coerceAtLeast(0)..(index+1).coerceAtMost(blocks.lastIndex)) {
