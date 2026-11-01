@@ -175,7 +175,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,onPanes: ()->Unit,program: (WindowItem)->ProgramIdentity,add: @Composable ()->Unit) {
+    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,add: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -183,23 +183,24 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         if(item==null || item.offset<0 || item.offset+item.size>list.layoutInfo.viewportEndOffset) list.animateScrollToItem(index)
     }}
     Row(Modifier.fillMaxWidth().height(49.dp).padding(start=11.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
-        LazyRow(Modifier.weight(1f).fillMaxHeight().clipToBounds(),state=list,verticalAlignment=Alignment.CenterVertically) {
+        LazyRow(Modifier.weight(1f).fillMaxHeight().clipToBounds(),state=list,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w ->
                 val active=w.id==selectedId
+                val programs=panePrograms(w)
+                val pane=selectedPane(w)
+                val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
                 val title=w.label.takeUnless {it.isBlank() || it.startsWith("Window ")} ?: w.blocks.firstOrNull()?.label ?: "Terminal ${i+1}"
-                Column(Modifier.height(44.dp).widthIn(min=70.dp,max=170.dp)
-                    .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program(w).label}"}
-                    .selectable(active,enabled,role=Role.Tab) {onSelect(w.id)}.padding(horizontal=12.dp),
-                    verticalArrangement=Arrangement.Center) {
-                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
-                        ProgramIcon(program(w))
-                        Text(title,Modifier.widthIn(max=108.dp),fontSize=12.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
-                            color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
-                        if(w.blocks.size>1) Text(w.blocks.size.toString(),color=MaterialTheme.colorScheme.primary,fontSize=9.sp,fontWeight=FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(7.dp))
-                    Box(Modifier.size(20.dp,3.dp).background(if(active) MaterialTheme.colorScheme.primary else Color.Transparent,RoundedCornerShape(2.dp)))
+                Row(Modifier.height(37.dp).widthIn(min=70.dp,max=185.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(if(active) MaterialTheme.colorScheme.primary.copy(alpha=if(LocalTerminalPalette.current.dark) .18f else .10f) else Color.Transparent)
+                    .border(1.dp,if(active) MaterialTheme.colorScheme.primary.copy(alpha=.3f) else Color.Transparent,RoundedCornerShape(18.dp))
+                    .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"}
+                    .selectable(active,enabled,role=Role.Tab) {onSelect(w.id)}.padding(horizontal=10.dp),
+                    verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                    ProgramStack(programs,pane)
+                    Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
+                        color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                 }
             }
         }

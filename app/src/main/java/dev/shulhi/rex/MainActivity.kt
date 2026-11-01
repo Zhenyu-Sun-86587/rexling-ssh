@@ -166,7 +166,7 @@ class MainActivity : ComponentActivity() {
                     }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
-                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,model::selectWindow,{picker="panes"},program=model::tabProgram,add={
+                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,model::selectWindow,{picker="panes"},panePrograms=model::tabPrograms,selectedPane=model::tabPaneIndex,add={
                                 Box {
                                     Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
                                         ChromeButton(ChromeIcon.ADD,"Add terminal",ready){add=true}
