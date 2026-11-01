@@ -424,3 +424,10 @@ The user's final transparent launcher PNG is copied exactly, preserving alpha.
 Verified `block.close` with explicit `session_id` and `block_id`, and `session.close_window` with explicit `session_id` and `window_id`. A tab close ends every program in the window; closing its final pane also removes that window. The session can remain empty, and `session.view` may omit `windows` then.
 
 Commands bind the selected session and explicit target. Tab confirmation also binds the pane-ID list and rejects changed membership before sending. Typed `not_found` / `session_not_found` are treated as already gone; uncertain network failures are not retried. Background closes preserve the active stream and control. Closing the selected target opens a neighbor read-only, without resizing or taking ownership.
+
+
+## Shift and navigation keys
+
+Shift+arrows, Home/End, editing and function keys use xterm modifier parameters (1 + Shift + 2*Alt + 4*Ctrl); Shift+Tab sends CSI Z. Printable Shift applies ordinary ASCII case/symbol mapping. Reference: [xterm PC-style function keys](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys).
+
+Shift can latch for one key or remain held for multiple keys. Cancellation, pane/session departure, hiding a server, loss of control and pause clear it. A late finger-up cannot relatch cleared Shift. The shared navigation strip scrolls independently; scrolling and cancellation send no key. Hardware named keys also carry modifier parameters.

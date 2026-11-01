@@ -556,3 +556,10 @@ Targeted live native close test passed: stale-session and changed-tab guards, ba
 Emulator checks exercised tab long-press and pane-picker close, cancellation and confirmation. The last-pane helper initially indexed an omitted `windows` field; the empty-session check was corrected to accept the server's omitted field. Fresh-install setup and offline preview were checked. Physical interaction remains for user testing.
 
 The optimized, non-debuggable release is copied to `dist/Rexlink-0.1.0-arm64-release.apk` with a SHA256 sidecar. Signature, native alignment and ART profiles passed verification. Installed S22+ base APK readback matches SHA256 `3782dee4540e3afb23baf54a7f1ddf23c22f7865dde2cf0c08c332da99d7c5a1`. Existing phone data was preserved. Fresh installs no longer contain a preset personal server.
+
+
+## Shift keyboard release — 2026-11-02
+
+44 JVM tests pass. Four new emulator Compose gesture tests pass: one-shot Shift and Shift+Tab, holding Shift through navigation scrolling and multiple taps, cancellation, and disabled controls. The scrolling test asserts that no input is emitted by the scroll gesture. AndroidX test runner/JUnit and Espresso were updated to stable API-37-compatible versions; the initial older Espresso failed before injection because InputManager.getInstance was removed. See [AndroidX Test release notes](https://developer.android.com/jetpack/androidx/releases/test#espresso-3.7.0).
+
+Debug/release builds and release lint pass. The optimized release passes APK signature, non-debuggable, native alignment and ART profile checks. Shareable artifact: `dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `55d53e1f372eaa829847cb8dbf27ef14d0c710c8c32e6dde5db3ad9d6fbd57eb`. Phone installation of this keyboard update was pending USB reconnection when packaged; the prior close-controls release remains the last verified S22+ installation.
