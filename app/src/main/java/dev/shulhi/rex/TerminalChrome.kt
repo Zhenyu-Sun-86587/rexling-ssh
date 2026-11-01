@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -48,7 +49,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT }
+internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -77,6 +78,7 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.UP -> arrow(0f,-1f)
             ChromeIcon.DOWN -> arrow(0f,1f)
             ChromeIcon.ESCAPE -> {drawArc(color,-90f,270f,false,Offset(4f*u,4f*u),Size(16f*u,16f*u),style=Stroke(width));line(4f,4f,12f,12f);line(4f,4f,4f,9f);line(4f,4f,9f,4f)}
+            ChromeIcon.POINTER -> {line(5f,3f,5f,20f);line(5f,20f,10f,15f);line(10f,15f,14f,22f);line(14f,22f,17f,20f);line(17f,20f,13f,13f);line(13f,13f,20f,13f);line(20f,13f,5f,3f)}
             ChromeIcon.CONTROL -> {line(6f,15f,12f,9f);line(12f,9f,18f,15f)}
             ChromeIcon.ALT -> {line(3f,6f,8f,6f);line(8f,6f,15f,18f);line(15f,18f,21f,18f);line(14f,6f,21f,6f)}
             ChromeIcon.SHIFT -> {line(12f,3f,3f,12f);line(3f,12f,8f,12f);line(8f,12f,8f,21f);line(8f,21f,16f,21f);line(16f,21f,16f,12f);line(16f,12f,21f,12f);line(21f,12f,12f,3f)}
@@ -164,15 +166,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             }
         }
         if(!expanded) {
-            Box(Modifier.height(29.dp).clip(RoundedCornerShape(18.dp))
-                .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(canControl) .45f else .15f),RoundedCornerShape(18.dp))
-                .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)
-                .clickable(enabled=canControl,role=Role.Button,onClick=onControl)
-                .semantics { contentDescription=if(controlled) "Release terminal control" else "Take terminal control" }
-                .padding(horizontal=10.dp),contentAlignment=Alignment.Center) {
-                Text(if(controlled) "Release" else "Take over",fontSize=10.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold,
-                    color=(if(controlled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary).copy(alpha=if(canControl) 1f else .4f))
-            }
+            TerminalControlButton(controlled,canControl,onControl)
             menu()
         }
     }
@@ -184,6 +178,24 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     val transition=androidx.compose.animation.core.rememberInfiniteTransition(label="Program working")
     return transition.animateFloat(0f,1f,animationSpec=androidx.compose.animation.core.infiniteRepeatable(
         animation=androidx.compose.animation.core.tween(1200,easing=androidx.compose.animation.core.LinearEasing)),label="Working highlight")
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable internal fun TerminalControlButton(controlled: Boolean,enabled: Boolean,onClick: ()->Unit) {
+    val label=if(controlled) "Release terminal control" else "Take terminal control"
+    androidx.compose.material3.TooltipBox(
+        positionProvider=androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip={PlainTooltip {Text(if(controlled) "Release control" else "Take control")}},
+        state=androidx.compose.material3.rememberTooltipState()) {
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(17.dp))
+            .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(enabled) .45f else .15f),RoundedCornerShape(17.dp))
+            .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)
+            .semantics {contentDescription=label;selected=controlled}
+            .clickable(enabled=enabled,role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center) {
+            ChromeSymbol(ChromeIcon.POINTER,Modifier.size(18.dp),
+                (if(controlled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary).copy(alpha=if(enabled) 1f else .4f))
+        }
+    }
 }
 
 @Composable internal fun PositionDots(index: Int,count: Int,modifier: Modifier=Modifier) {
