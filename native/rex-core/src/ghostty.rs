@@ -57,7 +57,7 @@ fn check(code: i32, action: &str) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Cell {
     pub x: u16,
     pub y: u16,

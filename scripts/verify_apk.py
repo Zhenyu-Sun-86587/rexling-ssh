@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Inspect APK packaging/signature/ELF alignment without installing or running it."""
+import argparse
 import hashlib
 import json
 import os
@@ -18,7 +19,8 @@ def main():
     ndk = sdk / "ndk/30.0.16248370"
     host = "darwin-x86_64" if os.uname().sysname == "Darwin" else "linux-x86_64"
     tools = ndk / "toolchains/llvm/prebuilt" / host / "bin"
-    apk = ROOT / "app/build/outputs/apk/debug/app-debug.apk"
+    parser=argparse.ArgumentParser();parser.add_argument("--apk",default="app/build/outputs/apk/debug/app-debug.apk")
+    apk=ROOT / parser.parse_args().apk
     env = os.environ.copy()
     studio = Path("/Applications/Android Studio.app/Contents/jbr/Contents/Home")
     if studio.exists(): env["JAVA_HOME"] = str(studio)
@@ -31,7 +33,7 @@ def main():
     badging = run([build_tools / "aapt", "dump", "badging", apk])
     label = re.search(r"(?m)^application-label:'([^']*)'$", badging).group(1)
     assert label == "Rexlet", label
-    expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "destroy"]}
+    expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "awaitUpdate", "readUpdate", "destroy"]}
     libraries = []
     with zipfile.ZipFile(apk) as archive, tempfile.TemporaryDirectory(prefix="rex-apk-") as temporary:
         for name in archive.namelist():

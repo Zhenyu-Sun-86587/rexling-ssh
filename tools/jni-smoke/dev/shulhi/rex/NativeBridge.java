@@ -6,6 +6,8 @@ public final class NativeBridge {
     public static native long create();
     public static native String command(long handle, String request);
     public static native String poll(long handle, long after);
+    public static native long awaitUpdate(long handle,long after,long timeoutMs);
+    public static native byte[] readUpdate(long handle,long after);
     public static native void destroy(long handle);
 
     public static void main(String[] args) throws Exception {
@@ -25,6 +27,20 @@ public final class NativeBridge {
                 if (System.nanoTime() > deadline) throw new AssertionError("Preview timed out");
                 Thread.sleep(20);
             }
+            long revision=awaitUpdate(handle,0,1000);
+            byte[] packet=readUpdate(handle,0);
+            if (revision<=0 || packet.length<17 || packet[0]!='R' || packet[3]!='1') throw new AssertionError("Binary update missing");
+            String bytes=new String(packet,java.nio.charset.StandardCharsets.UTF_8);
+            if (!bytes.contains("λ") || !bytes.contains("🦀")) throw new AssertionError("Binary UTF8 lost");
+            final long waitingHandle=handle;
+            java.util.concurrent.atomic.AtomicReference<Throwable> waitError=new java.util.concurrent.atomic.AtomicReference<>();
+            Thread waiter=new Thread(()-> {try {if(awaitUpdate(waitingHandle,Long.MAX_VALUE,1000)!=-1) throw new AssertionError("Destroy did not close notifier");} catch(Throwable error) {waitError.set(error);}});
+            waiter.start();
+            long other=create();
+            if(!command(other,"{\"type\":\"preview\"}").isEmpty()) throw new AssertionError("Other handle blocked");
+            destroy(other);destroy(handle);waiter.join(500);
+            if(waiter.isAlive()) throw new AssertionError("Waiter held registry lock");
+            if(waitError.get()!=null) throw new AssertionError("Notification reader failed",waitError.get());
             if (command(handle, "not-json").isEmpty()) throw new AssertionError("Invalid request accepted");
         } finally { destroy(handle); }
         destroy(handle); // Closed handles remain safe.

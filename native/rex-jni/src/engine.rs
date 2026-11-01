@@ -20,10 +20,14 @@ pub struct Shared {
     pub revision: u64,
     pub json: String,
     pub pending_previews: BTreeMap<String, Value>,
+    pub frame: Option<Arc<Frame>>,
+    pub key: String,
+    pub wire: crate::updates::WireBase,
 }
 pub struct Session {
     tx: mpsc::Sender<Value>,
     pub shared: Arc<Mutex<Shared>>,
+    pub updates: Arc<crate::updates::Updates>,
 }
 impl Session {
     pub fn spawn() -> Result<Self> {
@@ -32,8 +36,13 @@ impl Session {
             revision: 0,
             json: String::new(),
             pending_previews: BTreeMap::new(),
+            frame: None,
+            key: String::new(),
+            wire: crate::updates::WireBase::default(),
         }));
         let worker = shared.clone();
+        let updates=Arc::new(crate::updates::Updates::default());
+        let notifier=updates.clone();
         std::thread::Builder::new()
             .name("rex-terminal".into())
             .spawn(move || {
@@ -41,10 +50,10 @@ impl Session {
                     .enable_all()
                     .build();
                 if let Ok(runtime) = runtime {
-                    runtime.block_on(Actor::new(worker).run(rx));
+                    runtime.block_on(Actor::new(worker,notifier).run(rx));
                 }
             })?;
-        Ok(Self { tx, shared })
+        Ok(Self { tx, shared, updates })
     }
     pub fn command(&self, value: Value) -> Result<()> {
         self.tx
@@ -56,22 +65,17 @@ impl Session {
             .shared
             .lock()
             .map_err(|_| anyhow::anyhow!("terminal state unavailable"))?;
-        Ok(if state.revision > after {
-            if state.pending_previews.is_empty() {
-                state.json.clone()
-            } else {
-                let mut value: Value = serde_json::from_str(&state.json)?;
-                value["previews"] =
-                    serde_json::to_value(std::mem::take(&mut state.pending_previews))?;
-                value.to_string()
-            }
-        } else {
-            String::new()
-        })
+        if state.revision <= after {return Ok(String::new());}
+        let mut value: Value=serde_json::from_str(&state.json)?;
+        value["revision"]=json!(state.revision);
+        value["screen"]=state.frame.as_ref().map_or(Value::Null,|frame|frame_value(frame));
+        value["previews"]=serde_json::to_value(std::mem::take(&mut state.pending_previews))?;
+        Ok(value.to_string())
     }
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        self.updates.close();
         let _ = self.tx.try_send(json!({"type":"shutdown"}));
     }
 }
@@ -81,6 +85,8 @@ type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 struct Actor {
     shared: Arc<Mutex<Shared>>,
+    updates: Arc<crate::updates::Updates>,
+    visible: bool,
     endpoint: Option<Endpoint>,
     server: String,
     control: Option<Control>,
@@ -94,7 +100,7 @@ struct Actor {
     notice: String,
     sessions: Value,
     windows: Value,
-    screen: Value,
+    screen: Option<Arc<Frame>>,
     selected_session: String,
     selected_block: String,
     navigation_id: u64,
@@ -115,9 +121,11 @@ struct Actor {
     session_details: Value,
 }
 impl Actor {
-    fn new(shared: Arc<Mutex<Shared>>) -> Self {
+    fn new(shared: Arc<Mutex<Shared>>,updates: Arc<crate::updates::Updates>) -> Self {
         Self {
             shared,
+            updates,
+            visible: true,
             endpoint: None,
             server: String::new(),
             control: None,
@@ -131,7 +139,7 @@ impl Actor {
             notice: String::new(),
             sessions: json!([]),
             windows: json!([]),
-            screen: Value::Null,
+            screen: None,
             selected_session: String::new(),
             selected_block: String::new(),
             navigation_id: 0,
@@ -155,20 +163,29 @@ impl Actor {
     fn publish(&mut self) {
         if let Ok(mut shared) = self.shared.lock() {
             shared.revision += 1;
-            shared.json=json!({"revision":shared.revision,"phase":self.phase,"endpoint":self.server,
+            shared.frame=self.screen.clone();
+            shared.key=format!("{}:{}",self.selected_session,self.selected_block);
+            shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
-                "windows":self.windows,"screen":self.screen,"selectedSession":self.selected_session,
+                "windows":self.windows,"selectedSession":self.selected_session,
                 "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
+            self.updates.publish(shared.revision);
+        }
+    }
+    fn publish_frame(&mut self) {
+        if let Ok(mut shared)=self.shared.lock() {
+            shared.revision+=1;shared.frame=self.screen.clone();
+            self.updates.publish(shared.revision);
         }
     }
     async fn run(mut self, mut rx: mpsc::Receiver<Value>) {
         self.publish();
-        let mut paint = tokio::time::interval(Duration::from_millis(50));
+        let mut render_at=tokio::time::Instant::now();
+        let mut maintenance_at=render_at;
         let mut heartbeat = tokio::time::interval(Duration::from_secs(120));
-        paint.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         heartbeat.tick().await;
         loop {
@@ -177,6 +194,11 @@ impl Actor {
                 value=rx.recv()=>{
                     let Some(value)=value else{break;};
                     if value["type"]=="shutdown"{break;}
+                    if value["type"]=="visibility" {
+                        self.visible=value["visible"].as_bool().unwrap_or(true);
+                        if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
+                        continue;
+                    }
                     let navigation_id=value["navigationId"].as_u64();
                     if let Err(e)=self.command(value).await {
                         if let Some(id)=navigation_id {self.navigation_id=id;}
@@ -220,7 +242,10 @@ impl Actor {
                     self.program_task=None;
                     if let Ok(details)=result {self.programs=details["programs"].clone();self.directories=details["directories"].clone();self.publish();}
                 },
-                _=async {if active {paint.tick().await;}else{pending::<()>().await;}}=>{
+                _=async {if active {tokio::time::sleep_until(if self.dirty && self.visible {render_at}else{maintenance_at}).await;}else{pending::<()>().await;}}=>{
+                    let now=tokio::time::Instant::now();
+                    render_at=now+Duration::from_millis(16);
+                    maintenance_at=now+Duration::from_secs(1);
                     if self.retry.is_some_and(|at|at<=tokio::time::Instant::now())&&!self.paused {
                         self.retry=None;
                         if let Err(e)=self.reconnect().await{self.recover(e);}
@@ -233,11 +258,11 @@ impl Actor {
                         self.program_task=Some(program_task(self.endpoint.clone().unwrap(),self.selected_session.clone(),ids));
                         self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
                     }
-                    if self.dirty {
+                    if self.dirty && self.visible {
                         self.dirty=false;
                         if let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {
                             match replica.terminal().and_then(|t|t.frame()) {
-                                Ok(frame)=>{self.screen=frame_json(frame);self.publish();}
+                                Ok(frame)=>{self.screen=Some(Arc::new(frame));self.publish_frame();}
                                 Err(e)=>{self.error=e.to_string();self.publish();}
                             }
                         }
@@ -411,7 +436,7 @@ impl Actor {
             self.data = None;
             self.data_resume = None;
             self.replica = None;
-            self.screen = Value::Null;
+            self.screen = None;
             self.selected_block.clear();
             self.controlled = false;
             self.notice = "That terminal has closed".into();
@@ -441,7 +466,7 @@ impl Actor {
             self.data = None;
             self.data_resume = None;
             self.replica = None;
-            self.screen = Value::Null;
+            self.screen = None;
             self.windows = json!([]);
             self.controlled = false;
             self.notice = "That session has closed".into();
@@ -521,7 +546,7 @@ impl Actor {
                 self.selected_session.clear();
                 self.selected_block.clear();
                 self.windows = json!([]);
-                self.screen = Value::Null;
+                self.screen = None;
                 self.replica = None;
                 self.paused = false;
                 self.phase = "connecting".into();
@@ -536,7 +561,7 @@ impl Actor {
                 self.disconnect().await;
                 self.endpoint = None;
                 self.replica = None;
-                self.screen = Value::Null;
+                self.screen = None;
                 self.phase = "disconnected".into();
                 self.error.clear();
                 self.notice.clear();
@@ -663,7 +688,7 @@ impl Actor {
                 }
                 self.data_resume = None;
                 self.replica = None;
-                self.screen = Value::Null;
+                self.screen = None;
                 self.selected_block.clear();
                 self.controlled = false;
                 if !self.selected_session.is_empty() && self.selected_session != session {
@@ -858,7 +883,7 @@ impl Actor {
                 {
                     replica.feed(chunk)?;
                 }
-                self.screen = frame_json(replica.terminal()?.frame()?);
+                self.screen = Some(Arc::new(replica.terminal()?.frame()?));
                 self.replica = Some(replica);
                 self.phase = "preview".into();
                 self.error.clear();
@@ -879,7 +904,7 @@ impl Actor {
         self.data_resume = None;
         self.selected_block = block;
         self.controlled = false;
-        self.screen = Value::Null;
+        self.screen = None;
         self.apply_theme().await?;
         let data = Data::open(
             self.endpoint.as_ref().context("no server")?,
@@ -1139,10 +1164,11 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
 fn rgb(rgb: [u8; 3]) -> u32 {
     ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32
 }
-fn frame_json(frame: Frame) -> Value {
+fn frame_json(frame: Frame) -> Value {frame_value(&frame)}
+fn frame_value(frame: &Frame) -> Value {
     let cells: Vec<Value> = frame
         .cells
-        .into_iter()
+        .iter()
         .map(|c| {
             json!([
                 c.x,
@@ -1572,6 +1598,13 @@ mod tests {
             assert_eq!(b["selectedSession"], created[1]["session_id"]);
             assert!(!text(&a).contains("HOST_1_REPLY"));
             assert!(!text(&b).contains("HOST_0_REPLY"));
+            apps[0].command(json!({"type":"visibility","visible":false})).unwrap();
+            apps[0].command(json!({"type":"input","text":"hidden-update\n"})).unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+            let hidden:Value=serde_json::from_str(&apps[0].poll(0).unwrap()).unwrap();
+            assert!(!text(&hidden).contains("HOST_0_REPLY:hidden-update"));
+            apps[0].command(json!({"type":"visibility","visible":true})).unwrap();
+            wait(&apps[0],|v|text(v).contains("HOST_0_REPLY:hidden-update"));
             apps[0].command(json!({"type":"pause"})).unwrap();
             wait(&apps[0], |v| v["phase"] == "paused");
             apps[1]
