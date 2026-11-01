@@ -49,7 +49,9 @@ import kotlin.math.roundToInt
         val cardLeft=0.dp
         val stride=with(LocalDensity.current){(cardWidth+8.dp).toPx()}
         val leftPx=with(LocalDensity.current){cardLeft.toPx()}
-        val candidate=(index+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
+        val candidate by remember(index,stride,blocks.size) {derivedStateOf {
+            (index+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
+        }}
         val flingSpeed=with(LocalDensity.current){450.dp.toPx()}
         fun finish(dx: Float,velocity: Float) {
             val step=if(dx < -stride*.18f || (dx< -20f && velocity < -flingSpeed)) 1 else if(dx > stride*.18f || (dx>20f && velocity>flingSpeed)) -1 else 0
@@ -67,9 +69,10 @@ import kotlin.math.roundToInt
             val block=blocks[i]
             val center=i==index
             val frame=if(block.id==liveBlock && liveScreen!=null) liveScreen else frames[block.id]
-            val position=(i-index)*stride+drag
+            val pageOffset=(i-index)*stride
             key(block.id) {
                 Box(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
+                    val position=pageOffset+drag
                     translationX=kotlin.math.round(leftPx+position)
                     alpha=1f-(abs(position)/stride).coerceIn(0f,1f)*.48f
                 }.clip(RoundedCornerShape(21.dp)).background(Color(palette.background))
