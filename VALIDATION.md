@@ -373,3 +373,42 @@ SHA256 was read back and matched. `validation/apk.json` records that artifact.
 The emulator received the same release, its original preferences were restored,
 and only disposable test sessions/panes were removed. Existing user sessions,
 server settings and authentication remain intact. Changes are committed by scope.
+
+
+## Rexlink release: scrolling, fitting, grouping and theme follow-up
+
+The app is renamed Rexlink, with the unofficial subtitle and package unchanged.
+Its new full-body dinosaur foreground was prepared with built-in imagegen,
+packaged with alpha, and drawn through the real adaptive launcher in instrumentation.
+Header/tab front tiles and label line boxes share their vertical center.
+
+All 34 JVM tests, 24 native tests (17 offline + 7 owned-server tests), and 14
+Android instrumentation tests pass. Clippy with warnings denied, the host-JVM
+JNI smoke, debug/release builds and lint pass. Profiles were regenerated from
+the current offline journey (17,998 rules). Binary RXT2 flags survive snapshots
+and JNI; RXT1 compatibility remains tested.
+
+An owned raw-mode Python fixture negotiated the same full-screen SGR mouse modes
+used by modern TUIs and had zero terminal history. Drags moved its visible counter;
+the first application scroll acquired control without showing the keyboard.
+A separate content tap acquired control and opened the keyboard. This fixture
+is not a launched Codex agent and made no model/API calls. A 160-column view
+retained its rightmost END marker before takeover and resized to the phone grid
+after ownership. Group order was checked with both Linux and Mac selected. Search,
+plain previous labels and confirmed close actions remain available.
+
+A configured Neovim 0.12.5 session on the Mac passed light/dark, takeover and
+pause/resume assertions after the explicitly approved Rex-aware config change.
+Its statusline plugin initially hid the test indicator; the fixture now reports
+its actual &background independently of that plugin. A clean fixture also
+verified the protocol behavior. Existing user editor sessions were not driven.
+The separate dotfiles commit is `1e2c9c3`; a pre-edit copy is retained at
+`/private/tmp/rexlink-nvim-init-before.lua`. Running editors need one restart.
+No Rex server/authentication configuration changed.
+
+The final non-debuggable release was installed over USB on S22+ RFCT21390SD.
+ADB returned Success and the installed APK SHA256 matched:
+`36bba3df87131a16a7bbb822852b84f29626a7ddc375b67e917a541e70803549`.
+The artifact is `app/build/outputs/apk/release/app-release.apk` (15584982 bytes),
+with signature, arm64 libraries, 16 KiB alignment and ART profiles verified.
+`validation/apk.json` records it. App settings and saved connections were preserved.

@@ -70,7 +70,7 @@ are a deliberately fixed working set; lint may report newer versions.
    sessions across connected servers, grouped in saved-server order. Server
    names distinguish the sessions. Tap the name to search the combined list,
    or long-press to jump to the last session, including on another server. The list searches both session and server names, puts the current session
-   first, marks the previous one with plain text, and offers **New** to create a
+   first within the current server group, marks the previous one with plain text, and offers **New** to create a
    session and shell. Swipe a list row either way to reveal **Close**, or use its
    ⋮ menu. Confirmation names the session and server: closing ends every program
    in that session. Switching away keeps programs running; Disconnect belongs
@@ -87,7 +87,8 @@ are a deliberately fixed working set; lint may report newer versions.
    remembered pane in front. **+ → New tab / New pane**
    starts a real shell on Rex. These resources are visible in other Rex clients.
    Creations are sent once, never automatically replayed after an uncertain reply.
-7. **Take over** enables typing and fits the terminal to the viewport. **Release**
+7. **Tap terminal content** to take control, fit the terminal to the phone and
+   open the keyboard. **Take over** remains available in the header. **Release**
    returns to viewing. The bottom keys provide esc, ctrl, alt, tab and arrows;
    scroll the key row for additional arrows. The keyboard button opens/hides the
    IME. Input stays blocked while a different pane's snapshot is still loading.
@@ -107,7 +108,10 @@ Swipe vertically to browse the selected terminal's real Ghostty scrollback,
 including history imported in the initial Rex snapshot. Drag/fling, a mouse
 wheel, and Shift+PageUp/PageDown scroll locally without taking ownership.
 **↓ Latest** jumps to live output; typing/pasting also returns to the bottom.
-Alternate-screen apps have their own scrolling and no terminal scrollback.
+Full-screen apps that enable mouse reporting receive mode-correct wheel events
+from vertical drags or a mouse wheel; this takes control without opening the IME.
+Ordinary shell history stays local and needs no ownership. Wider remote grids
+fit the card while viewing, then resize to the requested font grid on takeover.
 
 Terminal cards span the screen width, aligned with the dock. Their 12 dp side /
 8 dp top content insets extend the adjacent terminal cell backgrounds at each
@@ -242,9 +246,10 @@ ANDROID_SERIAL=<device-id> ./scripts/gradle.sh connectedDebugAndroidTest
 
 
 The launcher uses the user-selected voxel dinosaur as an Android adaptive icon.
-Original artwork, checksums and built-in imagegen preparation/cleanup prompts
-are in `artwork/rexlet/`; the transparent foreground is packaged in
-`app/src/main/res/drawable-nodpi/rexlet_dinosaur.png`.
+Original full-body artwork, checksums and the built-in imagegen preparation
+prompt are in `artwork/rexlink/`; its transparent foreground is packaged in
+`app/src/main/res/drawable-nodpi/rexlink_dinosaur.png`. Prior artwork is retained
+in `artwork/rexlet/`.
 
 
 ## Performance checks
@@ -281,3 +286,8 @@ these emulator results do not establish S22+ frame-rate or battery guarantees.
 
 The benchmark setup follows Android's [Macrobenchmark guidance](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview)
 and [Baseline Profile guidance](https://developer.android.com/topic/performance/baselineprofiles/create-baselineprofile).
+
+Server groups show the current host first and retain search and close actions.
+Saved connection profiles are local to this app; server icon/name customization
+is not synchronized with the macOS client. The application label is Rexlink and
+the package stays `dev.shulhi.rex`, preserving existing installations and settings.

@@ -292,3 +292,38 @@ the same operation. Cancel sends no mutation. The previous-session marker is
 plain text and the old footer gesture hints are removed. Closing the current
 session opens another available session through the existing selection logic.
 Disconnect and Forget remain local connection/profile actions in Servers.
+
+
+## Application wheel input, takeover focus and viewport fitting
+
+Private JNI packets now use RXT2. An input-flags u8 follows the three scrollbar
+u64 values: mouse reporting=1, alternate screen=2, alternate scroll=4, application
+cursor keys=8. The decoder also accepts historical RXT1 packets with flags zero.
+These flags come from the pinned Ghostty public C API, including imported
+snapshots; no program-name guessing decides whether a gesture sends input.
+
+Local history scrolling remains independent of ownership. A live, visible pane
+that negotiates mouse input receives Ghostty-encoded wheel press events with
+coordinates and cell geometry. Without mouse reporting, alternate-scroll mode
+uses cursor-key sequences according to DECCKM. The selected server/session/block
+must match. The first application scroll takes ownership, fits the requested
+phone grid, and writes the wheel batch once; uncertain writes are not replayed.
+The keyboard opens only for an explicit content tap or keyboard/takeover action.
+Horizontal pane swipes and local history drags do not request keyboard activation.
+The existing UTF-8 terminal.write interface remains the transport; non-UTF-8
+legacy mouse reports are rejected instead of corrupting input.
+
+Takeover reapplies the resolved theme, then sends the verified block.event focus
+payload `{type:focus,payload:{action:in}}`. This lets Neovim re-query the canonical
+terminal background even when set_theme deduplicates an unchanged theme. The
+replica still installs no WRITE_PTY callback and never fabricates OSC replies.
+The approved Mac Neovim config now follows terminal appearance inside Rex and
+keeps OS-based behavior elsewhere. Existing editors must restart to load it.
+Clean Linux and configured Mac theme assertions pass through takeover/resume.
+The tested Mac command-session process metadata reports /usr/bin/login rather
+than nvim; exact foreground recognition is asserted on the Linux fixture only.
+
+A remote grid wider than the current card uses a temporary fitted font grid.
+Resize reports always use the requested font size, avoiding fit/resize feedback.
+When a neighbor preview becomes active, dimensions are replayed even if its View
+size did not change. A colored last-column regression verifies the right edge.
