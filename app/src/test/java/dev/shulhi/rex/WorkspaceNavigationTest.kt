@@ -17,6 +17,16 @@ class WorkspaceNavigationTest {
         assertEquals("a", navigation.pane("session-b", listOf(first, second)))
     }
 
+    @Test fun swipesStayWithinTheirTabAndStopAtTheEdges() {
+        val navigation = WorkspaceNavigation()
+        assertEquals("b", navigation.neighbour(listOf(first, second), "a", 1))
+        assertEquals("a", navigation.neighbour(listOf(first, second), "b", -1))
+        assertNull(navigation.neighbour(listOf(first, second), "a", -1))
+        assertNull(navigation.neighbour(listOf(first, second), "b", 1))
+        assertNull(navigation.neighbour(listOf(first, second), "missing", 1))
+        assertNull(navigation.neighbour(listOf(first, second), "a", 0))
+    }
+
     @Test fun closedPanesAndWindowsFallBackToExistingTerminal() {
         val navigation = WorkspaceNavigation()
         navigation.remember("session", listOf(first, second), "b")

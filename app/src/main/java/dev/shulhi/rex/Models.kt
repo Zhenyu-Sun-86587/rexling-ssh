@@ -29,7 +29,7 @@ data class AppState(
     val identity: String = "", val error: String = "", val notice: String = "",
     val sessions: List<SessionItem> = emptyList(), val windows: List<WindowItem> = emptyList(),
     val selectedSession: String = "", val selectedBlock: String = "", val controlled: Boolean = false,
-    val screen: TerminalScreen? = null,
+    val screen: TerminalScreen? = null, val creating: Boolean = false,
 ) {
     val connected: Boolean get() = phase == "connected"
     companion object {
@@ -49,7 +49,7 @@ data class AppState(
                     })
                 },
                 selectedSession = root.optString("selectedSession"), selectedBlock = root.optString("selectedBlock"),
-                controlled = root.optBoolean("controlled"), screen = root.optJSONObject("screen")?.let(TerminalScreen::parse),
+                controlled = root.optBoolean("controlled"), creating = root.optBoolean("creating"), screen = root.optJSONObject("screen")?.let(TerminalScreen::parse),
             )
         }
     }

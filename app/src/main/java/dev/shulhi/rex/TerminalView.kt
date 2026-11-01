@@ -8,6 +8,7 @@ import android.text.InputType
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -17,6 +18,7 @@ import kotlin.math.max
 
 class TerminalView(context: Context) : View(context) {
     var onInput: (String) -> Unit = {}
+    var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
     var screen: TerminalScreen? = null
         set(value) { field = value; invalidate() }
@@ -40,6 +42,7 @@ class TerminalView(context: Context) : View(context) {
     private var baseline = 0f
     private var dimensions = 0 to 0
     private var composing = ""
+    private val paneGesture = PaneGesture(ViewConfiguration.get(context).scaledTouchSlop.toFloat(), 48f * resources.displayMetrics.density)
 
     init {
         isFocusable = true; isFocusableInTouchMode = true
@@ -103,7 +106,19 @@ class TerminalView(context: Context) : View(context) {
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(this, 0)
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP) { performClick(); keyboard() }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> paneGesture.begin(event.x, event.y)
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount != 1) paneGesture.cancel() else paneGesture.move(event.x, event.y)
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> paneGesture.cancel()
+            MotionEvent.ACTION_UP -> when (paneGesture.finish(event.x, event.y)) {
+                PaneGesture.Result.TAP -> { performClick(); keyboard() }
+                PaneGesture.Result.NEXT -> onPaneSwipe(1)
+                PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
+                PaneGesture.Result.NONE -> Unit
+            }
+        }
         return true
     }
     override fun performClick(): Boolean { super.performClick(); return true }

@@ -5,6 +5,13 @@ class WorkspaceNavigation {
     private val windows = mutableMapOf<String, String>()
     private val panes = mutableMapOf<Pair<String, String>, String>()
 
+    fun neighbour(available: List<WindowItem>, block: String, step: Int): String? {
+        if (step != -1 && step != 1) return null
+        val window = available.firstOrNull { it.blocks.any { pane -> pane.id == block } } ?: return null
+        val index = window.blocks.indexOfFirst { it.id == block }
+        return window.blocks.getOrNull(index + step)?.id
+    }
+
     fun remember(session: String, available: List<WindowItem>, block: String) {
         val window = available.firstOrNull { it.blocks.any { pane -> pane.id == block } } ?: return
         windows[session] = window.id

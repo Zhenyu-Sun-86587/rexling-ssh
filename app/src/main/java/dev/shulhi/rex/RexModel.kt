@@ -84,11 +84,27 @@ class RexModel(application: Application) : AndroidViewModel(application) {
             navigation.pane(current.selectedSession, window)?.let(::selectBlock)
         }
     }
+    fun rememberCurrentTerminal() {
+        val current = state.value
+        navigation.remember(current.selectedSession, current.windows, current.selectedBlock)
+    }
     fun openPreferredTerminal() {
         val current = state.value
         if (current.connected && current.selectedSession.isNotBlank() && current.selectedBlock.isBlank()) {
             navigation.pane(current.selectedSession, current.windows)?.let(::selectBlock)
         }
+    }
+    fun swipePane(step: Int) {
+        val current = state.value
+        if (current.connected && !current.creating) navigation.neighbour(current.windows, current.selectedBlock, step)?.let(::selectBlock)
+    }
+    fun createTab() {
+        val current = state.value
+        if (current.connected && !current.creating && current.selectedSession.isNotBlank()) command("new_tab", "session" to current.selectedSession)
+    }
+    fun createPane() {
+        val current = state.value
+        if (current.connected && !current.creating && current.selectedBlock.isNotBlank()) command("new_pane", "session" to current.selectedSession, "anchor" to current.selectedBlock)
     }
     fun refresh() = command("refresh")
     fun takeControl() = command("take")
