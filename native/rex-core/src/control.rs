@@ -57,6 +57,21 @@ impl Trace {
     }
 }
 
+/// Preserve server error codes so callers can distinguish a stale resource from a failed operation.
+#[derive(Debug)]
+pub struct RpcError {
+    pub method: String,
+    pub code: String,
+    pub message: String,
+    pub status: Value,
+}
+impl std::fmt::Display for RpcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,"{}: {} (code={}, status={})",self.method,self.message,self.code,self.status)
+    }
+}
+impl std::error::Error for RpcError {}
+
 pub struct Control {
     ws: Ws,
     endpoint: Endpoint,
@@ -185,12 +200,10 @@ impl Control {
                 }
                 ensure!(reply["id"] == id, "unexpected response ID");
                 if let Some(error) = reply.get("error").filter(|e| !e.is_null()) {
-                    bail!(
-                        "{method}: {} (code={}, status={})",
-                        error["message"],
-                        error["code"],
-                        error["status"]
-                    );
+                    return Err(RpcError {
+                        method: method.into(), code:error["code"].as_str().unwrap_or("").into(),
+                        message:error["message"].as_str().unwrap_or("Server request failed").into(),status:error["status"].clone()
+                    }.into());
                 }
                 return Ok(reply.get("payload").cloned().unwrap_or(Value::Null));
             }

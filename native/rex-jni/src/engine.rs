@@ -625,7 +625,7 @@ impl Actor {
             "close_session" => {
                 ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before closing a session");
                 let id=value["id"].as_str().context("session ID required")?.to_owned();
-                ensure!(self.sessions.as_array().into_iter().flatten().any(|s|s["session_id"].as_str()==Some(&id)),"That session is no longer available");
+                ensure!(!id.is_empty(),"session ID required");
                 self.creating=true;self.error.clear();self.publish();
                 // Rex requires attachment to destroy. A short-lived client avoids
                 // moving the viewed session or borrowing another block's claim.
@@ -636,7 +636,9 @@ impl Actor {
                     closer.call("session.destroy",json!({"session_id":id})).await?;
                     Ok::<(),anyhow::Error>(())
                 }.await;
-                let _=closer.close().await;result?;
+                let _=closer.close().await;
+                if let Err(error)=result
+                    && error.downcast_ref::<rex_core::control::RpcError>().is_none_or(|e| e.code!="session_not_found") {return Err(error);}
                 if self.selected_session==id {
                     self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);
                     self.data=None;self.data_resume=None;self.replica=None;self.screen=None;self.controlled=false;
@@ -1883,6 +1885,9 @@ mod tests {
             app.command(json!({"type":"close_session","id":created[0]["session_id"]})).unwrap();
             let empty=wait(&app,|v|v["selectedSession"]=="" && v["creating"]==false);
             assert!(empty["screen"].is_null());assert_eq!(empty["controlled"],false);
+            app.command(json!({"type":"close_session","id":created[0]["session_id"]})).unwrap();
+            let closed=wait(&app,|v|v["creating"]==false && v["notice"]=="Session closed");
+            assert_eq!(closed["error"],"");
         }));
         let sessions=runtime.block_on(writer.call("session.list",json!({}))).unwrap();
         for value in created {
