@@ -1,1 +1,1 @@
-No image generation or editing: use the exact user-supplied paper-style icon PNG. Android applies its existing adaptive launcher mask.
+No image generation or editing: use the exact user-supplied transparent paper-style icon PNG, preserving its alpha. Android supplies the white adaptive launcher background.
