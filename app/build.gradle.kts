@@ -23,8 +23,21 @@ android {
     packaging { jniLibs { useLegacyPackaging = false } }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Preserve the installed prototype identity for local release upgrades.
+            signingConfig=signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        create("optimized") {
+            initWith(getByName("release"))
+            signingConfig=signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
+        create("profile") {
+            initWith(getByName("optimized"))
+            isMinifyEnabled=false
+            isShrinkResources=false
         }
     }
 }
@@ -32,6 +45,7 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.08.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")

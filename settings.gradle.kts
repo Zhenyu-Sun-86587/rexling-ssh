@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "Rexlet"
-include(":app")
+include(":app", ":benchmark")

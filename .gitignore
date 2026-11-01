@@ -6,3 +6,5 @@ native/target/
 app/src/main/jniLibs/
 .idea/
 *.iml
+
+.kotlin/
