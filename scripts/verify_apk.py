@@ -19,8 +19,9 @@ def main():
     ndk = sdk / "ndk/30.0.16248370"
     host = "darwin-x86_64" if os.uname().sysname == "Darwin" else "linux-x86_64"
     tools = ndk / "toolchains/llvm/prebuilt" / host / "bin"
-    parser=argparse.ArgumentParser();parser.add_argument("--apk",default="app/build/outputs/apk/debug/app-debug.apk")
-    apk=ROOT / parser.parse_args().apk
+    parser=argparse.ArgumentParser();parser.add_argument("--apk",default="app/build/outputs/apk/debug/app-debug.apk");parser.add_argument("--require-release",action="store_true")
+    args=parser.parse_args()
+    apk=ROOT / args.apk
     env = os.environ.copy()
     studio = Path("/Applications/Android Studio.app/Contents/jbr/Contents/Home")
     if studio.exists(): env["JAVA_HOME"] = str(studio)
@@ -35,8 +36,10 @@ def main():
     assert label == "Rexlet", label
     expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "awaitUpdate", "readUpdate", "destroy"]}
     libraries = []
+    profiles = []
     with zipfile.ZipFile(apk) as archive, tempfile.TemporaryDirectory(prefix="rex-apk-") as temporary:
         for name in archive.namelist():
+            if name.startswith("assets/dexopt/"):profiles.append({"name":name,"bytes":archive.getinfo(name).file_size})
             if not name.startswith("lib/") or not name.endswith(".so"): continue
             assert name.startswith("lib/arm64-v8a/"), name
             path = Path(temporary) / Path(name).name
@@ -54,10 +57,14 @@ def main():
     assert any(item["name"].endswith("libc++_shared.so") for item in libraries)
     manifest = run([sdk / "cmdline-tools/latest/bin/apkanalyzer", "manifest", "print", apk])
     assert 'package="dev.shulhi.rex"' in manifest
+    debuggable='android:debuggable="true"' in manifest
+    if args.require_release:
+        assert not debuggable,"Release must not be debuggable"
+        assert any(item["name"]=="assets/dexopt/baseline.prof" and item["bytes"]>0 for item in profiles),"Missing baseline profile"
     permissions = re.findall(r'<uses-permission[^>]*android:name="([^"]+)"', manifest)
     assert "android.permission.INTERNET" in permissions
     assert "android.permission.ACCESS_FINE_LOCATION" not in permissions
-    print(json.dumps({"apk": str(apk.relative_to(ROOT)), "application_label": label, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size, "signature_verified": True, "zip_alignment_16k": True, "permissions": permissions, "native_libraries": libraries, "runtime_execution": "not performed by this static APK check"}, indent=2))
+    print(json.dumps({"apk": str(apk.relative_to(ROOT)), "application_label": label, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size, "signature_verified": True, "debuggable": debuggable, "art_profiles": profiles, "zip_alignment_16k": True, "permissions": permissions, "native_libraries": libraries, "runtime_execution": "not performed by this static APK check"}, indent=2))
 
 
 if __name__ == "__main__":
