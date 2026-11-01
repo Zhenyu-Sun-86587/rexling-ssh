@@ -48,7 +48,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE }
+internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -76,6 +76,10 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.RIGHT -> arrow(1f,0f)
             ChromeIcon.UP -> arrow(0f,-1f)
             ChromeIcon.DOWN -> arrow(0f,1f)
+            ChromeIcon.ESCAPE -> {drawArc(color,-90f,270f,false,Offset(4f*u,4f*u),Size(16f*u,16f*u),style=Stroke(width));line(4f,4f,12f,12f);line(4f,4f,4f,9f);line(4f,4f,9f,4f)}
+            ChromeIcon.CONTROL -> {line(6f,15f,12f,9f);line(12f,9f,18f,15f)}
+            ChromeIcon.ALT -> {line(3f,6f,8f,6f);line(8f,6f,15f,18f);line(15f,18f,21f,18f);line(14f,6f,21f,6f)}
+            ChromeIcon.SHIFT -> {line(12f,3f,3f,12f);line(3f,12f,8f,12f);line(8f,12f,8f,21f);line(8f,21f,16f,21f);line(16f,21f,16f,12f);line(16f,12f,21f,12f);line(21f,12f,12f,3f)}
             ChromeIcon.TAB -> { line(4f,12f,17f,12f); line(12f,7f,17f,12f); line(12f,17f,17f,12f); line(20f,6f,20f,18f) }
             ChromeIcon.KEYBOARD, ChromeIcon.HIDE_KEYBOARD -> {
                 box(2f,4f,20f,14f)
@@ -256,38 +260,38 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
     keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,onKeyboard: ()->Unit) {
     var expanded by remember {mutableStateOf(false)}
-    val hiddenStart=with(androidx.compose.ui.platform.LocalDensity.current) {25.dp.roundToPx()}
+    val hiddenStart=with(androidx.compose.ui.platform.LocalDensity.current) {26.dp.roundToPx()}
     val keyScroll=rememberScrollState(hiddenStart)
     LaunchedEffect(expanded,hiddenStart) {keyScroll.scrollTo(if(expanded) 0 else hiddenStart)}
     LaunchedEffect(keyboardVisible) {if(!keyboardVisible) {expanded=false;keyScroll.scrollTo(hiddenStart)}}
     Column(Modifier.fillMaxWidth().padding(horizontal=8.dp)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)))
-        Row(Modifier.fillMaxWidth().height(53.dp).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(3.dp),verticalAlignment=Alignment.CenterVertically) {
-            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
-                val normalWidth=maxWidth.coerceAtLeast(245.dp)
-                Row(Modifier.fillMaxHeight().horizontalScroll(keyScroll),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+        Row(Modifier.fillMaxWidth().height(53.dp).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+            // Keep the modifier group fixed while only the arrow group scrolls.
+            Box(Modifier.width(196.dp).fillMaxHeight()) {
+                Row(Modifier.fillMaxHeight().horizontalScroll(keyScroll),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                     Box(Modifier.width(22.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .semantics {contentDescription=if(expanded) "Hide extra keys" else "Show extra keys";stateDescription=if(expanded) "Expanded" else "Collapsed"}
                         .clickable(enabled=enabled,role=Role.Button) {expanded=!expanded},contentAlignment=Alignment.Center) {
                         ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(14.dp).graphicsLayer {rotationZ=if(expanded) 180f else 0f})
                     }
-                    Row(Modifier.width(normalWidth).fillMaxHeight(),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
-                        DockKey("esc",controlled,description="Escape",modifier=Modifier.weight(1f)) {onKey("esc")}
-                        DockKey("ctrl",controlled,control,modifier=Modifier.weight(1.15f),onClick=onControl)
-                        DockKey("alt",controlled,alt,modifier=Modifier.weight(1f),onClick=onAlt)
+                    Row(Modifier.width(196.dp).fillMaxHeight(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                        DockKey("esc",controlled,description="Escape",modifier=Modifier.weight(1f),icon=ChromeIcon.ESCAPE) {onKey("esc")}
+                        DockKey("ctrl",controlled,control,description="Control",modifier=Modifier.weight(1f),icon=ChromeIcon.CONTROL,onClick=onControl)
+                        DockKey("alt",controlled,alt,description="Alt",modifier=Modifier.weight(1f),icon=ChromeIcon.ALT,onClick=onAlt)
                         ShiftDockKey(controlled,shift,Modifier.weight(1f),onShift,onShiftPress,onShiftRelease)
-                        DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f)) {onKey("tab")}
+                        DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f),icon=ChromeIcon.TAB) {onKey("tab")}
                     }
                 }
             }
+            ArrowKeyGroup(controlled,Modifier.weight(1f).fillMaxHeight(),onKey)
             ChromeButton(if(keyboardVisible) ChromeIcon.HIDE_KEYBOARD else ChromeIcon.KEYBOARD,
                 if(!controlled) "Take control and show keyboard" else if(keyboardVisible) "Hide keyboard" else "Show keyboard",enabled,onClick=onKeyboard)
         }
-        ArrowKeyGroup(controlled,Modifier.fillMaxWidth().height(37.dp),onKey)
-        Spacer(Modifier.height(8.dp))
         if(expanded) {
-            val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"})
+            val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"},
+                listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete"))
             for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
                 for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f)) {onKey(key)}
             }
@@ -295,13 +299,14 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
-@Composable private fun DockKey(label: String,enabled: Boolean,active: Boolean=false,description: String=label,modifier: Modifier=Modifier.width(if(label=="ctrl") 47.dp else 40.dp),onClick: ()->Unit) {
+@Composable private fun DockKey(label: String,enabled: Boolean,active: Boolean=false,description: String=label,modifier: Modifier=Modifier.width(if(label=="ctrl") 47.dp else 40.dp),icon: ChromeIcon?=null,onClick: ()->Unit) {
     Box(modifier.fillMaxHeight().clip(RoundedCornerShape(11.dp))
         .background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
         .semantics(mergeDescendants=true) {contentDescription=description;selected=active}
         .clickable(enabled=enabled,role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center) {
-        Text(label,fontFamily=MonoUi,fontSize=11.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
-            color=(if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(enabled) 1f else .38f),letterSpacing=0.sp)
+        val color=(if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(enabled) 1f else .38f)
+        if(icon!=null) ChromeSymbol(icon,Modifier.size(20.dp),color)
+        else Text(label,fontFamily=MonoUi,fontSize=11.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,color=color,letterSpacing=0.sp)
     }
 }
 
@@ -334,27 +339,25 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 } finally {release(cancelled)}
             }
         },contentAlignment=Alignment.Center) {
-        Text("shift",fontFamily=MonoUi,fontSize=11.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
-            color=(if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(enabled) 1f else .38f),letterSpacing=0.sp)
+        ChromeSymbol(ChromeIcon.SHIFT,Modifier.size(20.dp),
+            (if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(enabled) 1f else .38f))
     }
 }
 
-/** Navigation keys scroll as a group. Only an individual tap sends input. */
+/** Arrow keys scroll as a group. Only an individual tap sends input. */
 @Composable internal fun ArrowKeyGroup(enabled: Boolean,modifier: Modifier=Modifier,onKey: (String)->Unit) {
-    val keys=listOf("left" to "Left arrow","down" to "Down arrow","up" to "Up arrow","right" to "Right arrow",
-        "home" to "Home","end" to "End","pageup" to "Page up","pagedown" to "Page down","insert" to "Insert","delete" to "Delete")
+    val keys=listOf("left" to "Left arrow","down" to "Down arrow","up" to "Up arrow","right" to "Right arrow")
     val icons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN,"up" to ChromeIcon.UP,"right" to ChromeIcon.RIGHT)
     Row(modifier.clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+        .semantics {contentDescription="Arrow keys"}
         .horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically) {
         keys.forEachIndexed {i,(key,description)->
             if(i>0) Box(Modifier.width(1.dp).height(15.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.6f)))
-            Box(Modifier.width(52.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
+            Box(Modifier.width(40.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
                 .semantics {contentDescription=description}
                 .clickable(enabled=enabled,role=Role.Button) {onKey(key)},contentAlignment=Alignment.Center) {
                 val color=MaterialTheme.colorScheme.onSurface.copy(alpha=if(enabled) 1f else .38f)
-                icons[key]?.let {ChromeSymbol(it,Modifier.size(18.dp),color)} ?: Text(
-                    when(key) {"pageup"->"PgUp";"pagedown"->"PgDn";"insert"->"Ins";"delete"->"Del";else->description},
-                    fontFamily=MonoUi,fontSize=11.sp,color=color,letterSpacing=0.sp)
+                ChromeSymbol(icons.getValue(key),Modifier.size(18.dp),color)
             }
         }
     }
