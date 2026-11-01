@@ -148,3 +148,33 @@ with warnings denied. Android build, all 16 JVM tests and lint pass.
 
 The mockup debug APK was installed over USB on RFCT21390SD (Galaxy S22+) after
 reconnection, with ADB reporting Success. No program-icon work is included.
+
+
+## Neovim fixes and blue light theme
+
+The previous renderer failed two pixel regressions: a uniform explicit RGB
+background developed seams at quarter/half/three-quarter pixel canvas offsets,
+and a wide glyph's default-colored spacer erased half its background. Cell
+backgrounds now use a separate non-antialiased Paint and merge equal contiguous
+row fills. Wide leading cells cover their spacers. Carousel translation is
+snapped to whole pixels. Text retains antialiasing and the bundled font grid.
+Both background regressions plus the typography test pass on the emulator
+(3 instrumentation tests). The tests failed before the renderer fix.
+
+All 13 native tests pass: 10 offline tests plus 3 owned-server integration tests.
+The new integration runs real Neovim 0.12.6 and verifies `&background` changes
+through Rex `set_theme`, deferred non-owner appearance, takeover, and lifecycle
+pause/resume. All test sessions, including the version-probe session, were
+cleaned up. Clippy with warnings denied, all 16 Kotlin JVM tests, Android debug
+build and lint pass. APK signature and 16 KiB alignment pass.
+
+Light now uses blue #3156f4 accents with cool gray chrome and white terminal
+cards. The emulator Appearance picker and a captured preview visually confirm
+the new palette. The redundant `/ shell` header label, visible pane fractions
+and “swipe to switch” text are removed. Dots remain tappable to open the pane
+picker; accessibility descriptions still identify the pane position. The
+explicit Take over/Release control remains.
+
+The final APK was installed via USB on RFCT21390SD (Galaxy S22+, SM_S906E),
+with ADB reporting Success. No phone UI automation or program-icon work was
+performed for this delivery. `validation/apk.json` records the installed APK.

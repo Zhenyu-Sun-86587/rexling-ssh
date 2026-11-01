@@ -1,7 +1,7 @@
 {
   "apk": "app/build/outputs/apk/debug/app-debug.apk",
-  "sha256": "e983c5f2b12d9a58d363e5ed67a3b6aa681990e7ac4b45fd80bcd07d743507ff",
-  "bytes": 37115649,
+  "sha256": "d052408abee316fe1ec5ee22c64810a0531088aa6c547acc47cf95d4692e5d9d",
+  "bytes": 37119073,
   "signature_verified": true,
   "zip_alignment_16k": true,
   "permissions": [
@@ -21,7 +21,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 4971368,
+      "bytes": 4974792,
       "load_alignment": 16384
     }
   ],

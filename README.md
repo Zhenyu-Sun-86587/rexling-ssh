@@ -73,8 +73,12 @@ are a deliberately fixed working set; lint may report newer versions.
    scroll the key row for additional arrows. The keyboard button opens/hides the
    IME. Input stays blocked while a different pane's snapshot is still loading.
 8. **⋮ → Appearance** chooses **System**, **Dark**, or **Light**, and saves the
-   choice. Default and standard ANSI colors are themed locally; explicit RGB
-   colors from terminal programs are preserved. No server theme is changed.
+   choice. Light uses blue accents, cool gray surfaces and white terminal cards;
+   Dark keeps its lime accent. The selected pane receives Rex's `set_theme`
+   request, allowing Neovim to follow terminal appearance. Rex applies it while
+   this device owns the pane or it is unowned; another owner's theme stays active
+   until you take over. Explicit RGB from programs is preserved. Neovim configs
+   that explicitly force `background` or a fixed colorscheme may override this.
    The menu also provides copy/paste, connection settings and font sizes 8–18 sp.
    The default is 10 sp in bundled JetBrains Mono NL, independent of OEM fonts.
 

@@ -81,5 +81,45 @@ and omits unavailable remote usage dates. New Session calls verified
 
 Local navigationId values correlate UI requests with completed native selection;
 they are not Rex wire fields. Native cell flags retain default-color and palette
-roles so Android can apply System/Dark/Light without invoking remote set_theme.
-True RGB remains exact. Session and pane snapshots are not persisted to disk.
+roles so Android can render System/Dark/Light while preserving explicit RGB.
+Session and pane snapshots are not persisted to disk.
+
+## Terminal appearance and Neovim
+
+Verified on the owned revision-7 server: `com.superlogical.terminal.set_theme`
+uses `{session_id, block_id, args}`. `args` contains `scheme: "dark" | "light"`,
+`background`, `foreground`, `cursor` as `#RRGGBB`, and `palette` as strings such
+as `"0=#202432"` (Android sends entries 0–15). The return value is `{}`.
+Rex applies these colors immediately if the caller owns the block or no client
+owns it, and otherwise queues them until that client becomes owner. This is the
+same ownership policy documented for terminal resize.
+
+Compose sends its resolved System/Dark/Light palette to the native actor. The
+actor retains it across disconnect/pause, registers it before opening/resuming
+the selected data stream, and reapplies it on takeover and appearance changes.
+It sends no theme requests for neighbor previews or unselected panes. The
+canonical server terminal answers program color queries and notifies programs
+of scheme changes. Android's Ghostty replica still has no WRITE_PTY callback;
+it never injects its own OSC replies into the remote PTY.
+
+The live actor regression runs a disposable `nvim --clean -n -i NONE` with a
+statusline showing `&background`. On installed Neovim 0.12.6, changing appearance
+updates that value light → dark → light, including pause/resume and takeover
+from another client. A non-owner's pending light theme leaves the current
+owner's dark theme in effect. The test never sets Neovim's background option.
+All disposable sessions are destroyed. Neovim configurations that force their
+own background/colorscheme can override automatic detection.
+
+Reproduce the native test (requires an owned server with `nvim` on PATH):
+
+```sh
+REX_TEST_SERVER=https://rex.taildaac1.ts.net \
+GHOSTTY_PREFIX="$PWD/.build/ghostty-host" \
+CARGO_TARGET_DIR="$PWD/.build/rust" \
+cargo test --locked --manifest-path native/Cargo.toml \
+  live_neovim_theme_follows_ownership_and_survives_pause -- --ignored
+```
+
+Neovim's automatic color response behavior is documented in its
+[defaults implementation](https://github.com/neovim/neovim/blob/master/runtime/lua/vim/_core/defaults.lua)
+and [`background` option](https://neovim.io/doc/user/options/#'background').
