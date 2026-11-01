@@ -69,7 +69,7 @@ private val Ink = Color(0xff101411)
     val state by model.state.collectAsState()
     var endpoint by rememberSaveable { mutableStateOf(model.savedEndpoint) }
     var serverVisible by rememberSaveable { mutableStateOf(true) }
-    var fontSize by rememberSaveable { mutableIntStateOf(14) }
+    var fontSize by rememberSaveable { mutableIntStateOf(10) }
     var picker by remember { mutableStateOf("") }
     var menuVisible by remember { mutableStateOf(false) }
     var errorExpanded by remember { mutableStateOf(false) }
@@ -132,7 +132,7 @@ private val Ink = Color(0xff101411)
                         DropdownMenuItem(text = { Text("Refresh sessions and tabs") }, enabled = state.connected,
                             onClick = { menuVisible = false; model.refresh() })
                         DropdownMenuItem(text = { Text("Font size · $fontSize") }, enabled = screen != null,
-                            onClick = { fontSize = when (fontSize) { 12 -> 14; 14 -> 16; 16 -> 18; else -> 12 } })
+                            onClick = { fontSize = when (fontSize) { 8 -> 10; 10 -> 12; 12 -> 14; 14 -> 16; 16 -> 18; else -> 8 } })
                         DropdownMenuItem(text = { Text("Copy viewport") }, enabled = screen != null, onClick = {
                             menuVisible = false
                             screen?.let { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)

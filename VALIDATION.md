@@ -74,7 +74,7 @@ controls while the IME was open. Input sent through the app produced
 probe's snapshot command. Both test sessions were destroyed afterward.
 
 The IME-visible terminal viewport measured `[0,274][1080,1323]` on the emulator;
-the terminal reported 49 columns by 22 rows at the default 14 sp font. The prior
+the terminal reported 49 columns by 22 rows at the 14 sp font used for that check. The prior
 layout's observed IME-visible terminal was 49 by 17. Navigation history unit tests
 also cover removed panes/windows and empty windows. `assembleDebug`, all five
 Kotlin tests and `lintDebug` passed; lint has no errors. The crash log contained

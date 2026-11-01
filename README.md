@@ -65,7 +65,8 @@ are a deliberately fixed working set; lint may report newer versions.
    keyboard button. Session, tab and pane navigation stays visible with the IME.
 6. Open **⋮** for server settings, connection status, terminal dimensions, font
    size, copy, paste and refresh. Routine status messages live in this menu so
-   the terminal gets more space.
+   the terminal gets more space. Terminal text defaults to **10 sp**; the font-size
+   menu cycles through 8, 10, 12, 14, 16 and 18 sp.
 
 **Try preview** restores a captured disposable test stream locally. It displays
 an actual Ghostty snapshot and later VT output without requiring a connection.

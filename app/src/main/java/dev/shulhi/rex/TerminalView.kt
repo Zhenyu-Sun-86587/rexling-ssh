@@ -28,7 +28,7 @@ class TerminalView(context: Context) : View(context) {
                 (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
             }
         }
-    var textSp: Float = 14f
+    var textSp: Float = 10f
         set(value) { if (field != value) { field = value; metrics(); invalidate() } }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val normal = Typeface.create("monospace", Typeface.NORMAL)
