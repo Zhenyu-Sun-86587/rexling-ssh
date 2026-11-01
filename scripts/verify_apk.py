@@ -28,6 +28,9 @@ def main():
 
     run([build_tools / "apksigner", "verify", "--verbose", apk])
     run([build_tools / "zipalign", "-c", "-P", "16", "-v", "4", apk])
+    badging = run([build_tools / "aapt", "dump", "badging", apk])
+    label = re.search(r"(?m)^application-label:'([^']*)'$", badging).group(1)
+    assert label == "Rexlet", label
     expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "destroy"]}
     libraries = []
     with zipfile.ZipFile(apk) as archive, tempfile.TemporaryDirectory(prefix="rex-apk-") as temporary:
@@ -52,7 +55,7 @@ def main():
     permissions = re.findall(r'<uses-permission[^>]*android:name="([^"]+)"', manifest)
     assert "android.permission.INTERNET" in permissions
     assert "android.permission.ACCESS_FINE_LOCATION" not in permissions
-    print(json.dumps({"apk": str(apk.relative_to(ROOT)), "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size, "signature_verified": True, "zip_alignment_16k": True, "permissions": permissions, "native_libraries": libraries, "runtime_execution": "not performed by this static APK check"}, indent=2))
+    print(json.dumps({"apk": str(apk.relative_to(ROOT)), "application_label": label, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size, "signature_verified": True, "zip_alignment_16k": True, "permissions": permissions, "native_libraries": libraries, "runtime_execution": "not performed by this static APK check"}, indent=2))
 
 
 if __name__ == "__main__":
