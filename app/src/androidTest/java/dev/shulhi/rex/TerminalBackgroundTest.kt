@@ -6,6 +6,7 @@ import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -114,6 +115,22 @@ class TerminalBackgroundTest {
             val fresh=draw(view(changed))
             org.junit.Assert.assertTrue("Cached and fresh rows must render identically",image.sameAs(fresh))
             image.recycle();fresh.recycle()
+        }
+    }
+
+    @Test fun wideRemoteScreensFitAndActiveViewsReplayRequestedDimensions() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val context=instrumentation.targetContext
+            val red=0xffd13b42.toInt();val gray=0xff253044.toInt()
+            val cells=(0 until 3).flatMap {y->(0 until 120).map {x->TerminalCell(x,y,"",-1,if(x==119) red else gray,0,1)}}
+            val view=TerminalView(context).apply {screen=TerminalScreen(120,3,null,null,-1,0,cells);setTerminalPaddingDp(12,8,6)}
+            view.measure(View.MeasureSpec.makeMeasureSpec(400,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(200,View.MeasureSpec.EXACTLY));view.layout(0,0,400,200)
+            var dimensions=0 to 0
+            view.onDimensions={x,y->dimensions=x to y}
+            assertTrue("Active pane must receive requested, not fitted, column count",dimensions.first in 1..119)
+            val bitmap=Bitmap.createBitmap(400,200,Bitmap.Config.ARGB_8888);view.draw(Canvas(bitmap))
+            assertEquals("Remote last column must remain visible",red,bitmap.getPixel(398,100));bitmap.recycle()
         }
     }
 

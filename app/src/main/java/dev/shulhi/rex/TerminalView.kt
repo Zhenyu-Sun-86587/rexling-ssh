@@ -39,8 +39,9 @@ class TerminalView(context: Context) : View(context) {
     var onScroll: (Int) -> Unit = {}
     var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
+        set(value) {val changed=field!=value;field=value;if(changed && width>0 && height>0) reportDimensions(force=true)}
     var screen: TerminalScreen? = null
-        set(value) { if(field!==value) {field = value; postInvalidateOnAnimation()} }
+        set(value) { if(field!==value) {val columns=field?.columns;field = value;if(columns!=value?.columns) configureRendering();postInvalidateOnAnimation()} }
     var controlled: Boolean = false
         set(value) {
             if (field != value) {
@@ -66,6 +67,9 @@ class TerminalView(context: Context) : View(context) {
     private var cellWidth = 1f
     private var cellHeight = 1f
     private var baseline = 0f
+    private var desiredCellWidth=1f
+    private var desiredCellHeight=1f
+    private var desiredTextSize=1f
     private var dimensions = 0 to 0
     private var composing = ""
     private var insetHorizontal = 0f
@@ -80,7 +84,7 @@ class TerminalView(context: Context) : View(context) {
         val b = (bottom * density).roundToInt().toFloat()
         if (h == insetHorizontal && t == insetTop && b == insetBottom) return
         insetHorizontal = h; insetTop = t; insetBottom = b
-        clearRows();reportDimensions(); invalidate()
+        configureRendering();clearRows();reportDimensions(); invalidate()
     }
     private val paneGesture = PaneGesture(ViewConfiguration.get(context).scaledTouchSlop.toFloat(), 48f * resources.displayMetrics.density)
 
@@ -92,16 +96,25 @@ class TerminalView(context: Context) : View(context) {
     private fun metrics() {
         clearRows();advances.clear()
         val grid = fonts.configure(paint, textSp)
-        cellWidth = grid.cellWidth
-        cellHeight = grid.cellHeight
-        baseline = grid.baseline
-        reportDimensions()
+        desiredCellWidth=grid.cellWidth;desiredCellHeight=grid.cellHeight;desiredTextSize=paint.textSize
+        configureRendering();reportDimensions()
     }
-    private fun reportDimensions() {
-        val next = max(1, floor(contentWidth / cellWidth).toInt()) to max(1, floor(contentHeight / cellHeight).toInt())
-        if (width > 0 && height > 0 && next != dimensions) { dimensions = next; onDimensions(next.first, next.second) }
+    private fun configureRendering() {
+        val columns=screen?.columns ?: 0
+        val fitted=if(width>0 && columns>0) floor(contentWidth/columns).coerceAtLeast(1f).coerceAtMost(desiredCellWidth) else desiredCellWidth
+        val size=desiredTextSize*fitted/desiredCellWidth
+        if(cellWidth==fitted && paint.textSize==size) return
+        cellWidth=fitted;paint.textSize=size;paint.typeface=fonts.regular;paint.textScaleX=1f
+        paint.textScaleX=fitted/paint.measureText("M").coerceAtLeast(.01f)
+        val metrics=paint.fontMetrics;cellHeight=ceil(metrics.descent-metrics.ascent).coerceAtLeast(1f);baseline=-metrics.ascent
+        clearRows();advances.clear()
     }
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { reportDimensions() }
+    private fun reportDimensions(force: Boolean=false) {
+        // Resize uses the requested font grid, never the temporary read-only fit.
+        val next = max(1, floor(contentWidth / desiredCellWidth).toInt()) to max(1, floor(contentHeight / desiredCellHeight).toInt())
+        if (width > 0 && height > 0 && (force || next != dimensions)) { dimensions = next; onDimensions(next.first, next.second) }
+    }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {configureRendering();reportDimensions()}
     override fun onDraw(canvas: Canvas) {
         val frame = screen ?: return
         val saved = canvas.save()
