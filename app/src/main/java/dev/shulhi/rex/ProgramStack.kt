@@ -27,15 +27,15 @@ import androidx.compose.ui.unit.dp
     val front=selected.coerceIn(items.indices)
     val others=items.indices.filter {it!=front}.take(2)
     val active=items[front]
-    Box(Modifier.size(if(framed) 36.dp else 24.dp,if(framed) 38.dp else 23.dp)
+    Box(Modifier.size(if(framed) 40.dp else 28.dp,if(framed) 35.dp else 25.dp)
         .clearAndSetSemantics {contentDescription=active.label+(if(items.size>1) ", ${items.size} panes" else "")}) {
         for((layer,index) in others.reversed().withIndex()) {
             val shift=(others.size-layer)*3
             PaneProgramTile(items[index],Modifier.offset(x=shift.dp,y=(6-shift).dp)
-                .size(if(framed) 27.dp else 16.dp),framed)
+                .size(if(framed) 31.dp else 19.dp,if(framed) 24.dp else 15.dp),framed)
         }
         PaneProgramTile(active,Modifier.offset(y=(if(others.isEmpty()) 3 else 6).dp)
-            .size(if(framed) 30.dp else 18.dp),framed)
+            .size(if(framed) 34.dp else 22.dp,if(framed) 27.dp else 18.dp),framed)
     }
 }
 
@@ -53,13 +53,13 @@ import androidx.compose.ui.unit.dp
     }.map {Color(it)}
     val neutral=program.kind in listOf(ProgramKind.CODEX,ProgramKind.TERMINAL,ProgramKind.SSH)
     val ink=if(neutral && !dark) Color(0xff323e50) else Color.White
-    val radius=if(large) 8.dp else 5.dp
+    val radius=if(large) 7.dp else 5.dp
     val shape=RoundedCornerShape(radius)
     val reflection=Brush.verticalGradient(0f to Color.White.copy(alpha=.34f),.22f to Color.White.copy(alpha=.08f),
         .5f to Color.Transparent,1f to Color.Black.copy(alpha=.06f))
     Box(modifier.shadow(if(large) 3.dp else 1.dp,shape).clip(shape)
         .background(Brush.verticalGradient(colors)).background(reflection)
-        .border(1.dp,if(dark) Color.White.copy(alpha=.3f) else Color(0xffa7b2c1).copy(alpha=.7f),shape)
+        .border(1.dp,Color.White.copy(alpha=if(dark) .85f else 1f),shape)
         .drawWithContent {
             drawContent()
             val inset=1.5.dp.toPx()
