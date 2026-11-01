@@ -63,6 +63,19 @@ class TerminalBackgroundTest {
         assertEquals(colors[2],result.getPixel(1,result.height-2))
         assertEquals(colors[3],result.getPixel(result.width-2,result.height-2))
     }
+    @Test fun cursorFillsItsCellInsteadOfDrawingAnOutline() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        lateinit var result: Bitmap
+        instrumentation.runOnMainSync {
+            val context=instrumentation.targetContext
+            val grid=TerminalFonts(context).configure(android.graphics.Paint(),10f)
+            val view=TerminalView(context).apply {screen=TerminalScreen(2,2,0,0,-1,0,listOf(TerminalCell(0,0,"",-1,0,256,1)))}
+            val w=(2*grid.cellWidth).toInt();val h=(2*grid.cellHeight).toInt()
+            view.measure(View.MeasureSpec.makeMeasureSpec(w,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(h,View.MeasureSpec.EXACTLY));view.layout(0,0,w,h)
+            result=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);view.draw(Canvas(result))
+        }
+        assertEquals(TerminalPalette.Dark.accent,result.getPixel(result.width/4,result.height/4))
+    }
     @Test fun wideCharacterSpacersDoNotEraseTheLeadingCellsBackground() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val expected=0xff394457.toInt()

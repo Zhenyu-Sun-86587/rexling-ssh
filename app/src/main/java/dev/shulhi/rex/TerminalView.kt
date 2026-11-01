@@ -138,13 +138,26 @@ class TerminalView(context: Context) : View(context) {
             canvas.restore(); paint.alpha = 255
         }
         if (frame.cursorX != null && frame.cursorY != null) {
-            paint.color = palette.accent; paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
+            val cell=frame.cells.firstOrNull {it.x==frame.cursorX && it.y==frame.cursorY && it.width>0}
             val x = frame.cursorX * cellWidth; val y = frame.cursorY * cellHeight
-            canvas.drawRect(x, y, x + cellWidth, y + cellHeight, paint); paint.style = Paint.Style.FILL
+            val cursorWidth=max(1,cell?.width ?: 1)*cellWidth
+            backgroundPaint.color=palette.accent
+            canvas.drawRect(x,y,x+cursorWidth,y+cellHeight,backgroundPaint)
+            if(cell!=null && cell.text.isNotEmpty() && cell.attributes and 16==0) {
+                paint.color=android.graphics.Color.WHITE;paint.alpha=255
+                paint.typeface=when(cell.attributes and 3) {1->fonts.bold;2->fonts.italic;3->fonts.boldItalic;else->fonts.regular}
+                val advance=paint.measureText(cell.text)
+                canvas.save();canvas.clipRect(x,y,x+cursorWidth,y+cellHeight)
+                if(advance>cursorWidth) canvas.scale(cursorWidth/advance,1f,x,y)
+                canvas.drawText(cell.text,x+((cursorWidth-advance)/2f).coerceAtLeast(0f),y+baseline,paint)
+                canvas.restore()
+            }
             if (composing.isNotEmpty()) {
-                paint.typeface = fonts.regular
+                paint.typeface = fonts.regular;paint.color=android.graphics.Color.WHITE
+                val composingWidth=max(cellWidth,paint.measureText(composing))
+                canvas.drawRect(x,y,x+composingWidth,y+cellHeight,backgroundPaint)
                 canvas.drawText(composing, x, y + baseline, paint)
-                canvas.drawLine(x, y + baseline + 2, x + paint.measureText(composing), y + baseline + 2, paint)
+                canvas.drawLine(x, y + baseline + 2, x + composingWidth, y + baseline + 2, paint)
             }
         }
         canvas.restore()
