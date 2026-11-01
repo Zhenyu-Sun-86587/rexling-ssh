@@ -10,4 +10,4 @@ Long-press a tab to close it. Close a pane using its X in the pane picker or **C
 
 Viewing a pane leaves its shared terminal size alone. Tapping its content takes control and resizes the shared PTY for the phone, which also changes the grid seen by other clients.
 
-The keyboard accessory has two rows: Esc/Ctrl/Alt/Shift/Tab above a shared navigation strip. Swipe the navigation strip sideways to reveal more keys, then tap to send. Tap Shift for the next key or hold it while tapping several keys. Scrolling sends no input. Reveal the chevron before Esc to expand F1–F12.
+The default keyboard accessory is one row. Esc/Ctrl/Alt/Shift/Tab are separate symbol buttons with gaps between them, followed by a shared arrow group and the keyboard toggle. Swipe the arrow group sideways to reveal clipped arrows, then tap to send. Arrow scrolling leaves the modifier buttons fixed. Tap Shift for the next key or hold it while tapping several keys. Scrolling sends no input. Reveal the chevron before Esc to expand F1–F12 and Home/End, paging, Insert and Delete keys.
