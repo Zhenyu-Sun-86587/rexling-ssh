@@ -497,3 +497,53 @@ The final release was installed on S22+ RFCT21390SD with ADB Success; the instal
 base APK hash matches validation/apk.json:
 `f9b4d12bc54f8f19180ce105740a7b51a62bbc58e0784c7cd97cddf6f2a59b08`.
 Saved phone settings and connections were preserved. Changes are committed by scope.
+
+
+## Live title frames, text selection, pane picker and official catalog delivery
+
+All 27 native checks (20 offline + 7 owned-server tests) pass with both server
+environment variables supplied. The first broad invocation lacked the second
+server variable; the corrected invocation passes. The title test observes three
+successive braille-prefixed terminal titles, each within 700 ms of its input,
+then verifies a title update in a background pane. A static status record cannot
+mask them. Unit coverage rejects old process owners, stale polling responses
+and resurrection after clearing a title. Clippy with warnings denied passes.
+
+All 41 JVM tests pass, including four selection tests for wide characters,
+sparse-cell spaces, reversed multi-line ranges and moving either endpoint.
+Five Android interaction/launcher tests pass, including selection without
+ownership and preserving the frozen frame while live output changes.
+Debug/release builds and release lint pass. The source-only linear extraction
+cleanup was included in the final JVM/build pass.
+
+Emulator UI checks observed each live title in both header and tab, showed the
+new pane picker with program names/directories and catalog tiles, and confirmed
+zero changed pixels in the header icon between animation frames. Long press
+visibly highlighted TITLE_READY and displayed native Copy / Select all without
+taking ownership. The floating toolbar was absent from the UiAutomator tree;
+the coordinate-based clipboard roundtrip did not complete and is not claimed
+as a passing check. Selection and frozen-frame behavior are covered at model/interaction level;
+the clipboard action was not exercised by instrumentation. Physical copy
+behavior remains for user testing. Original emulator preferences were restored and the
+owned disposable fixture was removed. No user editor was driven.
+
+The catalog was accessed through native Edge window automation after the
+browser-specific host failed. The user then supplied the complete SVG download,
+which was used directly. Ten selected source SVGs, source hashes, attribution
+and reproducible WebKit rendering script are committed. Codex/Claude renderings
+were visually inspected. No authentication material is packaged.
+
+At the user's request to ship promptly, the final launcher uses their supplied
+transparent paper dinosaur PNG exactly; no image generation or editing was
+applied to this final file. The release was installed over USB on Galaxy S22+
+RFCT21390SD and its installed base APK SHA256 was compared with the build.
+validation/apk.json records the delivered artifact. Saved phone settings and
+connections were preserved. Feature and artwork changes are committed by scope.
+
+
+The user's final replacement is the already-transparent paper dinosaur supplied
+as 5BD6830D-F403-4478-9E09-6AC36F3C38F5.png. Its bytes and alpha were preserved.
+The installed S22+ release hash was read back and matched:
+`561e5fdc370b01568cfef5f33d89c9259cc1258380cf1b2dea56624f206c573c`.
+This supersedes the briefly installed opaque paper-icon build. The final APK
+signature, non-debuggable setting, native alignment and ART profiles are verified.

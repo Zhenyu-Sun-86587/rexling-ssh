@@ -337,9 +337,8 @@ pane indicator reserves 14 dp, down from 22 dp, reducing the gap above its dots.
 ## Task titles, read-only appearance and stale session closure
 
 `com.superlogical.terminal.title` returns `{title,owner:{pid,name}}`, and
-`program_status.records` can supply a root task title. The client prefers an
-owned root record, then a terminal title whose owner PID and name match the
-current foreground process. Old shell/agent titles cannot label a new program.
+`program_status.records` can supply a root task title. The client prefers the live terminal title, then an owned root task record;
+both must match the current foreground process by PID and name. Old shell/agent titles cannot label a new program.
 Titles are bounded plain text; executable metadata independently selects icons.
 The existing helper refreshes title metadata on `title_changed` and program
 status/process events, with the periodic refresh as fallback. Header/default tab
@@ -378,9 +377,8 @@ titles, and explicitly named tabs remain unchanged.
 Program status records with state=working and a matching foreground PID/name
 supply the `working` block-ID list in local metadata. Idle/blocked/done/error,
 cleared records and stale owners do not animate. No title-text heuristic is used.
-The active tab's existing blue underline gets a moving highlight; background
-working tabs and the header pulse their existing program tiles. No indicator
-adds width. Animation values are consumed in drawing/layer updates, and idle
+The active tab's existing blue underline gets a moving highlight. Program
+icons stay static; their earlier pulse was removed. No indicator adds width. Animation values are consumed in drawing/layer updates, and idle
 programs have no animation clock. Captions use explicit line heights without
 font padding so the session chevron aligns with the small text.
 
@@ -389,3 +387,33 @@ reveals it; collapse or hiding the IME restores the offset that hides it again.
 Normal keys share the available width, with a slightly wider Ctrl key and 3 dp
 gaps. The normal row has a minimum width for narrow displays and remains
 scrollable. The existing key palette and disabled-state opacity are preserved.
+
+
+## Streamed titles, selection and catalog assets
+
+The verified control envelope is a session_event whose payload.event is
+`{type:block_event,payload:{block_id,creator_name,name,payload}}`.
+Terminal title_changed payloads contain the title and owning process PID/name.
+They update presentation directly for all panes in the attached session. The
+selected pane's nonce-verified data APCs feed the same handler. Events queued
+while awaiting RPC replies are processed rather than discarded. Title frames
+need no per-frame metadata RPC. Latest streamed titles are merged over older
+poll results, and process changes invalidate titles from the previous owner.
+Unicode animation characters remain part of the title; no spinner is invented
+or parsed out of it. An empty title is respected as a clear.
+
+Long press freezes the displayed terminal screen for selection, selects a word,
+and offers native Copy / Select all actions. Selection handles can extend or
+reverse the range. Copy uses plain cell text and includes wide glyphs once,
+retaining spaces and physical line breaks. Selection never acquires ownership,
+sends terminal input or opens the keyboard. Dismissal/pane departure releases
+the frozen screen. The existing Copy viewport menu remains available.
+
+The pane picker now uses the current program tile, live title (or executable
+name), directory caption, and selected-pane marker. The supplied Superlogical
+catalog SVGs are retained under artwork/program-icons/superlogical with hashes
+and attribution. A local WebKit converter renders their SVG masks, gradients
+and Display-P3 colors into packaged PNG tiles. Runtime Android rendering needs
+no browser or network request. Supported kinds use those tiles in the header,
+tabs, pane picker and swipe preview; unsupported kinds retain their fallback.
+The user's final transparent launcher PNG is copied exactly, preserving alpha.
