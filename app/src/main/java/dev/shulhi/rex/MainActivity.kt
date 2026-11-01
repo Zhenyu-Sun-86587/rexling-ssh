@@ -51,9 +51,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun RexTheme(dark: Boolean,content: @Composable ()->Unit) {
-    val scheme=if(dark) darkColorScheme(primary=Color(0xffcaf36b),onPrimary=Color(0xff12150a),
-        background=Color(0xff090a08),surface=Color(0xff151612),onSurface=Color(0xffeeeee7),
-        surfaceVariant=Color(0xff22231d),onSurfaceVariant=Color(0xff919386),outline=Color(0xff34362c))
+    val scheme=if(dark) darkColorScheme(primary=Color(0xff315cf4),onPrimary=Color.White,
+        background=Color(0xff090c11),surface=Color(0xff141922),onSurface=Color(0xffe5e9f2),
+        surfaceVariant=Color(0xff232934),onSurfaceVariant=Color(0xff969fb1),outline=Color(0xff2b3341))
     else lightColorScheme(primary=Color(0xff3156f4),onPrimary=Color.White,
         background=Color(0xfff3f4f9),surface=Color(0xfffdfdff),onSurface=Color(0xff171b26),
         surfaceVariant=Color(0xffe9ebf2),onSurfaceVariant=Color(0xff62697c),outline=Color(0xffd8dce8))
