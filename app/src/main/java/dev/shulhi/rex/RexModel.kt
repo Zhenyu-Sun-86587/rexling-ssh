@@ -196,6 +196,8 @@ class RexModel(application: Application) : AndroidViewModel(application) {
         controlModifier = false; altModifier = false
         command("input", "text" to input)
     }
+    fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}
+    fun scrollToBottom() {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"bottom" to true)}
     fun key(name: String) = type(TerminalInput.key(name))
     fun paste(text: String) { if (state.value.controlled && !navigationRequest.pending) command("paste", "text" to text) }
     fun resize(columns: Int, rows: Int) {

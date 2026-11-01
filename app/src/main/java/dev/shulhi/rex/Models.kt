@@ -7,8 +7,12 @@ data class SessionItem(val id: String, val label: String)
 data class SessionDetail(val attachment: String, val tabs: Int, val panes: Int)
 data class BlockItem(val id: String, val label: String)
 data class WindowItem(val id: String, val label: String, val blocks: List<BlockItem>)
+data class TerminalScroll(val total: Long=0,val offset: Long=0,val visible: Long=0) {
+    val available: Long get()=(total-visible).coerceAtLeast(0)
+    val below: Long get()=(available-offset).coerceAtLeast(0)
+}
 data class TerminalCell(val x: Int, val y: Int, val text: String, val foreground: Int, val background: Int, val attributes: Int, val width: Int)
-data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>) {
+data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>, val scroll: TerminalScroll = TerminalScroll()) {
     fun plainText(): String = (0 until rows).joinToString("\n") { y ->
         cells.asSequence().filter { it.y == y && it.width > 0 }.joinToString("") { it.text.ifEmpty { " " } }.trimEnd()
     }.trimEnd()
@@ -21,7 +25,9 @@ data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, va
                 val a = cell as JSONArray
                 TerminalCell(a.getInt(0), a.getInt(1), a.getString(2), argb(a.getInt(3)), argb(a.getInt(4)), a.getInt(5), a.getInt(6))
             }
-            return TerminalScreen(columns, rows, cursor?.getInt(0), cursor?.getInt(1), argb(value.getInt("foreground")), argb(value.getInt("background")), cells)
+            val scroll=value.optJSONArray("scrollbar")
+            return TerminalScreen(columns, rows, cursor?.getInt(0), cursor?.getInt(1), argb(value.getInt("foreground")), argb(value.getInt("background")), cells,
+                TerminalScroll(scroll?.optLong(0) ?: 0,scroll?.optLong(1) ?: 0,scroll?.optLong(2) ?: 0))
         }
     }
 }
@@ -77,6 +83,7 @@ object TerminalInput {
     }
     fun key(name: String): String = when (name) {
         "esc" -> "\u001b"; "tab" -> "\t"; "enter" -> "\r"; "backspace" -> "\u007f"
+        "pageup" -> "\u001b[5~"; "pagedown" -> "\u001b[6~"
         "up" -> "\u001b[A"; "down" -> "\u001b[B"; "right" -> "\u001b[C"; "left" -> "\u001b[D"
         "home" -> "\u001b[H"; "end" -> "\u001b[F"; "delete" -> "\u001b[3~"
         else -> ""

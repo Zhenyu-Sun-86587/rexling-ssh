@@ -31,7 +31,7 @@ import kotlin.math.roundToInt
 
 @Composable internal fun TerminalCarousel(blocks: List<BlockItem>,selectedBlock: String,liveBlock: String,
     liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
-    onInput: (String)->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
+    onInput: (String)->Unit,onScroll: (Int)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier) {
     val palette=LocalTerminalPalette.current
     val scope=rememberCoroutineScope()
@@ -84,6 +84,7 @@ import kotlin.math.roundToInt
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
                                 view.onInput=onInput
+                                view.onScroll=if(center && block.id==liveBlock) onScroll else {_->}
                                 view.onPaneDrag=if(center) {dx,active ->
                                     if(!settling) {
                                         dragging=active
@@ -98,6 +99,12 @@ import kotlin.math.roundToInt
                         else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                             Text(if(center) "Opening terminal…" else block.label,fontFamily=MonoUi,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                    }
+                    if(center && (frame?.scroll?.below ?: 0)>0) {
+                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=if(blocks.size>1) 27.dp else 10.dp)
+                            .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
+                            .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
+                            fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
                     }
                     if(blocks.size>1) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(22.dp).clickable(role=Role.Button,onClick=onPanes)
                         .semantics {contentDescription="Pane ${i+1} of ${blocks.size}. Switch pane"},

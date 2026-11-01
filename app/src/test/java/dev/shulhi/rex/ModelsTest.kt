@@ -19,6 +19,13 @@ class ModelsTest {
         assertEquals("\u001b[A", TerminalInput.key("up"))
         assertEquals("\r", TerminalInput.key("enter"))
     }
+    @Test fun parsesHistoryViewportAndKeepsOldFramesCompatible() {
+        val screen=TerminalScreen.parse(JSONObject("""{"columns":2,"rows":2,"foreground":0,"background":0,"cells":[],"scrollbar":[100,25,20]}"""))
+        assertEquals(80L,screen.scroll.available)
+        assertEquals(55L,screen.scroll.below)
+        assertEquals(0L,TerminalScroll().available)
+        assertEquals("\u001b[5~",TerminalInput.key("pageup"))
+    }
     @Test fun disconnectedStateAllowsMissingOptionalCollections() {
         val state = AppState.parse("""{"revision":1,"phase":"disconnected"}""")
         assertFalse(state.connected)

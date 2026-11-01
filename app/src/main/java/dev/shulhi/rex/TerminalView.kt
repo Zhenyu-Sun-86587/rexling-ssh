@@ -9,6 +9,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.VelocityTracker
+import android.widget.OverScroller
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -27,8 +28,14 @@ class TerminalView(context: Context) : View(context) {
     private var startX=0f
     private var startY=0f
     private var dragging=false
+    private var scrolling=false
+    private var lastScrollY=0f
+    private var scrollPixels=0f
+    private var lastFlingY=0
+    private val scrollFling=OverScroller(context)
     private var touchVelocity: VelocityTracker?=null
     var onInput: (String) -> Unit = {}
+    var onScroll: (Int) -> Unit = {}
     var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
     var screen: TerminalScreen? = null
@@ -163,6 +170,25 @@ class TerminalView(context: Context) : View(context) {
         canvas.restore()
         canvas.restoreToCount(saved)
     }
+    private fun scrollByPixels(pixels: Float) {
+        scrollPixels+=pixels
+        val lines=(scrollPixels/cellHeight).toInt()
+        if(lines!=0) {scrollPixels-=lines*cellHeight;if((screen?.scroll?.available ?: 0)>0) onScroll(lines)}
+    }
+    override fun computeScroll() {
+        if(scrollFling.computeScrollOffset()) {
+            val y=scrollFling.currY;scrollByPixels((y-lastFlingY).toFloat());lastFlingY=y
+            postInvalidateOnAnimation()
+        }
+    }
+    override fun onDetachedFromWindow() {scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if(interactive && event.actionMasked==MotionEvent.ACTION_SCROLL) {
+            val lines=(-event.getAxisValue(MotionEvent.AXIS_VSCROLL)*3).roundToInt()
+            if(lines!=0) {onScroll(lines);return true}
+        }
+        return super.onGenericMotionEvent(event)
+    }
     fun hideKeyboard() {
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken, 0)
     }
@@ -178,18 +204,31 @@ class TerminalView(context: Context) : View(context) {
         sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
         touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {startX=event.rawX;startY=event.rawY;dragging=false;paneGesture.begin(event.x, event.y)}
+            MotionEvent.ACTION_DOWN -> {scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount != 1) { paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false }
+                if (event.pointerCount != 1) { paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
                 else {
                     paneGesture.move(event.x,event.y)
                     val dx=event.rawX-startX;val dy=event.rawY-startY
-                    if(kotlin.math.abs(dx)>ViewConfiguration.get(context).scaledTouchSlop && kotlin.math.abs(dx)>kotlin.math.abs(dy)*1.5f) dragging=true
-                    if(dragging) onPaneDrag?.invoke(dx,true)
+                    val slop=ViewConfiguration.get(context).scaledTouchSlop
+                    if(!scrolling && kotlin.math.abs(dx)>slop && kotlin.math.abs(dx)>kotlin.math.abs(dy)*1.5f) dragging=true
+                    if(!dragging && kotlin.math.abs(dy)>slop && kotlin.math.abs(dy)>kotlin.math.abs(dx)*1.5f) {scrolling=true;paneGesture.cancel()}
+                    if(scrolling) {scrollByPixels(lastScrollY-event.rawY);lastScrollY=event.rawY}
+                    else if(dragging) onPaneDrag?.invoke(dx,true)
                 }
             }
-            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false}
-            MotionEvent.ACTION_UP -> if(dragging && onPaneDragEnd!=null) {
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false}
+            MotionEvent.ACTION_UP -> if(scrolling) {
+                touchVelocity?.computeCurrentVelocity(1000)
+                val velocity=-(touchVelocity?.yVelocity ?: 0f).toInt()
+                val history=screen?.scroll
+                if(history!=null && history.available>0) {
+                    val minimum=-(history.offset.toDouble()*cellHeight).coerceAtMost(1000000.0).toInt()
+                    val maximum=(history.below.toDouble()*cellHeight).coerceAtMost(1000000.0).toInt()
+                    lastFlingY=0;scrollFling.fling(0,0,0,velocity,0,0,minimum,maximum);postInvalidateOnAnimation()
+                }
+                scrolling=false;paneGesture.cancel()
+            } else if(dragging && onPaneDragEnd!=null) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
             } else when (paneGesture.finish(event.x, event.y)) {
@@ -226,10 +265,14 @@ class TerminalView(context: Context) : View(context) {
         }
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if(event.isShiftPressed && keyCode in listOf(KeyEvent.KEYCODE_PAGE_UP,KeyEvent.KEYCODE_PAGE_DOWN)) {
+            onScroll((if(keyCode==KeyEvent.KEYCODE_PAGE_UP) -1 else 1)*(screen?.rows ?: 24));return true
+        }
         if (!controlled) return super.onKeyDown(keyCode, event)
         val named = when (keyCode) {
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> "enter"
             KeyEvent.KEYCODE_DEL -> "backspace"; KeyEvent.KEYCODE_FORWARD_DEL -> "delete"
+            KeyEvent.KEYCODE_PAGE_UP -> "pageup"; KeyEvent.KEYCODE_PAGE_DOWN -> "pagedown"
             KeyEvent.KEYCODE_TAB -> "tab"; KeyEvent.KEYCODE_ESCAPE -> "esc"
             KeyEvent.KEYCODE_DPAD_UP -> "up"; KeyEvent.KEYCODE_DPAD_DOWN -> "down"
             KeyEvent.KEYCODE_DPAD_LEFT -> "left"; KeyEvent.KEYCODE_DPAD_RIGHT -> "right"
