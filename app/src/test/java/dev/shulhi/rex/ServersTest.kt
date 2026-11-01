@@ -29,4 +29,10 @@ class ServersTest {
         val decoded=SavedServers.decode("""[{"id":"a","label":"Mac","endpoint":"https://mac"},{"id":"bad","endpoint":"file:///x"},{"id":"b","label":"Linux","endpoint":"https://linux"}]""","https://legacy")
         assertEquals(listOf("a","b"),decoded.map {it.id})
     }
+    @Test fun freshInstallsHaveNoPresetPersonalServer() {
+        assertTrue(SavedServers.decode(null,"").isEmpty())
+        assertTrue(SavedServers.decode("not json","").isEmpty())
+        assertTrue(SavedServers.decode(null,"invalid").isEmpty())
+    }
+
 }

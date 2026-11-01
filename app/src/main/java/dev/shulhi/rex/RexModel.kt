@@ -15,7 +15,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private val preferences=application.getSharedPreferences(preferenceName,0)
     var appearance by mutableStateOf(runCatching {Appearance.valueOf(preferences.getString("appearance","SYSTEM")!!)}.getOrDefault(Appearance.SYSTEM))
         private set
-    var servers by mutableStateOf(SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","https://rex.taildaac1.ts.net")!!))
+    var servers by mutableStateOf(SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty()))
         private set
     var activeServerId by mutableStateOf(preferences.getString("active_server",null)?.takeIf {id->servers.any {it.id==id}} ?: servers.firstOrNull()?.id.orEmpty())
         private set

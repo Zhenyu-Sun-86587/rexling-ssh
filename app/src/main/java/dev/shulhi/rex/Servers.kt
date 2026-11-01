@@ -31,14 +31,15 @@ data class ServerProfile(val id: String,val label: String,val endpoint: String) 
 
 object SavedServers {
     fun decode(text: String?,legacyEndpoint: String): List<ServerProfile> {
-        if(text==null) return listOf(ServerProfile.create("Rex server",legacyEndpoint,"legacy"))
+        fun legacy() = runCatching {listOf(ServerProfile.create("Rex server",legacyEndpoint,"legacy"))}.getOrDefault(emptyList())
+        if(text==null) return legacy()
         return runCatching {
             val array=JSONArray(text)
             (0 until array.length()).mapNotNull { index -> runCatching {
                 val item=array.getJSONObject(index)
                 ServerProfile.create(item.optString("label"),item.getString("endpoint"),item.getString("id"))
             }.getOrNull() }.distinctBy {it.id}.distinctBy {it.endpoint}
-        }.getOrElse {listOf(ServerProfile.create("Rex server",legacyEndpoint,"legacy"))}
+        }.getOrElse {legacy()}
     }
     fun encode(servers: List<ServerProfile>): String = JSONArray(servers.map {JSONObject().put("id",it.id).put("label",it.label).put("endpoint",it.endpoint)}).toString()
 }
