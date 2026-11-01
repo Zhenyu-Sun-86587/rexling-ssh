@@ -8,7 +8,9 @@ use rex_core::{
 };
 use serde_json::{Value, json};
 use std::{
-    future::pending,
+    collections::BTreeMap,
+    future::{Future, pending},
+    pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -17,6 +19,7 @@ use tokio::sync::mpsc;
 pub struct Shared {
     pub revision: u64,
     pub json: String,
+    pub pending_previews: BTreeMap<String, Value>,
 }
 pub struct Session {
     tx: mpsc::Sender<Value>,
@@ -28,6 +31,7 @@ impl Session {
         let shared = Arc::new(Mutex::new(Shared {
             revision: 0,
             json: String::new(),
+            pending_previews: BTreeMap::new(),
         }));
         let worker = shared.clone();
         std::thread::Builder::new()
@@ -48,12 +52,19 @@ impl Session {
             .context("terminal command queue is full or closed")
     }
     pub fn poll(&self, after: u64) -> Result<String> {
-        let state = self
+        let mut state = self
             .shared
             .lock()
             .map_err(|_| anyhow::anyhow!("terminal state unavailable"))?;
         Ok(if state.revision > after {
-            state.json.clone()
+            if state.pending_previews.is_empty() {
+                state.json.clone()
+            } else {
+                let mut value: Value = serde_json::from_str(&state.json)?;
+                value["previews"] =
+                    serde_json::to_value(std::mem::take(&mut state.pending_previews))?;
+                value.to_string()
+            }
         } else {
             String::new()
         })
@@ -65,6 +76,8 @@ impl Drop for Session {
     }
 }
 
+type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Value)>>>>>;
+type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 struct Actor {
     shared: Arc<Mutex<Shared>>,
     endpoint: Option<Endpoint>,
@@ -83,12 +96,17 @@ struct Actor {
     screen: Value,
     selected_session: String,
     selected_block: String,
+    navigation_id: u64,
     controlled: bool,
     creating: bool,
     paused: bool,
     retry: Option<tokio::time::Instant>,
     backoff: u64,
     dirty: bool,
+    preview_task: Option<PreviewTask>,
+    summary_task: Option<SummaryTask>,
+    preview_updates: BTreeMap<String, Value>,
+    session_details: Value,
 }
 impl Actor {
     fn new(shared: Arc<Mutex<Shared>>) -> Self {
@@ -110,21 +128,29 @@ impl Actor {
             screen: Value::Null,
             selected_session: String::new(),
             selected_block: String::new(),
+            navigation_id: 0,
             controlled: false,
             creating: false,
             paused: false,
             retry: None,
             backoff: 1,
             dirty: false,
+            preview_task: None,
+            summary_task: None,
+            preview_updates: BTreeMap::new(),
+            session_details: json!({}),
         }
     }
-    fn publish(&self) {
+    fn publish(&mut self) {
         if let Ok(mut shared) = self.shared.lock() {
             shared.revision += 1;
             shared.json=json!({"revision":shared.revision,"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"screen":self.screen,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"controlled":self.controlled,"creating":self.creating}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details}).to_string();
+            shared
+                .pending_previews
+                .extend(std::mem::take(&mut self.preview_updates));
         }
     }
     async fn run(mut self, mut rx: mpsc::Receiver<Value>) {
@@ -140,7 +166,9 @@ impl Actor {
                 value=rx.recv()=>{
                     let Some(value)=value else{break;};
                     if value["type"]=="shutdown"{break;}
+                    let navigation_id=value["navigationId"].as_u64();
                     if let Err(e)=self.command(value).await {
+                        if let Some(id)=navigation_id {self.navigation_id=id;}
                         self.creating=false;
                         let message=e.to_string();
                         if message.contains("timed out")||message.contains("WebSocket") {
@@ -168,6 +196,14 @@ impl Actor {
                         }
                         Err(e)=>self.recover(e),
                     }
+                },
+                result=async {match &mut self.preview_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.preview_task=None;
+                    if let Ok(frames)=result {for(id,frame) in frames {self.preview_updates.insert(id,frame);}self.publish();}
+                },
+                result=async {match &mut self.summary_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.summary_task=None;
+                    if let Ok(details)=result {self.session_details=details;self.publish();}
                 },
                 _=async {if active {paint.tick().await;}else{pending::<()>().await;}}=>{
                     if self.retry.is_some_and(|at|at<=tokio::time::Instant::now())&&!self.paused {
@@ -198,6 +234,10 @@ impl Actor {
         self.disconnect().await;
     }
     async fn disconnect(&mut self) {
+        self.preview_task = None;
+        self.summary_task = None;
+        self.preview_updates.clear();
+        self.session_details = json!({});
         self.retry = None;
         self.control_token = None;
         self.data_resume = None;
@@ -210,6 +250,8 @@ impl Actor {
         self.controlled = false;
     }
     fn lose_connections(&mut self) {
+        self.preview_task = None;
+        self.summary_task = None;
         if let Some(c) = self.control.take() {
             self.control_token = c.token().map(str::to_owned);
             drop(c);
@@ -444,7 +486,109 @@ impl Actor {
                 self.sessions = json!([]);
                 self.publish();
             }
+            "peek" => {
+                if self.phase != "connected"
+                    || self.paused
+                    || value["session"].as_str() != Some(self.selected_session.as_str())
+                {
+                    return Ok(());
+                }
+                let ids: Vec<String> = value["ids"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|id| {
+                        self.windows.as_array().into_iter().flatten().any(|w| {
+                            w["blocks"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .any(|b| b["id"].as_str() == Some(*id))
+                        })
+                    })
+                    .take(2)
+                    .map(str::to_owned)
+                    .collect();
+                if !ids.is_empty() {
+                    self.preview_task = Some(preview_task(
+                        self.endpoint.clone().context("no server")?,
+                        self.selected_session.clone(),
+                        ids,
+                    ));
+                }
+            }
+            "sessions_info" => {
+                if self.phase == "connected" {
+                    let sessions = self.sessions.clone();
+                    let own = self
+                        .control
+                        .as_ref()
+                        .and_then(Control::client_id)
+                        .unwrap_or("")
+                        .to_owned();
+                    self.summary_task = Some(summary_task(
+                        self.endpoint.clone().context("no server")?,
+                        sessions,
+                        own,
+                    ));
+                }
+            }
+            "new_session" => {
+                ensure!(
+                    self.phase == "connected" && !self.paused,
+                    "Connect before creating a session"
+                );
+                self.creating = true;
+                self.publish();
+                let label = value["label"].as_str().unwrap_or("").trim();
+                ensure!(
+                    label.chars().count() <= 128,
+                    "Use a session name of at most 128 characters"
+                );
+                let result=self.control.as_mut().context("not connected")?.call("session.create",json!({"label":label,"initial_windows":[{"window_label":"shell","layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}}]})).await?;
+                let id = result["session_id"]
+                    .as_str()
+                    .context("No session ID")?
+                    .to_owned();
+                let block = result["initial_windows"][0]["block_ids"][0]
+                    .as_str()
+                    .context("No shell block")?
+                    .to_owned();
+                self.release_selected().await?;
+                if let Some(mut data) = self.data.take() {
+                    let _ = data.close().await;
+                }
+                if !self.selected_session.is_empty() {
+                    let _ = self
+                        .control
+                        .as_mut()
+                        .unwrap()
+                        .call(
+                            "session.detach",
+                            json!({"session_id":self.selected_session}),
+                        )
+                        .await;
+                }
+                let attached = self.control.as_mut().unwrap().attach(&id).await?;
+                self.selected_session = id;
+                self.selected_block.clear();
+                self.set_view(&attached["view"]);
+                self.sessions = self
+                    .control
+                    .as_mut()
+                    .unwrap()
+                    .call("session.list", json!({}))
+                    .await?["sessions"]
+                    .clone();
+                self.open_block(block).await?;
+                self.creating = false;
+                self.publish();
+            }
             "session" => {
+                self.preview_task = None;
+                self.summary_task = None;
+                self.preview_updates.clear();
                 let session = value["id"]
                     .as_str()
                     .context("session ID required")?
@@ -475,11 +619,13 @@ impl Actor {
                     .attach(&session)
                     .await?;
                 self.selected_session = session;
+                self.navigation_id = value["navigationId"].as_u64().unwrap_or(0);
                 self.set_view(&attached["view"]);
                 self.error.clear();
                 self.publish();
             }
             "block" => {
+                self.navigation_id = value["navigationId"].as_u64().unwrap_or(0);
                 let block = value["id"]
                     .as_str()
                     .context("block ID required")?
@@ -668,6 +814,126 @@ impl Actor {
         Ok(())
     }
 }
+fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> PreviewTask {
+    Box::pin(async move {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut control = Control::connect(endpoint.clone(), None, Trace::default()).await?;
+            control
+                .call("client.set_label", json!({"label":"rex-android-preview"}))
+                .await?;
+            control.attach(&session).await?;
+            let mut frames = Vec::new();
+            for id in ids {
+                let result = async {
+                    let mut data =
+                        Data::open(&endpoint, &mut control, &session, &id, Trace::default())
+                            .await?;
+                    let mut replica = Replica::new(data.nonce);
+                    while !replica.ready() {
+                        replica.feed(&data.read().await?)?;
+                    }
+                    let frame = frame_json(replica.terminal()?.frame()?);
+                    let _ = data.close().await;
+                    Ok::<_, anyhow::Error>(frame)
+                }
+                .await;
+                if let Ok(frame) = result {
+                    frames.push((id, frame));
+                }
+            }
+            let _ = control.close().await;
+            Ok::<_, anyhow::Error>(frames)
+        })
+        .await
+        .context("pane preview timed out")?
+    })
+}
+fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask {
+    Box::pin(async move {
+        tokio::time::timeout(Duration::from_secs(8), async {
+            let mut control = Control::connect(endpoint, None, Trace::default()).await?;
+            control
+                .call("client.set_label", json!({"label":"rex-android-summary"}))
+                .await?;
+            let clients = control
+                .call("client.list", json!({"kinds":["app"]}))
+                .await?["clients"]
+                .clone();
+            let mut details = serde_json::Map::new();
+            for session in sessions.as_array().into_iter().flatten().take(64) {
+                let Some(id) = session["session_id"].as_str() else {
+                    continue;
+                };
+                let mut attachments = Vec::new();
+                let mut local = false;
+                let mut lost = false;
+                for client in clients.as_array().into_iter().flatten() {
+                    if client["info"]["label"].as_str().is_some_and(|s| {
+                        s.starts_with("rex-android-preview") || s.starts_with("rex-android-summary")
+                    }) {
+                        continue;
+                    }
+                    if !client["session_ids"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|s| s.as_str() == Some(id))
+                    {
+                        continue;
+                    }
+                    if client["connection_state"] == "lost" {
+                        lost = true;
+                        continue;
+                    }
+                    if client["client_id"].as_str() == Some(own.as_str()) {
+                        local = true;
+                    } else {
+                        let device = client["principal"]["node"]
+                            .as_str()
+                            .filter(|s| !s.is_empty())
+                            .or(client["info"]["platform"].as_str())
+                            .unwrap_or("another device");
+                        if !attachments.iter().any(|s| s == device) {
+                            attachments.push(device.to_owned());
+                        }
+                    }
+                }
+                let attachment = if local {
+                    "this device".to_owned()
+                } else if !attachments.is_empty() {
+                    format!("attached on {}", attachments.join(", "))
+                } else if lost {
+                    "reconnecting".to_owned()
+                } else {
+                    "detached".to_owned()
+                };
+                if let Ok(attached) = control.attach(id).await {
+                    let windows = &attached["view"]["windows"];
+                    let tabs = windows.as_array().map_or(0, Vec::len);
+                    let panes = windows
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|w| w["layers"].as_array().into_iter().flatten())
+                        .flat_map(|l| l["blocks"].as_array().into_iter().flatten())
+                        .filter(|b| b["creator_name"] == "com.superlogical.terminal")
+                        .count();
+                    details.insert(
+                        id.to_owned(),
+                        json!({"attachment":attachment,"tabs":tabs,"panes":panes}),
+                    );
+                    let _ = control
+                        .call("session.detach", json!({"session_id":id}))
+                        .await;
+                }
+            }
+            let _ = control.close().await;
+            Ok::<_, anyhow::Error>(Value::Object(details))
+        })
+        .await
+        .context("session details timed out")?
+    })
+}
 fn rgb(rgb: [u8; 3]) -> u32 {
     ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32
 }
@@ -778,8 +1044,11 @@ mod tests {
             wait(&app, |v| {
                 v["selectedSession"] == id && !v["windows"].as_array().unwrap().is_empty()
             });
-            app.command(json!({"type":"block","id":block})).unwrap();
-            wait(&app, |v| text(v).contains("ACTOR_READY"));
+            app.command(json!({"type":"block","id":block,"navigationId":17}))
+                .unwrap();
+            wait(&app, |v| {
+                text(v).contains("ACTOR_READY") && v["navigationId"] == 17
+            });
             app.command(json!({"type":"take"})).unwrap();
             wait(&app, |v| v["controlled"] == true);
             app.command(json!({"type":"input","text":"hello-λ🦀\n"}))
@@ -881,9 +1150,41 @@ mod tests {
             assert_eq!(pane["windows"][0]["blocks"].as_array().unwrap().len(), 1);
             assert_eq!(pane["windows"][1]["blocks"].as_array().unwrap().len(), 2);
             assert!(pane["error"].as_str().unwrap().is_empty());
+            app.command(json!({"type":"peek","session":id,"ids":[original]}))
+                .unwrap();
+            let preview = wait(&app, |v| !v["previews"][original].is_null());
+            assert_eq!(preview["selectedBlock"], pane["selectedBlock"]);
+            assert_eq!(preview["controlled"], pane["controlled"]);
+            app.command(json!({"type":"sessions_info"})).unwrap();
+            let summary = wait(&app, |v| v["sessionDetails"][id]["tabs"] == 2);
+            assert_eq!(summary["sessionDetails"][id]["panes"], 3);
+            assert_eq!(summary["sessionDetails"][id]["attachment"], "this device");
+
+            app.command(json!({"type":"new_session","label":format!("rex-android-new-session-test-{}",std::process::id())})).unwrap();
+            let fresh = wait(&app, |v| {
+                v["selectedSession"] != id
+                    && !v["selectedSession"].as_str().unwrap_or("").is_empty()
+                    && !v["screen"].is_null()
+                    && v["creating"] == false
+            });
+            assert_eq!(fresh["windows"].as_array().unwrap().len(), 1);
+            assert_eq!(fresh["windows"][0]["blocks"].as_array().unwrap().len(), 1);
             app.command(json!({"type":"disconnect"})).unwrap();
             wait(&app, |v| v["phase"] == "disconnected");
         }));
+        let listed = runtime
+            .block_on(writer.call("session.list", json!({})))
+            .unwrap();
+        let label = format!("rex-android-new-session-test-{}", std::process::id());
+        for session in listed["sessions"].as_array().into_iter().flatten() {
+            if session["label"] == label {
+                let fresh = session["session_id"].as_str().unwrap();
+                runtime.block_on(writer.attach(fresh)).unwrap();
+                runtime
+                    .block_on(writer.call("session.destroy", json!({"session_id":fresh})))
+                    .unwrap();
+            }
+        }
         runtime
             .block_on(writer.call("session.destroy", json!({"session_id":id})))
             .unwrap();
