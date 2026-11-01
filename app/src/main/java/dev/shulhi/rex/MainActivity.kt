@@ -200,7 +200,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,
+                if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,model.closingSessionKey,model.sessionActionError,model::closeSession,
                     onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true})
             }
         }
@@ -231,8 +231,9 @@ class MainActivity : ComponentActivity() {
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
-@Composable private fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
+@Composable private fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
     var search by rememberSaveable {mutableStateOf("")}
+    var closeTarget by remember {mutableStateOf<SessionTarget?>(null)}
     BackHandler(onBack=onClose)
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.25f)).clickable(onClick=onClose))
@@ -254,32 +255,24 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                 val ordered=targets.sortedBy {if(it.key==current) 0 else 1}.filter{it.session.label.contains(search,ignoreCase=true) || it.server.label.contains(search,ignoreCase=true)}
                 if(ordered.isEmpty()) Text("No matching sessions",Modifier.padding(15.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                ordered.forEach {target->
-                    val session=target.session
-                    val active=target.key==current
-                    val detail=target.detail
-                    Row(Modifier.fillMaxWidth().padding(vertical=3.dp).clip(RoundedCornerShape(14.dp))
-                        .background(if(active) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-                        .clickable{onSelect(target.key)}.padding(horizontal=11.dp,vertical=14.dp),
-                        verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(11.dp)) {
-                        Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
-                        Column(Modifier.weight(1f)) {
-                            Text(session.label,fontFamily=MonoUi,fontWeight=FontWeight.Bold,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                            Text(target.server.label+" · "+(detail?.let{"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded"),fontSize=10.sp,
-                                color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2)
-                        }
-                        if(active) Text("current",color=MaterialTheme.colorScheme.primary,fontSize=9.sp,fontWeight=FontWeight.SemiBold)
-                        else if(target.key==last) Text("↶ last",Modifier.clip(RoundedCornerShape(7.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(6.dp),fontSize=9.sp)
-                    }
-                }
+                ordered.forEach {target->key(target.key) {
+                    SessionRow(target,current==target.key,last==target.key,closing==target.key,
+                        onSelect={onSelect(target.key)},onClose={closeTarget=target})
+                }}
             }
-            HorizontalDivider(Modifier.padding(vertical=10.dp))
-            Text("← →    swipe the session name to cycle",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("hold    long-press the name to jump to last",Modifier.padding(top=6.dp,bottom=20.dp),fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(error.isNotBlank()) Text(error,Modifier.padding(vertical=10.dp),color=MaterialTheme.colorScheme.error,fontSize=11.sp)
+            Spacer(Modifier.height(12.dp))
         }
     }
-}
+    closeTarget?.let {target->
+        AlertDialog(onDismissRequest={closeTarget=null},title={Text("Close session?")},
+            text={Text("Close “${target.session.label}” on ${target.server.label}? All its tabs and panes will close, ending the programs running in them.")},
+            confirmButton={TextButton(onClick={closeTarget=null;onCloseSession(target)},enabled=closing.isBlank()) {
+                Text("Close session",color=MaterialTheme.colorScheme.error)
+            }},dismissButton={TextButton(onClick={closeTarget=null}){Text("Cancel")}})
+    }
 
+}
 
 @Composable private fun LiveTerminal(client: RexConnection,blocks: List<BlockItem>,chosen: String,liveBlock: String,
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,

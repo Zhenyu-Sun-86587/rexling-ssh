@@ -25,6 +25,12 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     internal var lastSessionKey by mutableStateOf(preferences.getString("last_global_session","").orEmpty())
         private set
+    var closingSessionKey by mutableStateOf("")
+        private set
+    var sessionActionError by mutableStateOf("")
+        private set
+    private var closingServerId=""
+    private var closingSessionId=""
     private val connections=mutableMapOf<String,RexConnection>()
     private val observers=mutableMapOf<String,Job>()
     private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
@@ -47,6 +53,13 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
                     updateSessionTargets()
+                    if(closingSessionKey.isNotBlank() && profile.id==closingServerId) {
+                        if(state.sessions.none {it.id==closingSessionId}) closingSessionKey=""
+                        else if(state.error.isNotBlank() || !state.connected) {
+                            sessionActionError=state.error.ifBlank {"Connection interrupted. Refresh the session list before trying again."}
+                            closingSessionKey=""
+                        }
+                    }
                 }
             }
         }
@@ -71,6 +84,16 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         }
         connectServer(target.server.id)
         activeClient.selectSession(target.session.id)
+    }
+    internal fun closeSession(target: SessionTarget) {
+        if(closingSessionKey.isNotBlank()) return
+        sessionActionError=""
+        val current=sessionTargets.firstOrNull {it.key==target.key && it.server.endpoint==target.server.endpoint}
+        if(current==null) {sessionActionError="That session is no longer available";return}
+        closingSessionKey=target.key;closingServerId=target.server.id;closingSessionId=target.session.id
+        if(connections[target.server.id]?.closeSession(target.session.id)!=true) {
+            closingSessionKey="";sessionActionError="Wait for the server to finish its current operation, then try again."
+        }
     }
     internal fun jumpLastSession() {
         if(sessionTargets.any {it.key==lastSessionKey}) selectSessionTarget(lastSessionKey)

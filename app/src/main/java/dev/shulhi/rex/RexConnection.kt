@@ -185,6 +185,11 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun prefetchPanes(ids: List<String>) {
         if(state.value.connected && !state.value.creating) command("peek","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
     }
+    fun closeSession(id: String): Boolean {
+        val current=state.value
+        if(!current.connected || current.creating || navigationRequest.pending || current.sessions.none {it.id==id}) return false
+        command("close_session","id" to id);return true
+    }
     fun createSession(label: String) { if(state.value.connected && !state.value.creating && !navigationRequest.pending) command("new_session","label" to label) }
     fun createTab() {
         val current = state.value
@@ -207,7 +212,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun toggleControl() { controlModifier = !controlModifier }
     fun toggleAlt() { altModifier = !altModifier }
     fun type(text: String) {
-        if (!visible || !state.value.controlled || navigationRequest.pending || text.isEmpty()) return
+        if (!visible || !state.value.controlled || state.value.creating || navigationRequest.pending || text.isEmpty()) return
         val input = TerminalInput.modified(text, controlModifier, altModifier)
         controlModifier = false; altModifier = false
         command("input", "text" to input)

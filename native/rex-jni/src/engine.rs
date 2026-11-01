@@ -619,6 +619,30 @@ impl Actor {
                     ));
                 }
             }
+            "close_session" => {
+                ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before closing a session");
+                let id=value["id"].as_str().context("session ID required")?.to_owned();
+                ensure!(self.sessions.as_array().into_iter().flatten().any(|s|s["session_id"].as_str()==Some(&id)),"That session is no longer available");
+                self.creating=true;self.error.clear();self.publish();
+                // Rex requires attachment to destroy. A short-lived client avoids
+                // moving the viewed session or borrowing another block's claim.
+                let mut closer=Control::connect(self.endpoint.clone().context("no server")?,None,Trace::default()).await?;
+                closer.call("client.set_label",json!({"label":"rex-android-close"})).await?;
+                let result=async {
+                    closer.attach(&id).await?;
+                    closer.call("session.destroy",json!({"session_id":id})).await?;
+                    Ok::<(),anyhow::Error>(())
+                }.await;
+                let _=closer.close().await;result?;
+                if self.selected_session==id {
+                    self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);
+                    self.data=None;self.data_resume=None;self.replica=None;self.screen=None;self.controlled=false;
+                    self.preview_task=None;self.program_task=None;self.summary_task=None;
+                    self.programs=json!({});self.directories=json!({});self.preview_updates.clear();
+                }
+                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+                self.creating=false;self.notice="Session closed".into();self.publish();
+            }
             "new_session" => {
                 ensure!(
                     self.phase == "connected" && !self.paused,
@@ -1094,7 +1118,8 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
                 let mut lost = false;
                 for client in clients.as_array().into_iter().flatten() {
                     if client["info"]["label"].as_str().is_some_and(|s| {
-                        s.starts_with("rex-android-preview")
+                        s.starts_with("rex-android-close")
+                            || s.starts_with("rex-android-preview")
                             || s.starts_with("rex-android-summary")
                             || s.starts_with("rex-android-programs")
                     }) {
@@ -1759,4 +1784,40 @@ mod tests {
         runtime.block_on(writer.close()).unwrap();
         result.unwrap();
     }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_close_session_preserves_other_views_and_closes_current() {
+        let endpoint=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&endpoint,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let mut created=Vec::new();
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for index in 0..2 {
+                let value=runtime.block_on(writer.call("session.create",json!({"label":format!("rexlet-close-test-{}-{index}",std::process::id()),
+                    "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c","printf CLOSE_READY; cat"]}}}}]}))).unwrap();
+                created.push(value);
+            }
+            let app=Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":endpoint})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":created[0]["session_id"]})).unwrap();
+            wait(&app,|v|v["selectedSession"]==created[0]["session_id"]);
+            app.command(json!({"type":"block","id":created[0]["initial_windows"][0]["block_ids"][0]})).unwrap();
+            wait(&app,|v|text(v).contains("CLOSE_READY"));
+            app.command(json!({"type":"close_session","id":created[1]["session_id"]})).unwrap();
+            let remaining=wait(&app,|v|v["creating"]==false && v["sessions"].as_array().is_some_and(|list|!list.iter().any(|s|s["session_id"]==created[1]["session_id"])));
+            assert_eq!(remaining["selectedSession"],created[0]["session_id"]);assert!(text(&remaining).contains("CLOSE_READY"));
+            app.command(json!({"type":"close_session","id":created[0]["session_id"]})).unwrap();
+            let empty=wait(&app,|v|v["selectedSession"]=="" && v["creating"]==false);
+            assert!(empty["screen"].is_null());assert_eq!(empty["controlled"],false);
+        }));
+        let sessions=runtime.block_on(writer.call("session.list",json!({}))).unwrap();
+        for value in created {
+            if sessions["sessions"].as_array().unwrap().iter().any(|s|s["session_id"]==value["session_id"]) {
+                runtime.block_on(writer.attach(value["session_id"].as_str().unwrap())).unwrap();
+                runtime.block_on(writer.call("session.destroy",json!({"session_id":value["session_id"]}))).unwrap();
+            }
+        }
+        runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+
 }
