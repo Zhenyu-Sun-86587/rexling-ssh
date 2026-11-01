@@ -215,8 +215,21 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxWidth().heightIn(max=450.dp).verticalScroll(rememberScrollState()).padding(bottom=20.dp)) {
             Text("Panes",Modifier.padding(20.dp),fontWeight=FontWeight.Bold,fontSize=18.sp)
             blocks.forEachIndexed {index,b->
-                Text("${index+1}  ${b.label}"+(if(b.id==chosen) "  ✓" else ""),Modifier.fillMaxWidth().clickable{picker="";client.selectBlock(b.id)}.padding(20.dp),
-                    color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                val program=state.programs[b.id] ?: ProgramIdentity.Terminal
+                val label=program.paneTitle(b.label,state.titles[b.id].orEmpty())
+                Row(Modifier.fillMaxWidth().clickable{picker="";client.selectBlock(b.id)}
+                    .padding(horizontal=20.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,
+                    horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    ProgramStack(listOf(program),0,framed=true)
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                        Text(label,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            fontWeight=if(b.id==chosen) FontWeight.Bold else FontWeight.Medium,
+                            color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                        Text(state.directories[b.id].orEmpty().ifBlank {program.label},fontSize=11.sp,
+                            color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    Text(if(b.id==chosen) "✓" else "${index+1}",color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             TextButton(onClick={picker="";client.createPane()},enabled=ready){Text("New pane")}
         }
