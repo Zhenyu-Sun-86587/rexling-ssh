@@ -54,9 +54,9 @@ class MainActivity : ComponentActivity() {
     val scheme=if(dark) darkColorScheme(primary=Color(0xffcaf36b),onPrimary=Color(0xff12150a),
         background=Color(0xff090a08),surface=Color(0xff151612),onSurface=Color(0xffeeeee7),
         surfaceVariant=Color(0xff22231d),onSurfaceVariant=Color(0xff919386),outline=Color(0xff34362c))
-    else lightColorScheme(primary=Color(0xff507b00),onPrimary=Color.White,
-        background=Color(0xfff4f3ef),surface=Color(0xfffbfbf8),onSurface=Color(0xff20221b),
-        surfaceVariant=Color(0xffeae9e3),onSurfaceVariant=Color(0xff77796e),outline=Color(0xffd8d8ce))
+    else lightColorScheme(primary=Color(0xff3156f4),onPrimary=Color.White,
+        background=Color(0xfff3f4f9),surface=Color(0xfffdfdff),onSurface=Color(0xff171b26),
+        surfaceVariant=Color(0xffe9ebf2),onSurfaceVariant=Color(0xff62697c),outline=Color(0xffd8dce8))
     CompositionLocalProvider(LocalTerminalPalette provides if(dark) TerminalPalette.Dark else TerminalPalette.Light) {
         MaterialTheme(colorScheme=scheme,content=content)
     }
