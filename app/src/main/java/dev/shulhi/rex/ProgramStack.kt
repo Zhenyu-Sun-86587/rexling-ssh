@@ -1,5 +1,8 @@
 package dev.shulhi.rex
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -41,6 +44,22 @@ import androidx.compose.ui.unit.dp
 }
 
 @Composable private fun PaneProgramTile(program: ProgramIdentity, modifier: Modifier, large: Boolean) {
+    val catalog=when(program.kind) {
+        ProgramKind.CLAUDE -> R.drawable.catalog_claude_code
+        ProgramKind.CODEX -> R.drawable.catalog_codex
+        ProgramKind.NEOVIM -> R.drawable.catalog_neovim
+        ProgramKind.VIM -> R.drawable.catalog_vim
+        ProgramKind.GIT -> R.drawable.catalog_git
+        ProgramKind.PYTHON -> R.drawable.catalog_python
+        ProgramKind.NODE -> R.drawable.catalog_node
+        ProgramKind.TERMINAL -> R.drawable.catalog_shell
+        ProgramKind.MONITOR -> if(program.executable=="btop") R.drawable.catalog_btop else R.drawable.catalog_htop
+        else -> null
+    }
+    if(catalog!=null) {
+        Image(painterResource(catalog),program.label,modifier.shadow(if(large) 2.dp else 1.dp,RoundedCornerShape(if(large) 7.dp else 5.dp)),contentScale=ContentScale.FillBounds)
+        return
+    }
     val dark=LocalTerminalPalette.current.dark
     val colors=when(program.kind) {
         ProgramKind.CLAUDE -> listOf(0xffffb27b,0xffee743f,0xffcb4f28)

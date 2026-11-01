@@ -3,7 +3,7 @@ package dev.shulhi.rex
 import java.util.Locale
 
 enum class ProgramKind { TERMINAL, CLAUDE, CODEX, NEOVIM, VIM, GIT, PYTHON, NODE, SSH, TMUX, MONITOR }
-data class ProgramIdentity(val kind: ProgramKind, val label: String) {
+data class ProgramIdentity(val kind: ProgramKind, val label: String, val executable: String="") {
     val title: String get() = when(kind) {
         ProgramKind.CLAUDE -> "claude"; ProgramKind.CODEX -> "codex"; ProgramKind.NEOVIM -> "nvim"
         ProgramKind.VIM -> "vim"; ProgramKind.GIT -> "git"; ProgramKind.PYTHON -> "python"
@@ -54,7 +54,7 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String) {
                     ProgramKind.PYTHON -> "Python"; ProgramKind.NODE -> "JavaScript runtime"
                     ProgramKind.SSH -> "Remote shell"; ProgramKind.TMUX -> "Terminal multiplexer"
                     ProgramKind.MONITOR -> "System monitor"; ProgramKind.TERMINAL -> "Terminal"
-                })
+                },name)
             }
             val name = candidates.firstOrNull()?.replace('\\', '/')?.substringAfterLast('/')?.trimStart('-')
                 ?.filterNot { it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt() }?.take(40).orEmpty()

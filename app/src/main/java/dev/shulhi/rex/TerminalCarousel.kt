@@ -126,9 +126,7 @@ import kotlin.math.roundToInt
                 Row(Modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
                     .padding(horizontal=15.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                     val program=programs[blocks[candidate].id] ?: ProgramIdentity.Terminal
-                    Box(Modifier.size(29.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
-                        ProgramIcon(program,Modifier.size(20.dp))
-                    }
+                    ProgramStack(listOf(program),0)
                     Text(blocks[candidate].label.takeUnless {it=="shell" || it=="Terminal"} ?: program.title,
                         fontWeight=FontWeight.SemiBold,fontSize=13.sp)
                 }
