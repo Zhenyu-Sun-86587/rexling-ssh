@@ -51,12 +51,22 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun RexTheme(dark: Boolean,content: @Composable ()->Unit) {
-    val scheme=if(dark) darkColorScheme(primary=Color(0xff315cf4),onPrimary=Color.White,
+    val base=if(dark) darkColorScheme(primary=Color(0xff315cf4),onPrimary=Color.White,
         background=Color(0xff090c11),surface=Color(0xff141922),onSurface=Color(0xffe5e9f2),
         surfaceVariant=Color(0xff232934),onSurfaceVariant=Color(0xff969fb1),outline=Color(0xff2b3341))
     else lightColorScheme(primary=Color(0xff3156f4),onPrimary=Color.White,
         background=Color(0xfff3f4f9),surface=Color(0xfffdfdff),onSurface=Color(0xff171b26),
         surfaceVariant=Color(0xffe9ebf2),onSurfaceVariant=Color(0xff62697c),outline=Color(0xffd8dce8))
+    val container = if(dark) Color(0xff1b212c) else Color(0xffeceef5)
+    val primaryContainer = if(dark) Color(0xff17254d) else Color(0xffe4eaff)
+    val onPrimaryContainer = if(dark) Color(0xffbed0ff) else Color(0xff193dba)
+    val scheme = base.copy(surfaceTint=Color.Transparent,
+        surfaceDim=base.background,surfaceBright=base.surfaceVariant,
+        surfaceContainerLowest=base.background,surfaceContainerLow=base.surface,
+        surfaceContainer=container,surfaceContainerHigh=container,surfaceContainerHighest=base.surfaceVariant,
+        primaryContainer=primaryContainer,onPrimaryContainer=onPrimaryContainer,
+        secondary=base.primary,onSecondary=base.onPrimary,secondaryContainer=primaryContainer,onSecondaryContainer=onPrimaryContainer,
+        tertiary=base.primary,onTertiary=base.onPrimary,tertiaryContainer=primaryContainer,onTertiaryContainer=onPrimaryContainer)
     CompositionLocalProvider(LocalTerminalPalette provides if(dark) TerminalPalette.Dark else TerminalPalette.Light) {
         MaterialTheme(colorScheme=scheme,content=content)
     }
@@ -106,7 +116,7 @@ class MainActivity : ComponentActivity() {
                 {if(controlled) model.releaseControl() else model.takeControl()},expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
-                        DropdownMenu(menu,{menu=false}) {
+                        DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
                             Text(if(state.connected) if(controlled) "In control" else "Viewing terminal" else state.phase,
                                 Modifier.padding(horizontal=16.dp,vertical=8.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             state.screen?.let {Text("${it.columns} × ${it.rows}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
@@ -158,10 +168,10 @@ class MainActivity : ComponentActivity() {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
                             TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,model::selectWindow,{picker="panes"},program=model::tabProgram,add={
                                 Box {
-                                    Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                                    Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
                                         ChromeButton(ChromeIcon.ADD,"Add terminal",ready){add=true}
                                     }
-                                    DropdownMenu(add,{add=false}) {
+                                    DropdownMenu(add,{add=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
                                         DropdownMenuItem(text={Text("New tab")},onClick={add=false;model.createTab()})
                                         DropdownMenuItem(text={Text("New pane")},enabled=state.selectedBlock.isNotBlank(),onClick={add=false;model.createPane()})
                                     }
