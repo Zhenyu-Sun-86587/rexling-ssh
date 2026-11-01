@@ -1,8 +1,8 @@
 {
-  "source": "User-selected cropped voxel blue dinosaur",
-  "preparation": "Built-in imagegen transparent foreground extraction. Android supplies the white background and adaptive mask.",
-  "source_sha256": "73f9fea89befc10291cccac8c7037625467d456a3192e69f78e649780b259952",
-  "foreground_sha256": "4c6a46ce5a5d72ad45a9c409b847e39be45931730fc0e7faf083771e2a09441c",
+  "source": "User-selected paper-style blue dinosaur",
+  "preparation": "Exact supplied PNG, copied without alteration; Android applies its adaptive launcher mask.",
+  "source_sha256": "db6ec89782838da987040da1f320ccf27739bc2f700e8b5de7a9cffacac3e2b2",
+  "foreground_sha256": "db6ec89782838da987040da1f320ccf27739bc2f700e8b5de7a9cffacac3e2b2",
   "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
-  "prompt": "preparation-prompt.txt"
+  "prompt": null
 }
