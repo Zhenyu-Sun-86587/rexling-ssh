@@ -53,6 +53,18 @@ class TerminalInteractionTest {
         }
         assertEquals(1,activations);assertEquals(1,panes)
     }
+    @Test fun selectingTextDoesNotAcquireControlAndKeepsItsOriginalFrame() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation();var activations=0
+        instrumentation.runOnMainSync {
+            val frame=TerminalScreen(4,1,null,null,-1,0,listOf(TerminalCell(0,0,"h",-1,0,0,1),TerminalCell(1,0,"i",-1,0,0,1)))
+            val view=TerminalView(instrumentation.targetContext).apply {screen=frame;onActivate={activations++}}
+            view.layout(0,0,400,200)
+            assertTrue(view.performLongClick());assertEquals("hi",view.selectedText)
+            view.screen=frame.copy(cells=listOf(TerminalCell(0,0,"x",-1,0,0,1)),lines=listOf(listOf(TerminalCell(0,0,"x",-1,0,0,1))))
+            assertEquals("hi",view.selectedText);assertEquals(0,activations)
+            view.interactive=false;assertNull(view.selectedText)
+        }
+    }
     @Test fun packagedAdaptiveLauncherIconInflatesAndDraws() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         assertEquals("Rexlink",context.applicationInfo.loadLabel(context.packageManager).toString())

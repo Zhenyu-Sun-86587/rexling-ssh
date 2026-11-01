@@ -1,10 +1,15 @@
 package dev.shulhi.rex
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Picture
 import android.graphics.Paint
 import android.text.InputType
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -22,6 +27,15 @@ import kotlin.math.max
 
 class TerminalView(context: Context) : View(context) {
     var interactive = true
+        set(value) {if(field!=value) {field=value;if(!value) clearSelection()}}
+    private var selection: TerminalSelection?=null
+    private var selectionMode: ActionMode?=null
+    private var selectionTouch=false
+    private var moveSelectionAnchor=false
+    private var pressX=0f
+    private var pressY=0f
+    private val longPress=Runnable {performLongClick()}
+    internal val selectedText: String? get()=selection?.text()
     var palette: TerminalPalette = TerminalPalette.Dark
         set(value) { if(field != value) { field=value;clearRows();invalidate() } }
     var onPaneDrag: ((Float, Boolean) -> Unit)? = null
@@ -93,8 +107,8 @@ class TerminalView(context: Context) : View(context) {
     private val paneGesture = PaneGesture(ViewConfiguration.get(context).scaledTouchSlop.toFloat(), 48f * resources.displayMetrics.density)
 
     init {
-        isFocusable = true; isFocusableInTouchMode = true
-        contentDescription = "Terminal output. Tap to take control and type."
+        isFocusable = true; isFocusableInTouchMode = true;isLongClickable=true
+        contentDescription = "Terminal output. Tap to take control and type. Long press to select and copy text."
         metrics()
     }
     private fun metrics() {
@@ -118,9 +132,9 @@ class TerminalView(context: Context) : View(context) {
         val next = max(1, floor(contentWidth / desiredCellWidth).toInt()) to max(1, floor(contentHeight / desiredCellHeight).toInt())
         if (width > 0 && height > 0 && (force || next != dimensions)) { dimensions = next; onDimensions(next.first, next.second) }
     }
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {configureRendering();reportDimensions()}
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {clearSelection();configureRendering();reportDimensions()}
     override fun onDraw(canvas: Canvas) {
-        val frame = screen ?: return
+        val frame = selection?.frame ?: screen ?: return
         val saved = canvas.save()
         canvas.clipRect(0, 0, width, height)
         canvas.drawColor(palette.background)
@@ -147,7 +161,7 @@ class TerminalView(context: Context) : View(context) {
         canvas.save()
         canvas.clipRect(insetHorizontal,insetTop,width-insetHorizontal,height-insetBottom)
         canvas.translate(insetHorizontal,insetTop)
-        if (frame.cursorX != null && frame.cursorY != null) {
+        if (selection==null && frame.cursorX != null && frame.cursorY != null) {
             val cell=frame.lines.getOrNull(frame.cursorY)?.firstOrNull {it.x==frame.cursorX && it.width>0}
             val x = frame.cursorX * cellWidth; val y = frame.cursorY * cellHeight
             val cursorWidth=max(1,cell?.width ?: 1)*cellWidth
@@ -171,6 +185,7 @@ class TerminalView(context: Context) : View(context) {
             }
         }
         canvas.restore()
+        drawSelection(canvas)
         canvas.restoreToCount(saved)
         android.os.Trace.endSection()
     }
@@ -243,8 +258,9 @@ class TerminalView(context: Context) : View(context) {
             postInvalidateOnAnimation()
         }
     }
-    override fun onDetachedFromWindow() {scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
+    override fun onDetachedFromWindow() {clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if(selection!=null && event.actionMasked==MotionEvent.ACTION_SCROLL) return true
         if(interactive && event.actionMasked==MotionEvent.ACTION_SCROLL) {
             val lines=(-event.getAxisValue(MotionEvent.AXIS_VSCROLL)*3).roundToInt()
             if(lines!=0) {
@@ -266,25 +282,27 @@ class TerminalView(context: Context) : View(context) {
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if(!interactive) return false
+        if(selectionTouch || selection!=null) return selectionEvent(event)
         if(event.actionMasked==MotionEvent.ACTION_DOWN) {touchVelocity?.recycle();touchVelocity=VelocityTracker.obtain()}
         val sample=MotionEvent.obtain(event)
         sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
         touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
+            MotionEvent.ACTION_DOWN -> {pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount != 1) { paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
+                if (event.pointerCount != 1) { removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
                 else {
                     paneGesture.move(event.x,event.y)
                     val dx=event.rawX-startX;val dy=event.rawY-startY
                     val slop=ViewConfiguration.get(context).scaledTouchSlop
+                    if(kotlin.math.abs(dx)>slop || kotlin.math.abs(dy)>slop) removeCallbacks(longPress)
                     if(!scrolling && kotlin.math.abs(dx)>slop && kotlin.math.abs(dx)>kotlin.math.abs(dy)*1.5f) dragging=true
                     if(!dragging && kotlin.math.abs(dy)>slop && kotlin.math.abs(dy)>kotlin.math.abs(dx)*1.5f) {scrolling=true;paneGesture.cancel()}
                     if(scrolling) {scrollByPixels(lastScrollY-event.rawY);lastScrollY=event.rawY}
                     else if(dragging) onPaneDrag?.invoke(dx,true)
                 }
             }
-            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false}
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false}
             MotionEvent.ACTION_UP -> if(scrolling) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 val velocity=-(touchVelocity?.yVelocity ?: 0f).toInt()
@@ -305,8 +323,85 @@ class TerminalView(context: Context) : View(context) {
                 PaneGesture.Result.NONE -> Unit
             }
         }
-        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {touchVelocity?.recycle();touchVelocity=null}
+        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {removeCallbacks(longPress);touchVelocity?.recycle();touchVelocity=null}
         return true
+    }
+    private fun clearSelection() {
+        removeCallbacks(longPress)
+        selection=null;selectionTouch=false
+        val mode=selectionMode;selectionMode=null;mode?.finish();invalidate()
+    }
+    private fun selectionEvent(event: MotionEvent): Boolean {
+        val current=selection
+        when(event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                selectionTouch=true
+                if(current!=null) {
+                    fun distance(point: TerminalSelection.Point,end: Boolean): Float {
+                        val x=insetHorizontal+(if(end) current.endColumn(point) else point.column)*cellWidth
+                        val y=insetTop+(point.row+1)*cellHeight
+                        return kotlin.math.hypot(event.x-x,event.y-y)
+                    }
+                    val a=distance(current.anchor,false);val b=distance(current.extent,true)
+                    if(minOf(a,b)<=28*resources.displayMetrics.density) moveSelectionAnchor=a<b
+                    else {clearSelection();selectionTouch=true}
+                }
+            }
+            MotionEvent.ACTION_MOVE -> if(current!=null && event.pointerCount==1) {
+                current.move(((event.x-insetHorizontal)/cellWidth).toInt(),((event.y-insetTop)/cellHeight).toInt(),moveSelectionAnchor)
+                selectionMode?.invalidateContentRect();invalidate()
+            }
+            MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL -> {selectionTouch=false;touchVelocity?.recycle();touchVelocity=null}
+        }
+        return true
+    }
+    override fun performLongClick(): Boolean {
+        val frame=screen ?: return false
+        if(!interactive) return false
+        removeCallbacks(longPress);paneGesture.cancel();dragging=false;scrolling=false;scrollFling.abortAnimation();onPaneDrag?.invoke(0f,false)
+        selection=TerminalSelection(frame,((pressX-insetHorizontal)/cellWidth).toInt(),((pressY-insetTop)/cellHeight).toInt()).also {it.word()}
+        selectionTouch=true;moveSelectionAnchor=false;parent?.requestDisallowInterceptTouchEvent(true)
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        selectionMode=startActionMode(object: ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode,menu: Menu): Boolean {
+                menu.add(0,android.R.id.copy,0,"Copy").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                menu.add(0,android.R.id.selectAll,1,"Select all").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                return true
+            }
+            override fun onPrepareActionMode(mode: ActionMode,menu: Menu)=false
+            override fun onActionItemClicked(mode: ActionMode,item: MenuItem): Boolean = when(item.itemId) {
+                android.R.id.copy -> {
+                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Terminal selection",selection?.text().orEmpty()))
+                    mode.finish();true
+                }
+                android.R.id.selectAll -> {selection?.all();invalidate();mode.invalidateContentRect();true}
+                else -> false
+            }
+            override fun onDestroyActionMode(mode: ActionMode) {if(selectionMode===mode) {selectionMode=null;selection=null;invalidate()}}
+            override fun onGetContentRect(mode: ActionMode,view: View,outRect: android.graphics.Rect) {
+                val selected=selection ?: return super.onGetContentRect(mode,view,outRect)
+                outRect.set((insetHorizontal+selected.first.column*cellWidth).toInt(),(insetTop+selected.first.row*cellHeight).toInt(),
+                    (insetHorizontal+selected.endColumn(selected.last)*cellWidth).toInt().coerceAtMost(width),
+                    (insetTop+(selected.last.row+1)*cellHeight).toInt().coerceAtMost(height))
+            }
+        },ActionMode.TYPE_FLOATING)
+        invalidate();return true
+    }
+    private fun drawSelection(canvas: Canvas) {
+        val selected=selection ?: return
+        backgroundPaint.color=(palette.accent and 0xffffff) or (0x55 shl 24)
+        for(row in selected.first.row..selected.last.row) {
+            val left=if(row==selected.first.row) selected.first.column else 0
+            val right=if(row==selected.last.row) selected.endColumn(selected.last) else selected.frame.columns
+            canvas.drawRect(insetHorizontal+left*cellWidth,insetTop+row*cellHeight,
+                (insetHorizontal+right*cellWidth).coerceAtMost(width-insetHorizontal),insetTop+(row+1)*cellHeight,backgroundPaint)
+        }
+        backgroundPaint.color=palette.accent
+        for((point,end) in listOf(selected.first to false,selected.last to true)) {
+            val x=insetHorizontal+(if(end) selected.endColumn(point) else point.column)*cellWidth
+            val y=insetTop+(point.row+1)*cellHeight
+            canvas.drawCircle(x,y,5*resources.displayMetrics.density,backgroundPaint)
+        }
     }
     override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate()};return true }
     override fun onCheckIsTextEditor() = controlled
