@@ -27,14 +27,15 @@ import androidx.compose.ui.unit.dp
     val front=selected.coerceIn(items.indices)
     val others=items.indices.filter {it!=front}.take(2)
     val active=items[front]
+    val frontY=if(framed) 4.dp else 3.5.dp
     Box(Modifier.size(if(framed) 40.dp else 28.dp,if(framed) 35.dp else 25.dp)
         .clearAndSetSemantics {contentDescription=active.label+(if(items.size>1) ", ${items.size} panes" else "")}) {
         for((layer,index) in others.reversed().withIndex()) {
             val shift=(others.size-layer)*3
-            PaneProgramTile(items[index],Modifier.offset(x=shift.dp,y=(6-shift).dp)
+            PaneProgramTile(items[index],Modifier.offset(x=shift.dp,y=(frontY-shift.dp).coerceAtLeast(0.dp))
                 .size(if(framed) 31.dp else 19.dp,if(framed) 24.dp else 15.dp),framed)
         }
-        PaneProgramTile(active,Modifier.offset(y=(if(others.isEmpty()) 3 else 6).dp)
+        PaneProgramTile(active,Modifier.offset(y=frontY)
             .size(if(framed) 34.dp else 22.dp,if(framed) 27.dp else 18.dp),framed)
     }
 }

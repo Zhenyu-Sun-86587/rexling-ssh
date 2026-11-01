@@ -203,7 +203,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     Row(Modifier.weight(1f).padding(horizontal=10.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                         ProgramStack(programs,pane)
-                        Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
+                        Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,lineHeight=18.sp,
+                            style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
                             color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                     }
