@@ -1,0 +1,1 @@
+Prepare the user-provided full-body voxel blue robot dinosaur as an Android adaptive-icon foreground. Preserve the complete dinosaur, tail, limbs, colors, eye panel and terminal chevron. Remove the surrounding white rounded-square plate, external shadow and ground oval. Preserve a transparent background with clean alpha, a fully visible centered dinosaur and no extra artwork.

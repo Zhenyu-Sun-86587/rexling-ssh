@@ -75,7 +75,7 @@ impl Control {
             _ => "other",
         };
         // The common control/data shapes have been checked against revisions 7 and 8.
-        let mut hello = json!({"type":"hello","api_revision":8,"api_min_revision":7,"client":{"kind":"app","name":"rexlet","platform":platform,"version":env!("CARGO_PKG_VERSION")}});
+        let mut hello = json!({"type":"hello","api_revision":8,"api_min_revision":7,"client":{"kind":"app","name":"rexlink","platform":platform,"version":env!("CARGO_PKG_VERSION")}});
         if let Some(token) = token {
             hello["reconnect_token"] = json!(token);
         }

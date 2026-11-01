@@ -32,7 +32,7 @@ class TerminalInteractionTest {
     }
     @Test fun packagedAdaptiveLauncherIconInflatesAndDraws() {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("Rexlet",context.applicationInfo.loadLabel(context.packageManager).toString())
+        assertEquals("Rexlink",context.applicationInfo.loadLabel(context.packageManager).toString())
         val icon=context.applicationInfo.loadIcon(context.packageManager)
         assertTrue(icon is AdaptiveIconDrawable)
         val bitmap=Bitmap.createBitmap(192,192,Bitmap.Config.ARGB_8888)

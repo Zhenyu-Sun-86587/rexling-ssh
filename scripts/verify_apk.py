@@ -33,7 +33,7 @@ def main():
     run([build_tools / "zipalign", "-c", "-P", "16", "-v", "4", apk])
     badging = run([build_tools / "aapt", "dump", "badging", apk])
     label = re.search(r"(?m)^application-label:'([^']*)'$", badging).group(1)
-    assert label == "Rexlet", label
+    assert label == "Rexlink", label
     expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "awaitUpdate", "readUpdate", "destroy"]}
     libraries = []
     profiles = []

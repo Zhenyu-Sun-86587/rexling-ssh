@@ -1,8 +1,8 @@
-# Rexlet
+# Rexlink
 
 **Unofficial Android client for Rex.**
 
-Rexlet connects directly to the user's Superlogical Rex server. Kotlin/Compose
+Rexlink connects directly to the user's Superlogical Rex server. Kotlin/Compose
 supplies the UI and a Canvas terminal view. A Rust actor owns the direct
 authenticated WebSocket connections and a native `libghostty-vt` terminal replica.
 There is no bridge, proxy, embedded Rex server, or `rex` executable dependency.
@@ -63,7 +63,7 @@ are a deliberately fixed working set; lint may report newer versions.
    identity; it does not embed a second VPN or send identity headers.
 2. Install the debug APK through Android Studio, or later run
    `adb install -r app/build/outputs/apk/release/app-release.apk` yourself.
-3. Open **Rexlet**. Connect to the prefilled server URL, or enter another explicit
+3. Open **Rexlink**. Connect to the prefilled server URL, or enter another explicit
    `https://`, `http://`, `wss://`, or `ws://` Rex server address.
 4. **⋮ → Servers** saves additional hosts and keeps them connected together.
    Switch hosts in that sheet, or swipe the header session name through all
