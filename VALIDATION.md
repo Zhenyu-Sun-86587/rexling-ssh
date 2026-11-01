@@ -572,3 +572,10 @@ This supersedes the two-row accessory. Five separate vector-symbol modifier butt
 All five emulator Compose tests pass: one-shot Shift/Shift+Tab, held Shift with scrolling and repeated arrow taps, cancellation, disabled controls, and a 320dp-wide layout asserting all controls share a vertical center and do not overlap. Arrow scrolling is checked to leave modifier positions unchanged and emit no input. All 44 JVM tests, debug/release builds and release lint pass. APK release checks pass.
 
 Updated shareable APK: `dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `5b0b7c8e9e599dc2bd5dab5df708aba1fd05f2fdd83cef01851b922e8a11c9fa`. After USB reconnection, the corrected release was installed on S22+ RFCT21390SD; its installed base APK hash matches the shareable artifact. Existing application data was preserved.
+
+
+## Readable keyboard icons while viewing — 2026-11-02
+
+Connected, ready terminals now retain full keyboard icon contrast when not owned. Interactivity still requires ownership. Disconnected/busy controls retain their inactive styling. Program catalog tiles were already independent of ownership and are unchanged.
+
+All six emulator keyboard tests pass. The added regression compares every toolbar pixel before/after switching to read-only mode, then asserts disabled semantics and no emitted input when those keys are tapped. The 44 JVM tests, debug/release builds, release lint and APK checks pass. Updated shareable release SHA256: `62c65b9d404789bc45b35e0367eefb6665cc51c12ae7ab5694369bcd7066bd02`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; existing settings preserved.
