@@ -432,3 +432,36 @@ The corrected release was installed on S22+ RFCT21390SD (ADB Success), and its
 installed APK hash matches `validation/apk.json`:
 `611bc0c2f3e2b8772f9aba4de6fcbcd468513e587b55b7251387673a3da3a3ef`.
 The prior zoom-to-fit screenshots/claims above are historical, not current policy.
+
+
+## Compact header, task titles, extra keys and stale-session follow-up
+
+All 36 JVM tests and 25 native tests pass, including owned-server title changes,
+repeat close of a missing session, unowned dark-pane viewing, takeover and
+reconnection. Configured Mac Neovim also passes the same-scheme takeover case
+with a 63-column resize. A test indicator now uses its disposable buffer to avoid
+creating a hit-enter prompt during resize; the first apparent reproduction was
+that test artifact, not a confirmed failure in production focus delivery.
+
+The live user Mac pane was inspected without sending editor input: macOS was
+Dark, native Rex Beta owned it, canonical palette entries matched Android light,
+and Neovim reported background=light / catppuccin-latte. The approved local
+config now resolves the owner before choosing OS versus terminal appearance
+(dotfiles commit 0704207). Mocked checks cover both owners, lookup failure and
+stale asynchronous results. A real read-only ownership lookup against that pane
+selected dark OS appearance. Running Neovim must be restarted for the new helper;
+its in-place running user editor was not changed or restarted by automation.
+
+Emulator UI checks used one disposable two-pane fixture and verified the task
+title in both header and tab, disappearance of the canceled pane overlay,
+F1-F12 expansion/collapse, and the strip resetting to Esc. Screenshots were
+visually checked; all four arrows fit without edge clipping at emulator width.
+Original emulator preferences were restored and only the fixture was removed.
+Debug/release builds, JVM checks, release lint, and Clippy with warnings denied
+pass. Existing baseline profiles remain packaged; no unrelated benchmark rerun.
+
+The non-debuggable release was installed on Galaxy S22+ RFCT21390SD over USB.
+ADB returned Success; its installed base APK SHA256 matched the verified build:
+`354a19dbc7c1cee51df9706cac961b4a1105629ae0ecd92f56825c75a7d773ea`.
+`validation/apk.json` records signature, profiles and arm64 alignment checks.
+Saved phone connections and settings were preserved. Changes are committed per scope.

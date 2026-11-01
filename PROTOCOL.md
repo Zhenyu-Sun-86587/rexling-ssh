@@ -317,8 +317,10 @@ Takeover reapplies the resolved theme, then sends the verified block.event focus
 payload `{type:focus,payload:{action:in}}`. This lets Neovim re-query the canonical
 terminal background even when set_theme deduplicates an unchanged theme. The
 replica still installs no WRITE_PTY callback and never fabricates OSC replies.
-The approved Mac Neovim config now follows terminal appearance inside Rex and
-keeps OS-based behavior elsewhere. Existing editors must restart to load it.
+The approved Mac Neovim config resolves the owning client before choosing
+appearance: native Mac Rex uses macOS appearance, while Rexlink control follows
+the canonical terminal. Other non-Rex Mac terminals keep OS-based behavior.
+Existing editors must restart to load it.
 Clean Linux and configured Mac theme assertions pass through takeover/resume.
 The tested Mac command-session process metadata reports /usr/bin/login rather
 than nvim; exact foreground recognition is asserted on the Linux fixture only.
@@ -330,3 +332,37 @@ a wider terminal owned elsewhere can remain cropped until the user takes control
 When a neighbor preview becomes active, dimensions are replayed even if its View
 size did not change. Regressions verify the fixed font and requested grid. The
 pane indicator reserves 14 dp, down from 22 dp, reducing the gap above its dots.
+
+
+## Task titles, read-only appearance and stale session closure
+
+`com.superlogical.terminal.title` returns `{title,owner:{pid,name}}`, and
+`program_status.records` can supply a root task title. The client prefers an
+owned root record, then a terminal title whose owner PID and name match the
+current foreground process. Old shell/agent titles cannot label a new program.
+Titles are bounded plain text; executable metadata independently selects icons.
+The existing helper refreshes title metadata on `title_changed` and program
+status/process events, with the periodic refresh as fallback. Header/default tab
+labels follow the remembered focused pane. Explicit custom tab names remain.
+OSC 7501 `title` values in fixtures are base64 UTF-8, as specified in the
+[official protocol](https://www.superlogical.com/rex/docs/build/program-status).
+
+Appearance is now sent only while Rexlink owns the pane. Merely viewing an
+unowned pane must not overwrite its canonical colors. An observed Mac pane was
+owned by native Rex Beta and rendered in dark macOS appearance, but retained
+Rexlink's prior light palette in the server; its Neovim startup selected light.
+The local Neovim helper reads ownership using the installed Rex CLI and applies
+macOS appearance for native Mac Rex. Other owners use OSC 11. Async results are
+generation-checked so a late OS lookup cannot override a later Android focus.
+This optional local editor workaround is separate from the Android client's
+independent direct connection; no bridge or server configuration is added.
+
+Closing a session that disappeared is idempotent for the typed server error
+`session_not_found` from attach/destroy. The catalog refreshes and stale selection
+clears. Other errors remain errors; no uncertain destructive request is retried.
+
+The extra-keys chevron beside Esc expands F1-F12 plus Home/PgUp/PgDn/End/Ins/Del.
+F1-F4 use SS3 P/Q/R/S; F5-F12 use CSI 15/17/18/19/20/21/23/24~. Collapse or hiding
+the system keyboard resets the horizontal strip to Esc. Input still requires
+ownership. The pane overlay no longer arms an untimed toast when a swipe settles
+back to the same pane.
