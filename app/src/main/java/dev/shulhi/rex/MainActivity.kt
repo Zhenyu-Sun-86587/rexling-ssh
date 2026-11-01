@@ -23,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -71,6 +72,7 @@ private val Ink = Color(0xff101411)
     var serverVisible by rememberSaveable { mutableStateOf(true) }
     var fontSize by rememberSaveable { mutableIntStateOf(10) }
     var picker by remember { mutableStateOf("") }
+    var addVisible by remember { mutableStateOf(false) }
     var menuVisible by remember { mutableStateOf(false) }
     var errorExpanded by remember { mutableStateOf(false) }
     var terminalView by remember { mutableStateOf<TerminalView?>(null) }
@@ -87,7 +89,10 @@ private val Ink = Color(0xff101411)
         else -> "Disconnected"
     }
     LaunchedEffect(state.phase) { if (state.connected || state.phase == "preview") serverVisible = false }
-    LaunchedEffect(state.connected, state.selectedSession, state.windows) { model.openPreferredTerminal() }
+    LaunchedEffect(state.connected, state.selectedSession, state.selectedBlock, state.windows) {
+        model.rememberCurrentTerminal()
+        model.openPreferredTerminal()
+    }
     LaunchedEffect(state.controlled) {
         if (state.controlled) { model.applySize(); terminalView?.keyboard() }
     }
@@ -95,39 +100,40 @@ private val Ink = Color(0xff101411)
 
     Surface(Modifier.fillMaxSize(), color = Ink) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-            // Navigation stays available with the IME open; no separate title/status row.
-            Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(
-                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(6.dp))
-                        .clickable(role = Role.Button) { picker = "sessions" }
-                        .semantics { contentDescription = "Switch session" }
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.size(6.dp).background(if (state.connected) Leaf else MaterialTheme.colorScheme.outline, RoundedCornerShape(3.dp)))
-                    Spacer(Modifier.width(7.dp))
-                    Text(currentSession?.label ?: if (state.phase == "preview") "Preview" else "Sessions", Modifier.weight(1f, fill = false),
-                        fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(" ▾", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                }
-                if (currentWindow != null) {
-                    CompactAction("Panes ${if (paneIndex >= 0) paneIndex + 1 else "–"}/${currentWindow.blocks.size} ▾",
-                        enabled = state.connected, description = "Switch pane", onClick = { picker = "panes" })
-                }
-                if (screen != null && state.phase != "preview") {
-                    CompactAction(if (state.controlled) "Release" else "Control", enabled = state.connected,
-                        selected = state.controlled, description = if (state.controlled) "Release terminal control" else "Take terminal control") {
-                        if (state.controlled) model.releaseControl() else model.takeControl()
+            Row(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                HeaderAction("‹", "Switch session") { picker = "sessions" }
+                if (state.windows.isNotEmpty()) {
+                    WorkspaceTabs(state.windows, currentWindow?.id.orEmpty(), currentSession?.label.orEmpty(),
+                        state.connected && !state.creating, Modifier.weight(1f), model::selectWindow, { picker = "panes" }, { picker = "sessions" })
+                } else {
+                    Row(Modifier.weight(1f).fillMaxHeight().clickable(role = Role.Button) { picker = "sessions" }
+                        .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(currentSession?.label ?: if (state.phase == "preview") "Preview" else "Sessions",
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
                     }
                 }
                 Box {
-                    CompactAction("⋮", description = "Terminal menu", onClick = { menuVisible = true })
+                    HeaderAction("+", "Add terminal", enabled = state.connected && state.selectedSession.isNotBlank() && !state.creating) { addVisible = true }
+                    DropdownMenu(expanded = addVisible, onDismissRequest = { addVisible = false }) {
+                        DropdownMenuItem(text = { Text("New tab") }, onClick = { addVisible = false; model.createTab() })
+                        DropdownMenuItem(text = { Text("New pane") }, enabled = state.selectedBlock.isNotBlank(),
+                            onClick = { addVisible = false; model.createPane() })
+                    }
+                }
+                Box {
+                    HeaderAction("⋮", "Terminal menu") { menuVisible = true }
                     DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
                         Text(phaseLabel + (screen?.let { " · ${it.columns} × ${it.rows}" } ?: ""),
                             Modifier.padding(horizontal = 16.dp, vertical = 8.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (state.notice.isNotBlank()) Text(state.notice, Modifier.widthIn(max = 280.dp).padding(horizontal = 16.dp, vertical = 4.dp),
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         HorizontalDivider()
+                        if (screen != null && state.phase != "preview") DropdownMenuItem(
+                            text = { Text(if (state.controlled) "Release terminal control" else "Take terminal control") },
+                            enabled = state.connected && !state.creating,
+                            onClick = { menuVisible = false; if (state.controlled) model.releaseControl() else model.takeControl() })
+                        DropdownMenuItem(text = { Text("Switch pane") }, enabled = currentWindow != null && state.connected,
+                            onClick = { menuVisible = false; picker = "panes" })
                         DropdownMenuItem(text = { Text("Server connection") }, onClick = { menuVisible = false; serverVisible = !serverVisible })
                         DropdownMenuItem(text = { Text("Refresh sessions and tabs") }, enabled = state.connected,
                             onClick = { menuVisible = false; model.refresh() })
@@ -146,9 +152,6 @@ private val Ink = Color(0xff101411)
                     }
                 }
             }
-            if (state.windows.isNotEmpty()) {
-                WindowTabs(state.windows, currentWindow?.id.orEmpty(), state.connected, model::selectWindow)
-            }
             if (serverVisible || (state.phase == "disconnected" && screen == null)) {
                 Surface(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), shape = RoundedCornerShape(12.dp), tonalElevation = 2.dp) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -165,6 +168,7 @@ private val Ink = Color(0xff101411)
                     }
                 }
             }
+            if (state.creating) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
             if (state.error.isNotBlank()) {
                 Text(state.error, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer)
                     .clickable { errorExpanded = !errorExpanded }.padding(horizontal = 12.dp, vertical = 5.dp),
@@ -174,17 +178,24 @@ private val Ink = Color(0xff101411)
                 LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
             }
             if (screen != null) {
-                AndroidView(
-                    factory = { ctx -> TerminalView(ctx).also { terminalView = it } },
-                    modifier = Modifier.weight(1f).fillMaxWidth().background(Color(screen.background)),
-                    update = { view ->
-                        view.onInput = model::type
-                        view.onDimensions = model::resize
-                        view.controlled = state.controlled
-                        view.textSp = fontSize.toFloat()
-                        view.screen = screen
-                    },
-                )
+                Box(Modifier.weight(1f).fillMaxWidth().background(Color(screen.background))) {
+                    AndroidView(
+                        factory = { ctx -> TerminalView(ctx).also { terminalView = it } },
+                        modifier = Modifier.fillMaxSize().clipToBounds(),
+                        update = { view ->
+                            view.onInput = model::type
+                            view.onPaneSwipe = model::swipePane
+                            view.onDimensions = model::resize
+                            view.controlled = state.controlled
+                            view.textSp = fontSize.toFloat()
+                            view.screen = screen
+                        },
+                    )
+                    if (currentWindow != null && currentWindow.blocks.size > 1 && paneIndex >= 0) {
+                        PaneIndicator(paneIndex, currentWindow.blocks.size, state.connected && !state.creating,
+                            Modifier.align(Alignment.TopEnd).padding(8.dp)) { picker = "panes" }
+                    }
+                }
                 Row(Modifier.fillMaxWidth().height(40.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     CompactAction("Esc", state.controlled) { model.key("esc") }
@@ -195,7 +206,10 @@ private val Ink = Color(0xff101411)
                     CompactAction("↓", state.controlled, description = "Down arrow") { model.key("down") }
                     CompactAction("↑", state.controlled, description = "Up arrow") { model.key("up") }
                     CompactAction("→", state.controlled, description = "Right arrow") { model.key("right") }
-                    CompactAction("⌨", state.controlled, description = "Show keyboard") { terminalView?.keyboard() }
+                    CompactAction(if (state.controlled) "⌨" else "Type", state.connected && !state.creating,
+                        selected = state.controlled, description = if (state.controlled) "Show keyboard" else "Take terminal control") {
+                        if (state.controlled) terminalView?.keyboard() else model.takeControl()
+                    }
                 }
             } else {
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -233,40 +247,75 @@ private val Ink = Color(0xff101411)
                             picker = ""; model.selectBlock(block.id)
                         }
                     }
+                    TextButton(onClick = { picker = ""; model.createPane() }, enabled = state.connected && !state.creating && state.selectedBlock.isNotBlank()) { Text("New pane") }
                 }
             }
         }
     }
 }
 
-@Composable private fun WindowTabs(windows: List<WindowItem>, selectedId: String, enabled: Boolean, onSelect: (String) -> Unit) {
+@Composable private fun WorkspaceTabs(windows: List<WindowItem>, selectedId: String, session: String, enabled: Boolean,
+    modifier: Modifier, onSelect: (String) -> Unit, onPanes: () -> Unit, onSessions: () -> Unit) {
     val scroll = rememberScrollState()
     val positions = remember { mutableStateMapOf<String, IntRange>() }
-    LaunchedEffect(selectedId, positions[selectedId]) {
+    LaunchedEffect(selectedId, positions[selectedId], scroll.viewportSize) {
         positions[selectedId]?.let { bounds ->
             val visibleWidth = scroll.viewportSize
             if (bounds.first < scroll.value) scroll.animateScrollTo(bounds.first)
             else if (bounds.last > scroll.value + visibleWidth) scroll.animateScrollTo(bounds.last - visibleWidth)
         }
     }
-    Row(Modifier.fillMaxWidth().height(36.dp).background(MaterialTheme.colorScheme.surface).horizontalScroll(scroll)) {
+    Row(modifier.fillMaxHeight().clipToBounds().horizontalScroll(scroll), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         windows.forEachIndexed { index, window ->
             val active = window.id == selectedId
-            Column(Modifier.widthIn(min = 72.dp, max = 180.dp).width(IntrinsicSize.Min).fillMaxHeight()
+            val title = window.label.takeUnless { it.isBlank() || it.startsWith("Window ") }
+                ?: window.blocks.firstOrNull()?.label?.takeIf { it.isNotBlank() } ?: "Terminal ${index + 1}"
+            Row(Modifier.widthIn(min = 104.dp, max = 174.dp).width(IntrinsicSize.Min).height(40.dp)
                 .onGloballyPositioned { coordinates ->
                     val left = coordinates.positionInParent().x.roundToInt()
                     positions[window.id] = left until left + coordinates.size.width
                 }
-                .clickable(enabled = enabled && window.blocks.isNotEmpty(), role = Role.Tab) { onSelect(window.id) }
-                .semantics { selected = active; contentDescription = "Tab ${window.label.ifBlank { "${index + 1}" }}" }
-                .background(if (active) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent),
-                verticalArrangement = Arrangement.SpaceBetween) {
-                Spacer(Modifier.height(2.dp))
-                Text(window.label.ifBlank { "Tab ${index + 1}" }, Modifier.padding(horizontal = 14.dp),
-                    color = if (active) Leaf else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Box(Modifier.fillMaxWidth().height(2.dp).background(if (active) Leaf else Color.Transparent))
+                .clip(RoundedCornerShape(9.dp))
+                .background(if (active) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+                .clickable(enabled = enabled, role = Role.Tab) { if (active) onPanes() else onSelect(window.id) }
+                .semantics { selected = active; contentDescription = "Tab $title" }
+                .padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (active) {
+                    Text(">_", color = Leaf, fontSize = 11.sp)
+                    Spacer(Modifier.width(7.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, color = if (active) Leaf else MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(if (active) "$session ▾" else "${window.blocks.size} panes",
+                        Modifier.clickable(enabled = active, role = Role.Button, onClick = onSessions), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp,
+                        lineHeight = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
+        }
+    }
+}
+
+@Composable private fun HeaderAction(symbol: String, description: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(Modifier.size(36.dp, 42.dp).padding(2.dp).clip(RoundedCornerShape(9.dp))
+        .background(MaterialTheme.colorScheme.surface)
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = description }, contentAlignment = Alignment.Center) {
+        Text(symbol, fontSize = 23.sp, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
+    }
+}
+
+@Composable private fun PaneIndicator(index: Int, count: Int, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val start = (index - 3).coerceIn(0, (count - 7).coerceAtLeast(0))
+    Row(modifier.clip(RoundedCornerShape(7.dp)).background(Ink.copy(alpha = 0.9f))
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = "Pane ${index + 1} of $count. Switch pane" }
+        .padding(horizontal = 8.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text("${index + 1}/$count", Modifier.padding(end = 4.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurface)
+        repeat(minOf(count, 7)) { offset ->
+            Box(Modifier.size(7.dp, 16.dp).background(if (start + offset == index) Leaf else Color(0xff465046), RoundedCornerShape(2.dp)))
         }
     }
 }
