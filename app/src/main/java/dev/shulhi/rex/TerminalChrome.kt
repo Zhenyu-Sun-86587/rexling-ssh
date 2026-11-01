@@ -159,7 +159,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,onPanes: ()->Unit,add: @Composable ()->Unit) {
+    onSelect: (String)->Unit,onPanes: ()->Unit,program: (WindowItem)->ProgramIdentity,add: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -172,11 +172,12 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 val active=w.id==selectedId
                 val title=w.label.takeUnless {it.isBlank() || it.startsWith("Window ")} ?: w.blocks.firstOrNull()?.label ?: "Terminal ${i+1}"
                 Column(Modifier.height(44.dp).widthIn(min=70.dp,max=170.dp)
-                    .semantics(mergeDescendants=true) {contentDescription="Tab $title"}
+                    .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program(w).label}"}
                     .selectable(active,enabled,role=Role.Tab) {onSelect(w.id)}.padding(horizontal=12.dp),
                     verticalArrangement=Arrangement.Center) {
-                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(3.dp)) {
-                        Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                        ProgramIcon(program(w))
+                        Text(title,Modifier.widthIn(max=108.dp),fontSize=12.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
                             color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                         if(w.blocks.size>1) Text(w.blocks.size.toString(),color=MaterialTheme.colorScheme.primary,fontSize=9.sp,fontWeight=FontWeight.Bold)

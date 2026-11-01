@@ -125,6 +125,7 @@ class RexModel(application: Application) : AndroidViewModel(application) {
         navigation.remember(current.selectedSession, current.windows, id)
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
+    fun tabProgram(window: WindowItem): ProgramIdentity = state.value.programs[navigation.pane(state.value.selectedSession, window)] ?: ProgramIdentity.Terminal
     fun selectWindow(id: String) {
         val current = state.value
         current.windows.firstOrNull { it.id == id }?.let { window ->
