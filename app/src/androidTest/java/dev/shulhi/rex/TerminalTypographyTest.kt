@@ -11,6 +11,22 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class TerminalTypographyTest {
+    @Test fun nerdIconsArePresentAndUseTheSameSingleCellAdvanceAsText() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val fonts=TerminalFonts(context)
+        val paint=Paint()
+        val glyphs=listOf(0xe0a0,0xe0b0,0xf07b,0xf120,0xe7a8,0xf031d).map {String(Character.toChars(it))}
+        for(size in listOf(8f,10f,12f,14f,16f,18f)) {
+            val grid=fonts.configure(paint,size)
+            for(style in listOf(fonts.regular,fonts.bold,fonts.italic,fonts.boldItalic)) {
+                paint.typeface=style
+                for(glyph in glyphs) {
+                    assertTrue("Missing Nerd Font glyph ${glyph.codePointAt(0).toString(16)}",paint.hasGlyph(glyph))
+                    assertEquals("Nerd glyph advance at $size sp",grid.cellWidth,paint.measureText(glyph),.03f)
+                }
+            }
+        }
+    }
     @Test fun bundledStylesKeepAsciiOnAnExactPixelGridAtEverySupportedSize() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val fonts = TerminalFonts(context)

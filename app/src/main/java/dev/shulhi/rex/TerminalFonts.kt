@@ -9,12 +9,12 @@ import kotlin.math.roundToInt
 
 data class TerminalMetrics(val cellWidth: Float, val cellHeight: Float, val baseline: Float)
 
-/** The bundled family has identical advances in every style, independent of OEM fonts. */
+/** Nerd Font Mono keeps icon glyphs and text on the same fixed grid on every device. */
 class TerminalFonts(private val context: Context) {
-    val regular: Typeface = context.resources.getFont(R.font.jetbrains_mono_regular)
-    val bold: Typeface = context.resources.getFont(R.font.jetbrains_mono_bold)
-    val italic: Typeface = context.resources.getFont(R.font.jetbrains_mono_italic)
-    val boldItalic: Typeface = context.resources.getFont(R.font.jetbrains_mono_bold_italic)
+    val regular: Typeface = context.resources.getFont(R.font.jetbrains_nerd_regular)
+    val bold: Typeface = context.resources.getFont(R.font.jetbrains_nerd_bold)
+    val italic: Typeface = context.resources.getFont(R.font.jetbrains_nerd_italic)
+    val boldItalic: Typeface = context.resources.getFont(R.font.jetbrains_nerd_bold_italic)
 
     fun configure(paint: Paint, sizeSp: Float): TerminalMetrics {
         paint.typeface = regular
