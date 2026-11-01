@@ -84,6 +84,9 @@ class MainActivity : ComponentActivity() {
     val state by client.state.collectAsState()
     val navigation=client.navigationRequest
     val displayedSession=navigation.session ?: state.selectedSession
+    val currentSessionKey=sessionKey(model.activeServerId,displayedSession)
+    val sessionStrip=SessionCatalog.strip(model.sessionTargets,SessionTarget(model.activeServer,
+        SessionItem(displayedSession,state.sessions.firstOrNull {it.id==displayedSession}?.label ?: if(state.connected) "No session" else state.phase)))
     val displayedBlock=navigation.block ?: state.selectedBlock
     val changingSession=navigation.session!=null && navigation.session!=state.selectedSession
     val windows=if(changingSession) emptyList() else state.windows
@@ -117,12 +120,12 @@ class MainActivity : ComponentActivity() {
         if(index>=0) client.prefetchPanes(listOfNotNull(blocks.getOrNull(index-1)?.id,blocks.getOrNull(index+1)?.id))
     }
     LaunchedEffect(controlled) {if(controlled){client.applySize();terminalView?.keyboard()}}
-    LaunchedEffect(picker) {if(picker=="sessions") client.refreshSessionDetails()}
+    LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-            SessionHeader(state.sessions,displayedSession,state.connected,state.connected&&!state.creating,
-                controlled,ready&&state.screen!=null,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},client::selectSession,client::jumpLastSession,
-                {if(controlled) client.releaseControl() else client.takeControl()},expanded=picker=="sessions",serverName=model.activeServer.label,menu={
+            SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
+                controlled,ready&&state.screen!=null,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
+                {if(controlled) client.releaseControl() else client.takeControl()},expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
@@ -197,8 +200,8 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                if(picker=="sessions") SessionSwitcher(state,displayedSession,client.lastSessionId,
-                    onSelect={picker="";client.selectSession(it)},onClose={picker=""},onNew={picker="";newSession=true})
+                if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,
+                    onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true})
             }
         }
     }
@@ -228,7 +231,7 @@ class MainActivity : ComponentActivity() {
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
-@Composable private fun SessionSwitcher(state: AppState,current: String,last: String,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
+@Composable private fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
     var search by rememberSaveable {mutableStateOf("")}
     BackHandler(onBack=onClose)
     Box(Modifier.fillMaxSize()) {
@@ -239,7 +242,7 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
                 .background(MaterialTheme.colorScheme.outline,RoundedCornerShape(2.dp)))
             Row(Modifier.fillMaxWidth().padding(bottom=12.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Sessions",Modifier.weight(1f),fontSize=19.sp,fontWeight=FontWeight.Bold)
-                Button(onClick=onNew,enabled=state.connected&&!state.creating,contentPadding=PaddingValues(horizontal=14.dp,vertical=8.dp)) {
+                Button(onClick=onNew,enabled=canCreate,contentPadding=PaddingValues(horizontal=14.dp,vertical=8.dp)) {
                     ChromeSymbol(ChromeIcon.ADD,Modifier.size(15.dp),MaterialTheme.colorScheme.onPrimary);Spacer(Modifier.width(5.dp));Text("New")
                 }
             }
@@ -249,24 +252,24 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
                     focusedIndicatorColor=Color.Transparent,unfocusedIndicatorColor=Color.Transparent))
             Spacer(Modifier.height(9.dp))
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                val ordered=state.sessions.sortedBy {if(it.id==current) 0 else 1}.filter{it.label.contains(search,ignoreCase=true)}
+                val ordered=targets.sortedBy {if(it.key==current) 0 else 1}.filter{it.session.label.contains(search,ignoreCase=true) || it.server.label.contains(search,ignoreCase=true)}
                 if(ordered.isEmpty()) Text("No matching sessions",Modifier.padding(15.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                ordered.forEach {session->
-                    val active=session.id==current
-                    val detail=if(session.id==state.selectedSession && state.connected)
-                        SessionDetail("this device",state.windows.size,state.windows.sumOf {it.blocks.size}) else state.sessionDetails[session.id]
+                ordered.forEach {target->
+                    val session=target.session
+                    val active=target.key==current
+                    val detail=target.detail
                     Row(Modifier.fillMaxWidth().padding(vertical=3.dp).clip(RoundedCornerShape(14.dp))
                         .background(if(active) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-                        .clickable(enabled=state.connected&&!state.creating){onSelect(session.id)}.padding(horizontal=11.dp,vertical=14.dp),
+                        .clickable{onSelect(target.key)}.padding(horizontal=11.dp,vertical=14.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(11.dp)) {
                         Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
                         Column(Modifier.weight(1f)) {
                             Text(session.label,fontFamily=MonoUi,fontWeight=FontWeight.Bold,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
-                            Text(detail?.let{"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded",fontSize=10.sp,
+                            Text(target.server.label+" · "+(detail?.let{"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded"),fontSize=10.sp,
                                 color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2)
                         }
                         if(active) Text("current",color=MaterialTheme.colorScheme.primary,fontSize=9.sp,fontWeight=FontWeight.SemiBold)
-                        else if(session.id==last) Text("↶ last",Modifier.clip(RoundedCornerShape(7.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(6.dp),fontSize=9.sp)
+                        else if(target.key==last) Text("↶ last",Modifier.clip(RoundedCornerShape(7.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(6.dp),fontSize=9.sp)
                     }
                 }
             }

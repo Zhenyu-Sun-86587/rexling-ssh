@@ -44,17 +44,28 @@ class MultiServerTest {
             assertTrue(main {a.state.value.connected})
             main {b.takeControl()};waitFor("Mac owns its own pane") {b.state.value.controlled}
             main {b.type("B_ONLY\n")};waitFor("Mac received input") {b.state.value.screen?.plainText()?.contains("B_ONLY")==true}
-            main {model.connectServer("a")}
+            val keyA=sessionKey("a",args.getString("session_a")!!)
+            val keyB=sessionKey("b",args.getString("session_b")!!)
+            waitFor("Both hosts in shared session strip") {model.sessionTargets.any {it.key==keyA} && model.sessionTargets.any {it.key==keyB}}
+            main {model.selectSessionTarget(keyA)}
+            waitFor("Cross-server session selected") {model.activeServerId=="a" && a.state.value.selectedSession==args.getString("session_a")}
+            assertEquals(keyB,main {model.lastSessionKey})
+            main {model.jumpLastSession()}
+            assertSame(b,main {model.activeClient})
+            assertEquals(keyA,main {model.lastSessionKey})
+            main {model.jumpLastSession()}
             assertSame(a,main {model.activeClient})
             assertTrue(main {b.state.value.connected})
             main {b.type("HIDDEN_INPUT\n");a.takeControl()}
             waitFor("Linux owns its own pane") {a.state.value.controlled}
             main {a.type("A_ONLY\n")};waitFor("Linux received input") {a.state.value.screen?.plainText()?.contains("A_ONLY")==true}
             assertFalse(main {a.state.value.screen?.plainText()?.contains("B_ONLY")==true})
-            main {model.connectServer("b");b.takeControl()};waitFor("Mac control restored") {b.state.value.controlled}
+            main {model.selectSessionTarget(keyB);b.takeControl()};waitFor("Mac control restored") {b.state.value.controlled}
             main {b.type("CHECK_B\n")};waitFor("Mac channel advanced") {b.state.value.screen?.plainText()?.contains("CHECK_B")==true}
             assertFalse(main {b.state.value.screen?.plainText()?.contains("HIDDEN_INPUT")==true})
-            main {model.disconnectServer("a")};waitFor("Only Linux disconnected") {a.state.value.phase=="disconnected"}
+            main {model.disconnectServer("a")};waitFor("Only Linux disconnected") {a.state.value.phase=="disconnected" && model.sessionTargets.none {it.server.id=="a"}}
+            main {model.selectSessionTarget(keyA)}
+            assertSame(b,main {model.activeClient})
             main {b.type("SURVIVES\n")};waitFor("Mac connection survived") {b.state.value.connected && b.state.value.screen?.plainText()?.contains("SURVIVES")==true}
             main {model.pause()};waitFor("Mac lifecycle paused") {b.state.value.phase=="paused"}
             main {model.resume()};waitFor("Mac lifecycle resumed") {b.state.value.connected && b.state.value.selectedSession==args.getString("session_b")}

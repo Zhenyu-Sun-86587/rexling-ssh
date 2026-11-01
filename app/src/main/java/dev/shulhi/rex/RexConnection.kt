@@ -179,7 +179,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun refresh() = command("refresh")
     fun takeControl() {if(visible) command("take")}
-    fun releaseControl() { controlModifier = false; altModifier = false; command("release") }
+    fun releaseControl() { controlModifier = false; altModifier = false; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
         navigationRequest = NavigationRequest()
         foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false

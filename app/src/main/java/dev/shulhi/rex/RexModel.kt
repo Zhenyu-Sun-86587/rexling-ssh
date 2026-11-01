@@ -21,6 +21,10 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     var serverStatuses by mutableStateOf<Map<String,ServerStatus>>(emptyMap())
         private set
+    internal var sessionTargets by mutableStateOf<List<SessionTarget>>(emptyList())
+        private set
+    internal var lastSessionKey by mutableStateOf(preferences.getString("last_global_session","").orEmpty())
+        private set
     private val connections=mutableMapOf<String,RexConnection>()
     private val observers=mutableMapOf<String,Job>()
     private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
@@ -42,11 +46,38 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                 client.state.collect {state->
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
+                    updateSessionTargets()
                 }
             }
         }
     }
-    private fun persist() {preferences.edit {
+    private fun updateSessionTargets() {
+        val next=SessionCatalog.collect(servers,connections.mapValues {it.value.state.value})
+        if(next!=sessionTargets) sessionTargets=next
+    }
+    private fun rememberLastSession() {
+        val session=activeClient.navigationRequest.session ?: activeClient.state.value.selectedSession
+        if(session.isNotBlank()) {
+            lastSessionKey=sessionKey(activeServerId,session)
+            preferences.edit {putString("last_global_session",lastSessionKey)}
+        }
+    }
+    internal fun selectSessionTarget(key: String) {
+        val target=sessionTargets.firstOrNull {it.key==key} ?: return
+        if(activeServerId==target.server.id) {
+            val current=activeClient.navigationRequest.session ?: activeClient.state.value.selectedSession
+            if(current==target.session.id) return
+            rememberLastSession()
+        }
+        connectServer(target.server.id)
+        activeClient.selectSession(target.session.id)
+    }
+    internal fun jumpLastSession() {
+        if(sessionTargets.any {it.key==lastSessionKey}) selectSessionTarget(lastSessionKey)
+        else activeClient.jumpLastSession()
+    }
+    internal fun refreshSessionDetails() {connections.values.filter {it.state.value.connected}.forEach {it.refreshSessionDetails()}}
+    private fun persist() {updateSessionTargets();preferences.edit {
         putString("servers",SavedServers.encode(servers));putString("active_server",activeServerId)
         putStringSet("connected_servers",desired)
     }}
@@ -54,6 +85,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         val profile=servers.firstOrNull {it.id==id} ?: return
         val client=connection(profile)
         if(select && activeServerId!=id) {
+            rememberLastSession()
             activeClient.releaseControl();activeClient.visible=false
             client.visible=true;activeServerId=id;activeClient=client
         }
