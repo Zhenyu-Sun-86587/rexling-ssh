@@ -113,21 +113,21 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let { latestSelect(it.id) }
         }
     }
-    Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(50.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
         if(!expanded) {ProgramStack(programs,paneIndex,framed=true);Spacer(Modifier.width(7.dp))}
         Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
-            if(!expanded) Row(Modifier.fillMaxWidth().height(25.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text(program.title,fontWeight=FontWeight.Bold,fontSize=14.sp,letterSpacing=0.sp,maxLines=1,
+            if(!expanded) Row(Modifier.fillMaxWidth().height(22.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text(program.title,fontWeight=FontWeight.Bold,fontSize=13.sp,letterSpacing=0.sp,maxLines=1,
                     overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=90.dp))
                 if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
-                    fontFamily=MonoUi,fontSize=10.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                    fontFamily=MonoUi,fontSize=9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 46.dp else 22.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else 20.dp)) {
                 val pageWidth=if(expanded) 160.dp else maxWidth.coerceAtLeast(40.dp)
                 val pagePadding=if(expanded) ((maxWidth-pageWidth)/2).coerceAtLeast(0.dp) else 0.dp
                 Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 34.dp else 22.dp),userScrollEnabled=enabled && sessions.size>1,
+                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else 20.dp),userScrollEnabled=enabled && sessions.size>1,
                         pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={sessions.getOrNull(it)?.id ?: "empty"}) { index ->
                         val item=sessions.getOrNull(index)
                         val active=item?.id==selectedId
@@ -139,7 +139,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(if(expanded) 6.dp else 4.dp)) {
                             Box(Modifier.size(if(expanded) 7.dp else 5.dp).background(if(connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
                             Text(item?.label ?: "Connect",fontFamily=MonoUi,fontWeight=if(expanded) FontWeight.Bold else FontWeight.Normal,
-                                fontSize=if(expanded) 12.sp else 10.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                                fontSize=if(expanded) 12.sp else 9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                                 color=if(expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier=Modifier.widthIn(max=(pageWidth-if(expanded) 50.dp else 24.dp).coerceAtLeast(10.dp)))
                             ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(if(expanded) 13.dp else 11.dp),MaterialTheme.colorScheme.onSurfaceVariant)
@@ -150,13 +150,13 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             }
         }
         if(!expanded) {
-            Box(Modifier.height(31.dp).clip(RoundedCornerShape(18.dp))
+            Box(Modifier.height(29.dp).clip(RoundedCornerShape(18.dp))
                 .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(canControl) .45f else .15f),RoundedCornerShape(18.dp))
                 .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)
                 .clickable(enabled=canControl,role=Role.Button,onClick=onControl)
                 .semantics { contentDescription=if(controlled) "Release terminal control" else "Take terminal control" }
-                .padding(horizontal=12.dp),contentAlignment=Alignment.Center) {
-                Text(if(controlled) "Release" else "Take over",fontSize=11.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold,
+                .padding(horizontal=10.dp),contentAlignment=Alignment.Center) {
+                Text(if(controlled) "Release" else "Take over",fontSize=10.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold,
                     color=(if(controlled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary).copy(alpha=if(canControl) 1f else .4f))
             }
             menu()
