@@ -3,12 +3,12 @@ package dev.shulhi.rex
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Typeface
 import android.text.InputType
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.VelocityTracker
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -17,6 +17,15 @@ import kotlin.math.floor
 import kotlin.math.max
 
 class TerminalView(context: Context) : View(context) {
+    var interactive = true
+    var palette: TerminalPalette = TerminalPalette.Dark
+        set(value) { if(field != value) { field=value;invalidate() } }
+    var onPaneDrag: ((Float, Boolean) -> Unit)? = null
+    var onPaneDragEnd: ((Float, Float) -> Unit)? = null
+    private var startX=0f
+    private var startY=0f
+    private var dragging=false
+    private var touchVelocity: VelocityTracker?=null
     var onInput: (String) -> Unit = {}
     var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
@@ -33,10 +42,7 @@ class TerminalView(context: Context) : View(context) {
     var textSp: Float = 10f
         set(value) { if (field != value) { field = value; metrics(); invalidate() } }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val normal = Typeface.create("monospace", Typeface.NORMAL)
-    private val bold = Typeface.create("monospace", Typeface.BOLD)
-    private val italic = Typeface.create("monospace", Typeface.ITALIC)
-    private val boldItalic = Typeface.create("monospace", Typeface.BOLD_ITALIC)
+    private val fonts = TerminalFonts(context)
     private var cellWidth = 1f
     private var cellHeight = 1f
     private var baseline = 0f
@@ -50,12 +56,10 @@ class TerminalView(context: Context) : View(context) {
         metrics()
     }
     private fun metrics() {
-        @Suppress("DEPRECATION")
-        val pixels = textSp * resources.displayMetrics.scaledDensity
-        paint.textSize = pixels; paint.typeface = normal
-        cellWidth = paint.measureText("M").coerceAtLeast(1f)
-        cellHeight = kotlin.math.ceil(paint.fontMetrics.descent - paint.fontMetrics.ascent + 2f)
-        baseline = -paint.fontMetrics.ascent + 1f
+        val grid = fonts.configure(paint, textSp)
+        cellWidth = grid.cellWidth
+        cellHeight = grid.cellHeight
+        baseline = grid.baseline
         reportDimensions()
     }
     private fun reportDimensions() {
@@ -67,38 +71,45 @@ class TerminalView(context: Context) : View(context) {
         val frame = screen ?: return
         val saved = canvas.save()
         canvas.clipRect(0, 0, width, height)
-        canvas.drawColor(frame.background)
+        canvas.drawColor(palette.background)
         // Draw all backgrounds first; spacer cells must not overwrite a wide glyph.
         for (cell in frame.cells) {
             val inverse = cell.attributes and 8 != 0
-            paint.color = if (inverse) cell.foreground else cell.background
+            paint.color = if (inverse) palette.foreground(cell) else palette.background(cell)
             canvas.drawRect(cell.x * cellWidth, cell.y * cellHeight, (cell.x + max(1, cell.width)) * cellWidth, (cell.y + 1) * cellHeight, paint)
         }
         for (cell in frame.cells) {
             if (cell.width == 0 || cell.text.isEmpty() || cell.attributes and 16 != 0) continue
             val x = cell.x * cellWidth; val y = cell.y * cellHeight
             if (x >= width || y >= height) continue
-            paint.color = if (cell.attributes and 8 != 0) cell.background else cell.foreground
+            paint.color = if (cell.attributes and 8 != 0) palette.background(cell) else palette.foreground(cell)
             paint.alpha = if (cell.attributes and 4 != 0) 150 else 255
-            paint.typeface = when (cell.attributes and 3) { 1 -> bold; 2 -> italic; 3 -> boldItalic; else -> normal }
+            paint.typeface = when (cell.attributes and 3) { 1 -> fonts.bold; 2 -> fonts.italic; 3 -> fonts.boldItalic; else -> fonts.regular }
             canvas.save(); canvas.clipRect(x, y, x + cell.width * cellWidth, y + cellHeight)
-            canvas.drawText(cell.text, x, y + baseline, paint)
+            val allocated = cell.width * cellWidth
+            val advance = paint.measureText(cell.text)
+            val offset = ((allocated - advance) / 2f).coerceAtLeast(0f)
+            if (advance > allocated) canvas.scale(allocated / advance, 1f, x, y)
+            canvas.drawText(cell.text, x + offset, y + baseline, paint)
             paint.strokeWidth = resources.displayMetrics.density.coerceAtLeast(1f)
             if (cell.attributes and 64 != 0) canvas.drawLine(x, y + baseline + 2, x + cell.width * cellWidth, y + baseline + 2, paint)
             if (cell.attributes and 32 != 0) canvas.drawLine(x, y + cellHeight / 2, x + cell.width * cellWidth, y + cellHeight / 2, paint)
             canvas.restore(); paint.alpha = 255
         }
         if (frame.cursorX != null && frame.cursorY != null) {
-            paint.color = frame.foreground; paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
+            paint.color = palette.accent; paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
             val x = frame.cursorX * cellWidth; val y = frame.cursorY * cellHeight
             canvas.drawRect(x, y, x + cellWidth, y + cellHeight, paint); paint.style = Paint.Style.FILL
             if (composing.isNotEmpty()) {
-                paint.typeface = normal
+                paint.typeface = fonts.regular
                 canvas.drawText(composing, x, y + baseline, paint)
                 canvas.drawLine(x, y + baseline + 2, x + paint.measureText(composing), y + baseline + 2, paint)
             }
         }
         canvas.restoreToCount(saved)
+    }
+    fun hideKeyboard() {
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken, 0)
     }
     fun keyboard() {
         if (!controlled) return
@@ -106,19 +117,34 @@ class TerminalView(context: Context) : View(context) {
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(this, 0)
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if(!interactive) return false
+        if(event.actionMasked==MotionEvent.ACTION_DOWN) {touchVelocity?.recycle();touchVelocity=VelocityTracker.obtain()}
+        val sample=MotionEvent.obtain(event)
+        sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
+        touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> paneGesture.begin(event.x, event.y)
+            MotionEvent.ACTION_DOWN -> {startX=event.rawX;startY=event.rawY;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount != 1) paneGesture.cancel() else paneGesture.move(event.x, event.y)
+                if (event.pointerCount != 1) { paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false }
+                else {
+                    paneGesture.move(event.x,event.y)
+                    val dx=event.rawX-startX;val dy=event.rawY-startY
+                    if(kotlin.math.abs(dx)>ViewConfiguration.get(context).scaledTouchSlop && kotlin.math.abs(dx)>kotlin.math.abs(dy)*1.5f) dragging=true
+                    if(dragging) onPaneDrag?.invoke(dx,true)
+                }
             }
-            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> paneGesture.cancel()
-            MotionEvent.ACTION_UP -> when (paneGesture.finish(event.x, event.y)) {
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false}
+            MotionEvent.ACTION_UP -> if(dragging && onPaneDragEnd!=null) {
+                touchVelocity?.computeCurrentVelocity(1000)
+                onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
+            } else when (paneGesture.finish(event.x, event.y)) {
                 PaneGesture.Result.TAP -> { performClick(); keyboard() }
                 PaneGesture.Result.NEXT -> onPaneSwipe(1)
                 PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
                 PaneGesture.Result.NONE -> Unit
             }
         }
+        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {touchVelocity?.recycle();touchVelocity=null}
         return true
     }
     override fun performClick(): Boolean { super.performClick(); return true }

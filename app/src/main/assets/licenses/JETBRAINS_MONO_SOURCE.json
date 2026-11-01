@@ -1,0 +1,29 @@
+{
+  "upstream": "https://github.com/JetBrains/JetBrainsMono",
+  "version": "2.304",
+  "revision": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+  "family": "JetBrains Mono NL",
+  "license": "OFL-1.1",
+  "files": {
+    "jetbrains_mono_regular.ttf": {
+      "upstream_path": "fonts/ttf/JetBrainsMonoNL-Regular.ttf",
+      "sha256": "fb3b2575d7b0657359707993288f12a7360344d39387bb26050e276d61f6bd2a",
+      "bytes": 208576
+    },
+    "jetbrains_mono_bold.ttf": {
+      "upstream_path": "fonts/ttf/JetBrainsMonoNL-Bold.ttf",
+      "sha256": "0198e841824025f8876e5c297f0b9b497ee8d6eb9969710a3328e1303f996ec3",
+      "bytes": 210988
+    },
+    "jetbrains_mono_italic.ttf": {
+      "upstream_path": "fonts/ttf/JetBrainsMonoNL-Italic.ttf",
+      "sha256": "c7392a134293e1af1d36fbf04940dd844f632afbf97f8325d1591d3af5096cb8",
+      "bytes": 211624
+    },
+    "jetbrains_mono_bold_italic.ttf": {
+      "upstream_path": "fonts/ttf/JetBrainsMonoNL-BoldItalic.ttf",
+      "sha256": "6c2716f2e85101f4109a8c16916061eb38176b3b10342834858d6221ec2fda1b",
+      "bytes": 214132
+    }
+  }
+}

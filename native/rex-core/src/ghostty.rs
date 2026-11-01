@@ -11,7 +11,7 @@ use std::{
 
 type ApcFn = unsafe extern "C" fn(*mut c_void, *const u8, usize);
 type CellFn =
-    unsafe extern "C" fn(*mut c_void, u16, u16, *const u32, usize, *const u8, *const u8, u16, u8);
+    unsafe extern "C" fn(*mut c_void, u16, u16, *const u32, usize, *const u8, *const u8, u32, u8);
 #[repr(C)]
 #[derive(Default)]
 struct RawFrame {
@@ -60,7 +60,7 @@ pub struct Cell {
     pub text: String,
     pub foreground: [u8; 3],
     pub background: [u8; 3],
-    pub attributes: u16,
+    pub attributes: u32,
     pub width: u8,
 }
 #[derive(Debug)]
@@ -254,7 +254,7 @@ impl Terminal {
             len: usize,
             fg: *const u8,
             bg: *const u8,
-            attributes: u16,
+            attributes: u32,
             width: u8,
         ) {
             let points = if len == 0 {
@@ -506,5 +506,25 @@ mod tests {
         assert!(decoded.frame().unwrap().text().contains("ALTERNATE"));
         decoded.write(b"\x1b[?1049l").unwrap();
         assert!(decoded.frame().unwrap().text().contains("PRIMARY"));
+    }
+    #[test]
+    fn frame_retains_color_roles_for_client_side_appearance() {
+        let mut terminal = Terminal::new(20, 3).unwrap();
+        terminal
+            .write(b"A\x1b[31mB\x1b[38;2;12;34;56mC\x1b[0m\x1b[42m ")
+            .unwrap();
+        let frame = terminal.frame().unwrap();
+        let a = &frame.cells[0];
+        let b = &frame.cells[1];
+        let c = &frame.cells[2];
+        let bg = &frame.cells[3];
+        assert_ne!(a.attributes & 128, 0);
+        assert_ne!(a.attributes & 256, 0);
+        assert_ne!(b.attributes & 512, 0);
+        assert_eq!((b.attributes >> 11) & 255, 1);
+        assert_eq!(c.attributes & (128 | 512), 0);
+        assert_eq!(c.foreground, [12, 34, 56]);
+        assert_ne!(bg.attributes & 1024, 0);
+        assert_eq!((bg.attributes >> 19) & 255, 2);
     }
 }

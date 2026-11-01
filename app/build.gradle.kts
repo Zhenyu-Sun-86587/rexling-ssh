@@ -12,6 +12,7 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
     }
     buildFeatures { compose = true }
@@ -37,6 +38,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
 }

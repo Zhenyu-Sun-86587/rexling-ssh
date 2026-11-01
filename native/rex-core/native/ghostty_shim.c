@@ -5,7 +5,7 @@
 
 typedef void (*ApcFn)(void *, const uint8_t *, size_t);
 typedef void (*CellFn)(void *, uint16_t, uint16_t, const uint32_t *, size_t,
-                       const uint8_t *, const uint8_t *, uint16_t, uint8_t);
+                       const uint8_t *, const uint8_t *, uint32_t, uint8_t);
 typedef struct {
   uint16_t columns, rows, cursor_x, cursor_y;
   uint8_t cursor_visible, foreground[3], background[3];
@@ -174,8 +174,8 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
       CELL(GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_RAW,&raw);
       r=ghostty_cell_get(raw,GHOSTTY_CELL_DATA_WIDE,&wide); if(r!=0)goto done;
       // No explicit color is reported as INVALID_VALUE; retain resolved defaults.
-      ghostty_render_state_row_cells_get(t->cells,GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR,&fg);
-      ghostty_render_state_row_cells_get(t->cells,GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR,&bg);
+      int fg_default = ghostty_render_state_row_cells_get(t->cells,GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR,&fg) != 0;
+      int bg_default = ghostty_render_state_row_cells_get(t->cells,GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR,&bg) != 0;
       if(count>4096) { r=GHOSTTY_LIMIT_EXCEEDED; goto done; }
       if(count>capacity) {
         uint32_t *next=realloc(graphemes,count*sizeof(*graphemes));
@@ -183,9 +183,20 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
         graphemes=next; capacity=count;
       }
       if(count) { CELL(GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,graphemes); }
-      uint16_t flags=style.bold | (style.italic<<1) | (style.faint<<2) |
+      uint32_t flags=style.bold | (style.italic<<1) | (style.faint<<2) |
           (style.inverse<<3) | (style.invisible<<4) | (style.strikethrough<<5) |
-          ((style.underline!=0)<<6);
+          ((style.underline!=0)<<6) | (fg_default<<7) | (bg_default<<8);
+      if (style.fg_color.tag == GHOSTTY_STYLE_COLOR_PALETTE)
+        flags |= (1u<<9) | ((uint32_t)style.fg_color.value.palette<<11);
+      GhosttyCellContentTag content_tag=GHOSTTY_CELL_CONTENT_CODEPOINT;
+      ghostty_cell_get(raw,GHOSTTY_CELL_DATA_CONTENT_TAG,&content_tag);
+      if (content_tag == GHOSTTY_CELL_CONTENT_BG_COLOR_PALETTE) {
+        GhosttyColorPaletteIndex index=0;
+        ghostty_cell_get(raw,GHOSTTY_CELL_DATA_COLOR_PALETTE,&index);
+        flags |= (1u<<10) | ((uint32_t)index<<19);
+      } else if (style.bg_color.tag == GHOSTTY_STYLE_COLOR_PALETTE) {
+        flags |= (1u<<10) | ((uint32_t)style.bg_color.value.palette<<19);
+      }
       uint8_t width=wide==GHOSTTY_CELL_WIDE_WIDE ? 2 :
           (wide==GHOSTTY_CELL_WIDE_SPACER_TAIL || wide==GHOSTTY_CELL_WIDE_SPACER_HEAD ? 0 : 1);
       callback(userdata,x++,y,graphemes,count,(const uint8_t *)&fg,(const uint8_t *)&bg,flags,width);
