@@ -109,6 +109,7 @@ struct Actor {
     summary_task: Option<SummaryTask>,
     program_task: Option<ProgramTask>,
     programs: Value,
+    directories: Value,
     program_refresh: tokio::time::Instant,
     preview_updates: BTreeMap<String, Value>,
     session_details: Value,
@@ -145,6 +146,7 @@ impl Actor {
             summary_task: None,
             program_task: None,
             programs: json!({}),
+            directories: json!({}),
             program_refresh: tokio::time::Instant::now(),
             preview_updates: BTreeMap::new(),
             session_details: json!({}),
@@ -156,7 +158,7 @@ impl Actor {
             shared.json=json!({"revision":shared.revision,"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"screen":self.screen,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -216,7 +218,7 @@ impl Actor {
                 },
                 result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.program_task=None;
-                    if let Ok(programs)=result {self.programs=programs;self.publish();}
+                    if let Ok(details)=result {self.programs=details["programs"].clone();self.directories=details["directories"].clone();self.publish();}
                 },
                 _=async {if active {paint.tick().await;}else{pending::<()>().await;}}=>{
                     if self.retry.is_some_and(|at|at<=tokio::time::Instant::now())&&!self.paused {
@@ -261,6 +263,7 @@ impl Actor {
         self.preview_updates.clear();
         self.session_details = json!({});
         self.programs = json!({});
+        self.directories = json!({});
         self.retry = None;
         self.control_token = None;
         self.data_resume = None;
@@ -400,6 +403,7 @@ impl Actor {
         if ids(&self.windows) != ids(&next) {
             self.program_task = None;
             self.programs = json!({});
+            self.directories = json!({});
             self.program_refresh = tokio::time::Instant::now();
         }
         self.windows = next;
@@ -646,6 +650,7 @@ impl Actor {
                 self.summary_task = None;
                 self.program_task = None;
                 self.programs = json!({});
+                self.directories = json!({});
                 self.program_refresh = tokio::time::Instant::now();
                 self.preview_updates.clear();
                 let session = value["id"]
@@ -938,7 +943,7 @@ fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Previe
         .context("pane preview timed out")?
     })
 }
-// Only executable identifiers cross JNI. No cwd, user IDs or command arguments.
+// Executable identifiers and a display directory cross JNI; never command arguments or user IDs.
 fn program_candidates(process: &Value, status: &Value) -> Value {
     let foreground = &process["foreground"];
     let mut names: Vec<String> = Vec::new();
@@ -971,6 +976,29 @@ fn program_candidates(process: &Value, status: &Value) -> Value {
     }
     json!(names)
 }
+fn program_directory(process: &Value) -> String {
+    let source = if process["foreground"].is_object() {
+        &process["foreground"]
+    } else {
+        &process["child"]
+    };
+    let cwd = source["cwd"].as_str().unwrap_or("");
+    let home = process["home"].as_str().unwrap_or("").trim_end_matches('/');
+    let display = if !home.is_empty() && cwd == home {
+        "~".to_owned()
+    } else if !home.is_empty()
+        && let Some(relative) = cwd.strip_prefix(&format!("{home}/"))
+    {
+        format!("~/{relative}")
+    } else {
+        cwd.to_owned()
+    };
+    display
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(1024)
+        .collect()
+}
 fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> ProgramTask {
     Box::pin(async move {
         tokio::time::timeout(Duration::from_secs(8), async {
@@ -980,17 +1008,19 @@ fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Progra
                 .await?;
             control.attach(&session).await?;
             let mut programs = serde_json::Map::new();
+            let mut directories = serde_json::Map::new();
             for id in ids.into_iter().take(64) {
                 if let Ok(process) = control.terminal(&session, &id, "process", json!({})).await {
                     let status = control
                         .terminal(&session, &id, "program_status", json!({}))
                         .await
                         .unwrap_or(Value::Null);
+                    directories.insert(id.clone(), json!(program_directory(&process)));
                     programs.insert(id, program_candidates(&process, &status));
                 }
             }
             let _ = control.close().await;
-            Ok::<_, anyhow::Error>(Value::Object(programs))
+            Ok::<_, anyhow::Error>(json!({"programs":programs,"directories":directories}))
         })
         .await
         .context("program metadata timed out")?
@@ -1109,6 +1139,28 @@ fn frame_json(frame: Frame) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn header_directory_abbreviates_only_the_real_home_and_prefers_foreground() {
+        assert_eq!(
+            program_directory(
+                &json!({"home":"/home/al","foreground":{"cwd":"/home/al/code"},"child":{"cwd":"/old"}})
+            ),
+            "~/code"
+        );
+        assert_eq!(
+            program_directory(&json!({"home":"/home/al/","foreground":{"cwd":"/home/al"}})),
+            "~"
+        );
+        assert_eq!(
+            program_directory(&json!({"home":"/home/al","foreground":{"cwd":"/home/alice/code"}})),
+            "/home/alice/code"
+        );
+        assert_eq!(program_directory(&json!({"child":{"cwd":"/tmp"}})), "/tmp");
+        assert_eq!(
+            program_directory(&json!({"foreground":{"name":"private"},"child":{"cwd":"/old"}})),
+            ""
+        );
+    }
     #[test]
     fn program_candidates_ignore_stale_status_owners_and_private_process_fields() {
         let process = json!({"foreground":{"pid":12,"name":"node","script":"/tools/agent.js","argv0":"node","cwd":"/private/work","argv":["secret"]}});
@@ -1503,6 +1555,7 @@ mod tests {
             });
             assert_eq!(metadata["selectedBlock"], pane["selectedBlock"]);
             assert_eq!(metadata["controlled"], pane["controlled"]);
+            assert_eq!(metadata["directories"].as_object().unwrap().len(), 3);
 
             app.command(json!({"type":"new_session","label":format!("rex-android-new-session-test-{}",std::process::id())})).unwrap();
             let fresh = wait(&app, |v| {
