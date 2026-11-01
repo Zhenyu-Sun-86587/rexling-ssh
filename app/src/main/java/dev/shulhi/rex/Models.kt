@@ -27,6 +27,7 @@ data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, va
 }
 data class AppState(
     val programs: Map<String, ProgramIdentity> = emptyMap(),
+    val directories: Map<String, String> = emptyMap(),
     val previewFrames: Map<String, TerminalScreen> = emptyMap(), val sessionDetails: Map<String, SessionDetail> = emptyMap(),
     val revision: Long = 0, val phase: String = "disconnected", val endpoint: String = "",
     val identity: String = "", val error: String = "", val notice: String = "",
@@ -39,6 +40,9 @@ data class AppState(
         fun parse(text: String): AppState {
             val root = JSONObject(text)
             return AppState(
+                directories = root.optJSONObject("directories")?.let { directories -> directories.keys().asSequence().associateWith { id ->
+                    directories.optString(id).filterNot { it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt() }.take(1024)
+                } } ?: emptyMap(),
                 programs = root.optJSONObject("programs")?.let { programs -> programs.keys().asSequence().associateWith { id ->
                     ProgramIdentity.resolve(programs.optJSONArray(id).objects { it as String })
                 } } ?: emptyMap(),

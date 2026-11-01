@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 
 internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB }
@@ -95,7 +96,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
     connected: Boolean, enabled: Boolean, controlled: Boolean, canControl: Boolean,
+    programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
     onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, expanded: Boolean=false, menu: @Composable ()->Unit) {
+    val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val pager=rememberPagerState(initialPage=selectedIndex,pageCount={sessions.size.coerceAtLeast(1)})
     val latestSelected by rememberUpdatedState(selectedId)
@@ -104,45 +107,58 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         if(sessions.isNotEmpty() && !pager.isScrollInProgress && pager.currentPage!=selectedIndex) pager.animateScrollToPage(selectedIndex)
     }
     LaunchedEffect(pager,sessions,enabled) {
-        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { index ->
+        // The initial page is not a swipe; startup selection comes from saved session history.
+        snapshotFlow { pager.settledPage }.distinctUntilChanged().drop(1).collect { index ->
             if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let { latestSelect(it.id) }
         }
     }
-    Row(Modifier.fillMaxWidth().height(52.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
-        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
-          val pageWidth=if(expanded) 160.dp else (maxWidth-14.dp).coerceAtLeast(50.dp)
-          val pagePadding=((maxWidth-pageWidth)/2).coerceAtLeast(0.dp)
-          Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-            HorizontalPager(pager,Modifier.fillMaxWidth().height(34.dp),userScrollEnabled=enabled && sessions.size>1,
-                pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={sessions.getOrNull(it)?.id ?: "empty"}) { index ->
-                val item=sessions.getOrNull(index)
-                val active=item?.id==selectedId
-                Row(Modifier.fillMaxSize().clip(RoundedCornerShape(19.dp))
-                    .border(1.dp,if(expanded && active) MaterialTheme.colorScheme.primary.copy(alpha=.5f) else Color.Transparent,RoundedCornerShape(19.dp))
-                    .padding(horizontal=if(expanded) 9.dp else 0.dp).graphicsLayer { alpha=if(active || sessions.isEmpty()) 1f else .38f }
-                    .combinedClickable(onClick={if(active || item==null) onSessions() else onSelect(item.id)},onLongClick=onLast)
-                    .semantics { contentDescription=if(active || item==null) "Switch session" else "Session ${item.label}" },
-                    verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(7.dp).background(if(connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
-                    Text(item?.label ?: "Connect",fontFamily=MonoUi,fontWeight=FontWeight.Bold,fontSize=12.sp,
-                        letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.weight(1f,fill=false))
-                    ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(13.dp),MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(Modifier.fillMaxWidth().height(58.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
+        if(!expanded) {ProgramStack(programs,paneIndex,framed=true);Spacer(Modifier.width(7.dp))}
+        Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
+            if(!expanded) Row(Modifier.fillMaxWidth().height(25.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text(program.title,fontWeight=FontWeight.Bold,fontSize=14.sp,letterSpacing=0.sp,maxLines=1,
+                    overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=90.dp))
+                if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
+                    fontFamily=MonoUi,fontSize=10.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 46.dp else 22.dp)) {
+                val pageWidth=if(expanded) 160.dp else (maxWidth-7.dp).coerceAtLeast(40.dp)
+                val pagePadding=if(expanded) ((maxWidth-pageWidth)/2).coerceAtLeast(0.dp) else 0.dp
+                Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 34.dp else 22.dp),userScrollEnabled=enabled && sessions.size>1,
+                        pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={sessions.getOrNull(it)?.id ?: "empty"}) { index ->
+                        val item=sessions.getOrNull(index)
+                        val active=item?.id==selectedId
+                        Row(Modifier.fillMaxSize().clip(RoundedCornerShape(19.dp))
+                            .border(1.dp,if(expanded && active) MaterialTheme.colorScheme.primary.copy(alpha=.5f) else Color.Transparent,RoundedCornerShape(19.dp))
+                            .padding(horizontal=if(expanded) 9.dp else 0.dp).graphicsLayer { alpha=if(active || sessions.isEmpty()) 1f else .38f }
+                            .combinedClickable(onClick={if(active || item==null) onSessions() else onSelect(item.id)},onLongClick=onLast)
+                            .semantics { contentDescription=if(active || item==null) "Switch session" else "Session ${item.label}" },
+                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(if(expanded) 6.dp else 4.dp)) {
+                            Box(Modifier.size(if(expanded) 7.dp else 5.dp).background(if(connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
+                            Text(item?.label ?: "Connect",fontFamily=MonoUi,fontWeight=if(expanded) FontWeight.Bold else FontWeight.Normal,
+                                fontSize=if(expanded) 12.sp else 10.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                                color=if(expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier=Modifier.weight(1f,fill=!expanded))
+                            ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(if(expanded) 13.dp else 11.dp),MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if(expanded && sessions.size>1) PositionDots(pager.currentPage,sessions.size,Modifier.height(5.dp))
                 }
             }
-            if(sessions.size>1) PositionDots(pager.currentPage,sessions.size,Modifier.height(5.dp))
-          }
         }
         if(!expanded) {
-        Box(Modifier.height(31.dp).clip(RoundedCornerShape(18.dp))
-            .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(canControl) .45f else .15f),RoundedCornerShape(18.dp))
-            .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)
-            .clickable(enabled=canControl,role=Role.Button,onClick=onControl)
-            .semantics { contentDescription=if(controlled) "Release terminal control" else "Take terminal control" }
-            .padding(horizontal=12.dp),contentAlignment=Alignment.Center) {
-            Text(if(controlled) "Release" else "Take over",fontSize=11.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold,
-                color=(if(controlled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary).copy(alpha=if(canControl) 1f else .4f))
-        }
-        menu()
+            Box(Modifier.height(31.dp).clip(RoundedCornerShape(18.dp))
+                .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(canControl) .45f else .15f),RoundedCornerShape(18.dp))
+                .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)
+                .clickable(enabled=canControl,role=Role.Button,onClick=onControl)
+                .semantics { contentDescription=if(controlled) "Release terminal control" else "Take terminal control" }
+                .padding(horizontal=12.dp),contentAlignment=Alignment.Center) {
+                Text(if(controlled) "Release" else "Take over",fontSize=11.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold,
+                    color=(if(controlled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary).copy(alpha=if(canControl) 1f else .4f))
+            }
+            menu()
         }
     }
 }

@@ -19,6 +19,13 @@ class ProgramIdentityTest {
         assertEquals(ProgramIdentity.Terminal,ProgramIdentity.resolve(emptyList()))
         assertEquals("fish",ProgramIdentity.resolve(listOf("-fish")).label)
     }
+    @Test fun headerDirectoryIsOptionalAndStripsInvisibleFormatting() {
+        val state=AppState.parse("""{"directories":{"a":"~/code/project","b":"/tmp/\u202ehidden\n"}}""")
+        assertEquals("~/code/project",state.directories["a"])
+        assertEquals("/tmp/hidden",state.directories["b"])
+        assertTrue(AppState.parse("{}").directories.isEmpty())
+        assertEquals("claude",ProgramIdentity.resolve(listOf("claude-code")).title)
+    }
     @Test fun programMetadataSurvivesAnOrdinaryStateUpdateWithoutInventingPrograms() {
         val state=AppState.parse("""{"programs":{"a":["nvim"],"b":["claude-code","node"]},"windows":[{"id":"w","label":"codex","blocks":[{"id":"a","label":"shell"},{"id":"c","label":"claude"}]}]}""")
         assertEquals(ProgramKind.NEOVIM,state.programs["a"]?.kind)

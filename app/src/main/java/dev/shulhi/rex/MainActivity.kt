@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(state.sessions,displayedSession,state.connected,state.connected&&!state.creating,
-                controlled,ready&&state.screen!=null,{picker="sessions"},model::selectSession,model::jumpLastSession,
+                controlled,ready&&state.screen!=null,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSession,model::jumpLastSession,
                 {if(controlled) model.releaseControl() else model.takeControl()},expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}

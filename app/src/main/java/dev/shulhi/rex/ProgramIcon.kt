@@ -17,7 +17,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
-@Composable internal fun ProgramIcon(program: ProgramIdentity, modifier: Modifier = Modifier) {
+@Composable internal fun ProgramIcon(program: ProgramIdentity, modifier: Modifier = Modifier, color: Color? = null) {
     val dark = LocalTerminalPalette.current.dark
     val resource = when(program.kind) {
         ProgramKind.CLAUDE -> R.drawable.ic_program_claude
@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
         ProgramKind.NODE -> R.drawable.ic_program_nodedotjs
         else -> null
     }
-    val tint = when(program.kind) {
+    val tint = color ?: when(program.kind) {
         ProgramKind.CLAUDE -> Color(if(dark) 0xffe6a28a else 0xffb65f42)
         ProgramKind.NEOVIM, ProgramKind.VIM -> Color(if(dark) 0xff81be79 else 0xff43853d)
         ProgramKind.GIT -> Color(if(dark) 0xfff2876c else 0xffc7462b)

@@ -4,6 +4,12 @@ import java.util.Locale
 
 enum class ProgramKind { TERMINAL, CLAUDE, CODEX, NEOVIM, VIM, GIT, PYTHON, NODE, SSH, TMUX, MONITOR }
 data class ProgramIdentity(val kind: ProgramKind, val label: String) {
+    val title: String get() = when(kind) {
+        ProgramKind.CLAUDE -> "claude"; ProgramKind.CODEX -> "codex"; ProgramKind.NEOVIM -> "nvim"
+        ProgramKind.VIM -> "vim"; ProgramKind.GIT -> "git"; ProgramKind.PYTHON -> "python"
+        ProgramKind.NODE -> "node"; ProgramKind.SSH -> "ssh"; ProgramKind.TMUX -> "tmux"
+        ProgramKind.MONITOR -> "monitor"; ProgramKind.TERMINAL -> label
+    }
     companion object {
         val Terminal = ProgramIdentity(ProgramKind.TERMINAL, "Terminal")
         fun resolve(candidates: List<String>): ProgramIdentity {
@@ -32,7 +38,7 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String) {
                 })
             }
             val name = candidates.firstOrNull()?.replace('\\', '/')?.substringAfterLast('/')?.trimStart('-')
-                ?.filterNot { it.isISOControl() }?.take(40).orEmpty()
+                ?.filterNot { it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt() }?.take(40).orEmpty()
             return ProgramIdentity(ProgramKind.TERMINAL, name.ifBlank { "Terminal" })
         }
     }
