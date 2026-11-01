@@ -988,9 +988,9 @@ impl Actor {
         self.notice="You control this terminal".into();self.publish();Ok(())
     }
     async fn apply_theme(&mut self) -> Result<()> {
-        // Rex applies the owner's colors, or queues ours until we take ownership.
-        // Its canonical terminal answers OSC queries and sends scheme notifications.
-        if !self.paused
+        // Viewing must not recolor an unowned terminal on another device.
+        // Apply our appearance only while we own the pane; take_selected refreshes ownership first.
+        if self.controlled && !self.paused
             && !self.selected_session.is_empty()
             && !self.selected_block.is_empty()
             && let (Some(control), Some(theme)) = (&mut self.control, &self.theme)
@@ -1480,7 +1480,7 @@ mod tests {
         let mut nvim_command=vec![std::env::var("REX_TEST_NVIM_BIN").unwrap_or_else(|_|"nvim".into())];
         if std::env::var_os("REX_TEST_NVIM_CONFIGURED").is_none(){nvim_command.push("--clean".into());}
         let indicator=if std::env::var_os("REX_TEST_NVIM_CONFIGURED").is_some() {
-            "lua vim.defer_fn(function() local function bg() vim.api.nvim_echo({{'BG='..vim.o.background}},false,{}) end; vim.api.nvim_create_autocmd('OptionSet',{pattern='background',callback=bg}); bg() end,1500)"
+            "lua vim.defer_fn(function() local function bg() vim.api.nvim_buf_set_lines(0,0,-1,false,{'BG='..vim.o.background}) end; vim.api.nvim_create_autocmd('OptionSet',{pattern='background',callback=bg}); bg() end,1500)"
         } else {"set laststatus=2 statusline=BG=%{&background}"};
         nvim_command.extend(["-n","-i","NONE","-c",indicator].map(str::to_owned));
         let created = runtime.block_on(writer.call("session.create", json!({
@@ -1508,6 +1508,7 @@ mod tests {
             runtime
                 .block_on(writer.terminal(id, block, "set_theme", theme(false)))
                 .unwrap();
+            runtime.block_on(writer.call("session.disown_block",json!({"session_id":id,"block_ids":[block]}))).unwrap();
             let app = Session::spawn().unwrap();
             // Store the resolved appearance before connecting, as Compose does.
             app.command(json!({"type":"theme","args":theme(true)}))
@@ -1523,6 +1524,16 @@ mod tests {
             wait(&app, |v| {
                 v["controlled"] == true && text(v).contains("BG=light")
             });
+            if std::env::var_os("REX_TEST_NVIM_CONFIGURED").is_some() {
+                // Simulate a stale editor while the canonical terminal is already light.
+                // Repeated focus-in and set_theme can both be deduplicated here.
+                app.command(json!({"type":"input","text":":set background=dark\r"})).unwrap();
+                wait(&app, |v| text(v).contains("BG=dark"));
+                runtime.block_on(writer.call("session.own_block",json!({"session_id":id,"block_ids":[block],"mode":"take"}))).unwrap();
+                wait(&app, |v| v["controlled"]==false);
+                app.command(json!({"type":"take","columns":63,"rows":35})).unwrap();
+                wait(&app, |v| v["controlled"]==true && text(v).contains("BG=light") && v["screen"]["columns"]==63);
+            }
             app.command(json!({"type":"theme","args":theme(false)}))
                 .unwrap();
             wait(&app, |v| text(v).contains("BG=dark"));
