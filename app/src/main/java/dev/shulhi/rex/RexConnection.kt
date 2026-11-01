@@ -206,7 +206,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun takeControl() {
         val current=state.value
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) {
-            keyboardRequest=current.selectedBlock;command("take")
+            keyboardRequest=current.selectedBlock;command("take","columns" to lastSize.first,"rows" to lastSize.second)
         }
     }
     fun keyboardShown() {keyboardRequest=""}

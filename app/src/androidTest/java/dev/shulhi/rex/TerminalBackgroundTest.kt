@@ -1,5 +1,7 @@
 package dev.shulhi.rex
 
+import kotlin.math.roundToInt
+
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.view.View
@@ -118,19 +120,23 @@ class TerminalBackgroundTest {
         }
     }
 
-    @Test fun wideRemoteScreensFitAndActiveViewsReplayRequestedDimensions() {
+    @Test fun wideRemoteScreensKeepFontSizeAndActiveViewsReplayDimensions() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         instrumentation.runOnMainSync {
             val context=instrumentation.targetContext
             val red=0xffd13b42.toInt();val gray=0xff253044.toInt()
-            val cells=(0 until 3).flatMap {y->(0 until 120).map {x->TerminalCell(x,y,"",-1,if(x==119) red else gray,0,1)}}
+            val cells=(0 until 3).flatMap {y->(0 until 120).map {x->TerminalCell(x,y,"",-1,if(x==0 || x==119) red else gray,0,1)}}
             val view=TerminalView(context).apply {screen=TerminalScreen(120,3,null,null,-1,0,cells);setTerminalPaddingDp(12,8,6)}
             view.measure(View.MeasureSpec.makeMeasureSpec(400,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(200,View.MeasureSpec.EXACTLY));view.layout(0,0,400,200)
             var dimensions=0 to 0
             view.onDimensions={x,y->dimensions=x to y}
             assertTrue("Active pane must receive requested, not fitted, column count",dimensions.first in 1..119)
             val bitmap=Bitmap.createBitmap(400,200,Bitmap.Config.ARGB_8888);view.draw(Canvas(bitmap))
-            assertEquals("Remote last column must remain visible",red,bitmap.getPixel(398,100));bitmap.recycle()
+            val grid=TerminalFonts(context).configure(android.graphics.Paint(),10f)
+            val density=context.resources.displayMetrics.density
+            val left=(12*density).roundToInt();val top=(8*density).roundToInt()
+            assertEquals("A wide remote grid must not shrink the font cells",red,bitmap.getPixel(left+grid.cellWidth.toInt()-1,top+1))
+            bitmap.recycle()
         }
     }
 

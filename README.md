@@ -110,8 +110,8 @@ wheel, and Shift+PageUp/PageDown scroll locally without taking ownership.
 **↓ Latest** jumps to live output; typing/pasting also returns to the bottom.
 Full-screen apps that enable mouse reporting receive mode-correct wheel events
 from vertical drags or a mouse wheel; this takes control without opening the IME.
-Ordinary shell history stays local and needs no ownership. Wider remote grids
-fit the card while viewing, then resize to the requested font grid on takeover.
+Ordinary shell history stays local and needs no ownership. The chosen font size stays fixed. Tap to take control and resize the remote PTY
+so programs reflow to the phone width; opening a tab does not take ownership.
 
 Terminal cards span the screen width, aligned with the dock. Their 12 dp side /
 8 dp top content insets extend the adjacent terminal cell backgrounds at each

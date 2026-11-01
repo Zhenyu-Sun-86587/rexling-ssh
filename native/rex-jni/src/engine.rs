@@ -802,6 +802,11 @@ impl Actor {
             }
             "take" => {
                 self.take_selected().await?;
+                if let (Some(columns),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
+                    && columns>0 && rows>0 {
+                    self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"resize",
+                        json!({"columns":columns.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
+                }
             }
             "release" => {
                 if let Some(c) = &mut self.control {

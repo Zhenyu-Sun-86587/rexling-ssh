@@ -104,9 +104,9 @@ class TerminalView(context: Context) : View(context) {
         configureRendering();reportDimensions()
     }
     private fun configureRendering() {
-        val columns=screen?.columns ?: 0
-        val fitted=if(width>0 && columns>0) floor(contentWidth/columns).coerceAtLeast(1f).coerceAtMost(desiredCellWidth) else desiredCellWidth
-        val size=desiredTextSize*fitted/desiredCellWidth
+        // Keep the user's font fixed. Reflow comes from the canonical PTY resize.
+        val fitted=desiredCellWidth
+        val size=desiredTextSize
         if(cellWidth==fitted && paint.textSize==size) return
         cellWidth=fitted;paint.textSize=size;paint.typeface=fonts.regular;paint.textScaleX=1f
         paint.textScaleX=fitted/paint.measureText("M").coerceAtLeast(.01f)
