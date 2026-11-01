@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,12 +20,12 @@ import org.junit.runner.RunWith
 class KeyboardBarTest {
     @get:Rule val ui=createComposeRule()
     private val sent=mutableListOf<String>()
-    private fun keyboard(enabled: Boolean=true,width: Dp=360.dp) {
+    private fun keyboard(enabled: Boolean=true,width: Dp=360.dp,ready: Boolean=enabled,controlled: ()->Boolean={enabled}) {
         ui.setContent {
             var shift by remember {mutableStateOf(ShiftKeyState())}
             MaterialTheme {
                 Box(Modifier.width(width)) {
-                    KeyboardBar(enabled,enabled,false,false,shift.active,true,{},{},
+                    KeyboardBar(controlled(),ready,false,false,shift.active,true,{},{},
                         {shift=ShiftKeyState(latched=!shift.active)},
                         {shift=shift.press()},{shift=shift.release(it)},
                         {sent+=TerminalInput.key(it,shift=shift.active);shift=shift.consume()},{})
@@ -84,6 +85,20 @@ class KeyboardBarTest {
         bounds.forEach {assertEquals(bounds.first().center.y,it.center.y,1f)}
         bounds.zipWithNext().forEach {(a,b)->assertTrue("Groups and buttons must not overlap",a.right<=b.left)}
         assertTrue("Arrow viewport must remain usable",bounds[5].width>0)
+    }
+
+    @Test fun viewingConnectedTerminalKeepsIconsCrispWithoutEnablingTyping() {
+        val controlled=mutableStateOf(true)
+        keyboard(ready=true,controlled={controlled.value})
+        val owning=ui.onRoot().captureToImage().toPixelMap()
+        ui.runOnIdle {controlled.value=false}
+        val viewing=ui.onRoot().captureToImage().toPixelMap()
+        assertEquals(owning.width,viewing.width);assertEquals(owning.height,viewing.height)
+        for(y in 0 until owning.height) for(x in 0 until owning.width)
+            assertEquals("Read-only mode must preserve icon contrast at $x,$y",owning[x,y],viewing[x,y])
+        for(label in listOf("Escape","Control","Alt","Shift","Tab key","Left arrow"))
+            ui.onNodeWithContentDescription(label).assertIsNotEnabled().performTouchInput {click()}
+        ui.runOnIdle {assertTrue("Readable icons must not enable terminal input",sent.isEmpty())}
     }
 
 }
