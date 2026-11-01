@@ -6,6 +6,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -251,8 +253,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
-@Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,
-    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onKey: (String)->Unit,onKeyboard: ()->Unit) {
+@Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
+    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,onKeyboard: ()->Unit) {
     var expanded by remember {mutableStateOf(false)}
     val hiddenStart=with(androidx.compose.ui.platform.LocalDensity.current) {25.dp.roundToPx()}
     val keyScroll=rememberScrollState(hiddenStart)
@@ -262,7 +264,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)))
         Row(Modifier.fillMaxWidth().height(53.dp).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(3.dp),verticalAlignment=Alignment.CenterVertically) {
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
-                val normalWidth=maxWidth.coerceAtLeast(293.dp)
+                val normalWidth=maxWidth.coerceAtLeast(245.dp)
                 Row(Modifier.fillMaxHeight().horizontalScroll(keyScroll),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
                     Box(Modifier.width(22.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -274,20 +276,18 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         DockKey("esc",controlled,description="Escape",modifier=Modifier.weight(1f)) {onKey("esc")}
                         DockKey("ctrl",controlled,control,modifier=Modifier.weight(1.15f),onClick=onControl)
                         DockKey("alt",controlled,alt,modifier=Modifier.weight(1f),onClick=onAlt)
+                        ShiftDockKey(controlled,shift,Modifier.weight(1f),onShift,onShiftPress,onShiftRelease)
                         DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f)) {onKey("tab")}
-                        DockKey("←",controlled,description="Left arrow",modifier=Modifier.weight(1f)) {onKey("left")}
-                        DockKey("↓",controlled,description="Down arrow",modifier=Modifier.weight(1f)) {onKey("down")}
-                        DockKey("↑",controlled,description="Up arrow",modifier=Modifier.weight(1f)) {onKey("up")}
-                        DockKey("→",controlled,description="Right arrow",modifier=Modifier.weight(1f)) {onKey("right")}
                     }
                 }
             }
             ChromeButton(if(keyboardVisible) ChromeIcon.HIDE_KEYBOARD else ChromeIcon.KEYBOARD,
                 if(!controlled) "Take control and show keyboard" else if(keyboardVisible) "Hide keyboard" else "Show keyboard",enabled,onClick=onKeyboard)
         }
+        ArrowKeyGroup(controlled,Modifier.fillMaxWidth().height(37.dp),onKey)
+        Spacer(Modifier.height(8.dp))
         if(expanded) {
-            val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"},
-                listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete"))
+            val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"})
             for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
                 for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f)) {onKey(key)}
             }
@@ -302,5 +302,60 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         .clickable(enabled=enabled,role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center) {
         Text(label,fontFamily=MonoUi,fontSize=11.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
             color=(if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(enabled) 1f else .38f),letterSpacing=0.sp)
+    }
+}
+
+
+@Composable private fun ShiftDockKey(enabled: Boolean,active: Boolean,modifier: Modifier,
+    onToggle: ()->Unit,onPress: ()->Unit,onRelease: (Boolean)->Unit) {
+    val press by rememberUpdatedState(onPress)
+    val release by rememberUpdatedState(onRelease)
+    Box(modifier.fillMaxHeight().clip(RoundedCornerShape(11.dp))
+        .background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+        .semantics {
+            contentDescription="Shift";selected=active;role=Role.Button
+            stateDescription=if(active) "On" else "Off"
+            if(enabled) onClick {onToggle();true} else disabled()
+        }.pointerInput(enabled) {
+            if(!enabled) return@pointerInput
+            awaitEachGesture {
+                val down=awaitFirstDown();down.consume();press()
+                var cancelled=true
+                try {
+                    while(true) {
+                        val change=awaitPointerEvent().changes.firstOrNull {it.id==down.id} ?: break
+                        if(change.isConsumed) break
+                        change.consume()
+                        if(!change.pressed) {
+                            cancelled=change.position.x !in 0f..size.width.toFloat() || change.position.y !in 0f..size.height.toFloat()
+                            break
+                        }
+                    }
+                } finally {release(cancelled)}
+            }
+        },contentAlignment=Alignment.Center) {
+        Text("shift",fontFamily=MonoUi,fontSize=11.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
+            color=(if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(enabled) 1f else .38f),letterSpacing=0.sp)
+    }
+}
+
+/** Navigation keys scroll as a group. Only an individual tap sends input. */
+@Composable internal fun ArrowKeyGroup(enabled: Boolean,modifier: Modifier=Modifier,onKey: (String)->Unit) {
+    val keys=listOf("left" to "Left arrow","down" to "Down arrow","up" to "Up arrow","right" to "Right arrow",
+        "home" to "Home","end" to "End","pageup" to "Page up","pagedown" to "Page down","insert" to "Insert","delete" to "Delete")
+    val icons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN,"up" to ChromeIcon.UP,"right" to ChromeIcon.RIGHT)
+    Row(modifier.clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+        .horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically) {
+        keys.forEachIndexed {i,(key,description)->
+            if(i>0) Box(Modifier.width(1.dp).height(15.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.6f)))
+            Box(Modifier.width(52.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
+                .semantics {contentDescription=description}
+                .clickable(enabled=enabled,role=Role.Button) {onKey(key)},contentAlignment=Alignment.Center) {
+                val color=MaterialTheme.colorScheme.onSurface.copy(alpha=if(enabled) 1f else .38f)
+                icons[key]?.let {ChromeSymbol(it,Modifier.size(18.dp),color)} ?: Text(
+                    when(key) {"pageup"->"PgUp";"pagedown"->"PgDn";"insert"->"Ins";"delete"->"Del";else->description},
+                    fontFamily=MonoUi,fontSize=11.sp,color=color,letterSpacing=0.sp)
+            }
+        }
     }
 }

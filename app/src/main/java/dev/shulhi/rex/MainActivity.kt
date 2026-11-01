@@ -213,7 +213,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                     }
                                 }
                             })
-                            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,keyboardVisible,client::toggleControl,client::toggleAlt,client::key) {
+                            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
+                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,client::key) {
                                 if(!controlled) client.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
                             }
                         }
