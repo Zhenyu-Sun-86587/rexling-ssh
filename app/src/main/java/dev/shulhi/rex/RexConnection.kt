@@ -159,6 +159,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun openPreferredTerminal() {
         val current = state.value
+        if(current.creating) return
         if(!navigationRequest.pending && current.connected && current.selectedSession.isBlank()) {
             val saved=preferences.getString("current_session:${current.endpoint}","")
             (current.sessions.firstOrNull { it.id==saved } ?: current.sessions.firstOrNull())?.let { selectSession(it.id) }
@@ -201,6 +202,20 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun createPane() {
         val current = state.value
         if (current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) command("new_pane", "session" to current.selectedSession, "anchor" to current.selectedBlock)
+    }
+    fun closePane(session: String,id: String) {
+        val current=state.value
+        if(current.connected && !current.creating && !navigationRequest.pending && session==current.selectedSession) {
+            if(id==current.selectedBlock) {controlModifier=false;altModifier=false;keyboardRequest=""}
+            command("close_pane","session" to session,"id" to id)
+        }
+    }
+    fun closeTab(session: String,id: String,blocks: List<String>) {
+        val current=state.value
+        if(current.connected && !current.creating && !navigationRequest.pending && session==current.selectedSession) {
+            if(current.selectedBlock in blocks) {controlModifier=false;altModifier=false;keyboardRequest=""}
+            command("close_tab","session" to session,"id" to id,"blocks" to org.json.JSONArray(blocks))
+        }
     }
     fun refresh() = command("refresh")
     fun takeControl() {

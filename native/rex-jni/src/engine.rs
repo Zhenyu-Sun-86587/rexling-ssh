@@ -791,6 +791,36 @@ impl Actor {
                     .to_owned();
                 self.open_block(block).await?;
             }
+            "close_tab" | "close_pane" => {
+                ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before closing a terminal");
+                ensure!(value["session"].as_str()==Some(self.selected_session.as_str()),"The selected session changed; review the terminal before closing it");
+                let id=value["id"].as_str().filter(|s|!s.is_empty()).context("terminal ID required")?.to_owned();
+                let tab=value["type"]=="close_tab";
+                let old_window=self.windows.as_array().into_iter().flatten().position(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==self.selected_block)).unwrap_or(0);
+                let old_pane=if tab {0} else {self.windows[old_window]["blocks"].as_array().into_iter().flatten().position(|b|b["id"]==self.selected_block).unwrap_or(0)};
+                self.creating=true;self.error.clear();self.publish();
+                if !self.refresh_close_view().await? {self.creating=false;self.notice="Terminal already closed".into();self.publish();return Ok(());}
+                let exists=if tab {self.windows.as_array().into_iter().flatten().any(|w|w["id"]==id)}
+                    else {self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==id))};
+                if exists {
+                    if tab {
+                        let window=self.windows.as_array().unwrap().iter().find(|w|w["id"]==id).unwrap();
+                        let actual: Vec<_>=window["blocks"].as_array().into_iter().flatten().map(|b|b["id"].clone()).collect();
+                        ensure!(value["blocks"].as_array()==Some(&actual),"This tab changed while you were confirming. Review it before closing");
+                    }
+                    let (method,args)=if tab {("session.close_window",json!({"session_id":self.selected_session,"window_id":id}))}
+                        else {("block.close",json!({"session_id":self.selected_session,"block_id":id}))};
+                    if let Err(error)=self.control.as_mut().context("not connected")?.call(method,args).await
+                        && !missing_terminal(&error) {return Err(error);}
+                }
+                if self.refresh_close_view().await? && self.selected_block.is_empty() {
+                    let windows=self.windows.as_array().context("invalid window list")?;
+                    let fallback=windows.get(old_window).or_else(||windows.last()).and_then(|w|w["blocks"].as_array())
+                        .and_then(|blocks|blocks.get(old_pane).or_else(||blocks.last())).and_then(|b|b["id"].as_str()).map(str::to_owned);
+                    if let Some(block)=fallback {self.open_block(block).await?;}
+                }
+                self.creating=false;self.notice=if tab {"Tab closed"} else {"Pane closed"}.into();self.publish();
+            }
             "new_tab" | "new_pane" => {
                 ensure!(
                     self.phase == "connected" && !self.paused,
@@ -1018,6 +1048,22 @@ impl Actor {
         self.refresh_view().await?;
         Ok(())
     }
+    async fn refresh_close_view(&mut self) -> Result<bool> {
+        if self.selected_session.is_empty() {return Ok(false);}
+        match self.refresh_view().await {
+            Ok(())=>Ok(true),
+            Err(error) if error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|e.code=="session_not_found")=>{
+                self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);self.screen=None;
+                self.data=None;self.data_resume=None;self.replica=None;self.controlled=false;
+                self.preview_task=None;self.program_task=None;self.summary_task=None;self.preview_updates.clear();
+                self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);
+                self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
+                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+                Ok(false)
+            }
+            Err(error)=>Err(error)
+        }
+    }
     async fn take_selected(&mut self) -> Result<()> {
         ensure!(!self.selected_block.is_empty(),"Choose a terminal first");
         self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
@@ -1129,6 +1175,9 @@ fn program_candidates(process: &Value, status: &Value) -> Value {
         add(&source[key]);
     }
     json!(names)
+}
+fn missing_terminal(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|matches!(e.code.as_str(),"not_found"|"session_not_found"))
 }
 fn same_process(a: &Value,b: &Value) -> bool {a["pid"].is_number() && a["name"].is_string() && a["pid"]==b["pid"] && a["name"]==b["name"]}
 fn display_title(event: &Value) -> String {event["title"].as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(256).collect()}
@@ -1964,6 +2013,56 @@ mod tests {
         runtime.block_on(writer.close()).unwrap();
         result.unwrap();
     }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_close_tabs_and_panes_preserves_backgrounds_and_selects_neighbours() {
+        let endpoint=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&endpoint,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let layout=json!({"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c","stty -echo; printf CLOSE_READY; cat"]}}});
+        let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rexlink-close-terminals-test-{}",std::process::id()),"initial_windows":[{"window_label":"Keep","layout":layout},{"window_label":"Next","layout":layout},{"window_label":"Background","layout":layout}]}))).unwrap();
+        let id=created["session_id"].as_str().unwrap();
+        let first=created["initial_windows"][0]["block_ids"][0].as_str().unwrap();
+        let next=created["initial_windows"][1]["block_ids"][0].as_str().unwrap();
+        let background=created["initial_windows"][2]["window_id"].as_str().unwrap();
+        runtime.block_on(writer.attach(id)).unwrap();
+        let mut extra=Vec::new();
+        for _ in 0..2 {
+            let split=runtime.block_on(writer.call("session.new_split",json!({"session_id":id,"anchor_id":first,"direction":"horizontal","side":"after","layout":layout,"focus":false}))).unwrap();
+            extra.push(split["block_ids"][0].as_str().unwrap().to_owned());
+        }
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":endpoint})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":id})).unwrap();wait(&app,|v|v["selectedSession"]==id);
+            app.command(json!({"type":"block","id":first})).unwrap();wait(&app,|v|text(v).contains("CLOSE_READY"));
+            app.command(json!({"type":"take"})).unwrap();wait(&app,|v|v["controlled"]==true);
+            app.command(json!({"type":"close_pane","session":"stale","id":first})).unwrap();
+            wait(&app,|v|v["error"].as_str().is_some_and(|s|s.contains("selected session changed")));
+            app.command(json!({"type":"close_tab","session":id,"id":background,"blocks":[]})).unwrap();
+            wait(&app,|v|v["error"].as_str().is_some_and(|s|s.contains("tab changed")));
+            app.command(json!({"type":"close_tab","session":id,"id":background,"blocks":created["initial_windows"][2]["block_ids"]})).unwrap();
+            let kept=wait(&app,|v|v["creating"]==false && v["windows"].as_array().is_some_and(|w|w.len()==2));
+            assert_eq!(kept["selectedBlock"],first);assert_eq!(kept["controlled"],true);assert_eq!(kept["error"],"");
+            app.command(json!({"type":"input","text":"still-alive\n"})).unwrap();wait(&app,|v|text(v).contains("still-alive"));
+            app.command(json!({"type":"close_pane","session":id,"id":extra[0]})).unwrap();
+            let kept=wait(&app,|v|v["creating"]==false && v["windows"][0]["blocks"].as_array().is_some_and(|b|b.len()==2));
+            assert_eq!(kept["selectedBlock"],first);assert_eq!(kept["controlled"],true);
+            app.command(json!({"type":"close_pane","session":id,"id":extra[0]})).unwrap();
+            app.command(json!({"type":"close_pane","session":id,"id":first})).unwrap();
+            let neighbour=wait(&app,|v|v["creating"]==false && v["selectedBlock"]==extra[1] && !v["screen"].is_null());
+            assert_eq!(neighbour["controlled"],false);assert_eq!(neighbour["error"],"");
+            let tab=neighbour["windows"][0].clone();
+            app.command(json!({"type":"close_tab","session":id,"id":tab["id"],"blocks":[extra[1]]})).unwrap();
+            wait(&app,|v|v["creating"]==false && v["selectedBlock"]==next && !v["screen"].is_null());
+            app.command(json!({"type":"close_pane","session":id,"id":next})).unwrap();
+            let empty=wait(&app,|v|v["creating"]==false && v["windows"].as_array().is_some_and(Vec::is_empty));
+            assert!(empty["screen"].is_null());assert_eq!(empty["error"],"");
+        }));
+        let list=runtime.block_on(writer.call("session.list",json!({}))).unwrap();
+        if list["sessions"].as_array().unwrap().iter().any(|s|s["session_id"]==id) {runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();}
+        runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+
     #[test]
     #[ignore = "requires an explicitly supplied owned Rex server"]
     fn live_close_session_preserves_other_views_and_closes_current() {
