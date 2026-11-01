@@ -82,7 +82,7 @@ import kotlin.math.roundToInt
                             factory={TerminalView(it)},modifier=Modifier.fillMaxSize().clipToBounds(),
                             update={view ->
                                 view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
-                                view.setTerminalPaddingDp(12,8,if(blocks.size>1) 22 else 6)
+                                view.setTerminalPaddingDp(12,8,if(blocks.size>1) 14 else 6)
                                 view.palette=palette;view.textSp=fontSize;view.screen=frame
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
@@ -106,12 +106,12 @@ import kotlin.math.roundToInt
                         }
                     }
                     if(center && (frame?.scroll?.below ?: 0)>0) {
-                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=if(blocks.size>1) 27.dp else 10.dp)
+                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=if(blocks.size>1) 19.dp else 10.dp)
                             .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
                             .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
                             fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
                     }
-                    if(blocks.size>1) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(22.dp).clickable(role=Role.Button,onClick=onPanes)
+                    if(blocks.size>1) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(14.dp).clickable(role=Role.Button,onClick=onPanes)
                         .semantics {contentDescription="Pane ${i+1} of ${blocks.size}. Switch pane"},
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.Center) {
                         if(blocks.size>1) {
