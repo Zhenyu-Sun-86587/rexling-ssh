@@ -23,6 +23,14 @@ internal class RexConnection(application: Application, private val scope: Corout
         private set
     private val mutableState = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = mutableState
+    private val mutableChrome=MutableStateFlow(AppState())
+    val chromeState: StateFlow<AppState> = mutableChrome
+    private val mutableTerminal=MutableStateFlow<TerminalScreen?>(null)
+    val terminal: StateFlow<TerminalScreen?> = mutableTerminal
+    var screenDimensions by mutableStateOf<Pair<Int,Int>?>(null)
+        private set
+    var hasScreen by mutableStateOf(false)
+        private set
     var controlModifier by mutableStateOf(false)
         private set
     var altModifier by mutableStateOf(false)
@@ -37,6 +45,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
+        set(value) {if(field!=value){field=value;command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -44,19 +53,22 @@ internal class RexConnection(application: Application, private val scope: Corout
             handle = NativeBridge.create()
             check(handle != 0L) { "Could not start native terminal" }
             pollJob = scope.launch(Dispatchers.IO) {
-                var revision = 0L
+                val decoder=TerminalUpdates()
                 while (!closed) {
                     if (!foreground) { delay(500); continue }
-                    val json = NativeBridge.poll(handle, revision)
-                    if (json.isNotEmpty()) {
+                    val update=NativeBridge.awaitUpdate(handle,decoder.revision,250)
+                    if(update<0) break
+                    if(update>decoder.revision) {
                         try {
-                            val next = AppState.parse(json)
-                            revision = next.revision
+                            android.os.Trace.beginSection("Rexlet.decodeUpdate")
+                            val next=try {decoder.decode(NativeBridge.readUpdate(handle,decoder.revision))} finally {android.os.Trace.endSection()}
                             withContext(Dispatchers.Main.immediate) {
+                                if(visible) awaitDisplayFrame()
                                 navigationRequest = navigationRequest.acknowledge(next)
                                 val frames=paneFrames.toMutableMap()
                                 frames.putAll(next.previewFrames)
-                                if(next.screen!=null && next.selectedBlock.isNotBlank()) frames[next.selectedBlock]=next.screen
+                                val old=state.value
+                                if(old.selectedBlock!=next.selectedBlock && old.screen!=null && old.selectedBlock.isNotBlank()) frames[old.selectedBlock]=old.screen
                                 while(frames.size>16) frames.remove(frames.keys.first())
                                 paneFrames=frames
                                 if(next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession) {
@@ -68,22 +80,27 @@ internal class RexConnection(application: Application, private val scope: Corout
                                     preferences.edit {putString("current_session:${next.endpoint}",next.selectedSession)}
                                 }
                                 mutableState.value = next
+                                mutableTerminal.value=next.screen
+                                hasScreen=next.screen!=null
+                                screenDimensions=next.screen?.let {it.columns to it.rows}
+                                mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())
                                 rememberCurrentTerminal(); openPreferredTerminal()
                             }
                         } catch (error: Exception) {
                             withContext(Dispatchers.Main.immediate) {
                                 navigationRequest = NavigationRequest()
-                                mutableState.value = mutableState.value.copy(error = "Could not read terminal state: ${error.message}")
+                                setState(state.value.copy(error = "Could not read terminal state: ${error.message}"))
                             }
                         }
                     }
-                    delay(if(!visible) 300 else if (navigationRequest.pending) 16 else 60)
+
                 }
             }
         } catch (error: Throwable) {
-            mutableState.value = AppState(phase = "error", error = "Native terminal could not start: ${error.message}")
+            setState(AppState(phase = "error", error = "Native terminal could not start: ${error.message}"))
         }
     }
+    private fun setState(next: AppState) {mutableState.value=next;mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())}
     private fun command(type: String, vararg args: Pair<String, Any>) {
         if (handle == 0L) return
         val request = JSONObject().put("type", type)
@@ -91,7 +108,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         val error = NativeBridge.command(handle, request.toString())
         if (error.isNotEmpty()) {
             navigationRequest = NavigationRequest()
-            mutableState.value = mutableState.value.copy(error = error)
+            setState(state.value.copy(error=error))
         }
     }
     fun connect(server: String) {
@@ -183,7 +200,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun pause() {
         navigationRequest = NavigationRequest()
         foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false
-        mutableState.value = state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase)
+        setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
         command("pause")
     }
     fun resume() { foreground = true; command("resume") }

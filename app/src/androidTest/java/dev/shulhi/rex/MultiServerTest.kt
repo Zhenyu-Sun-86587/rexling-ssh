@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,11 +43,28 @@ class MultiServerTest {
             val b=main {model.activeClient}
             waitFor("Mac fixture ready") {b.state.value.connected && b.state.value.selectedSession==args.getString("session_b") && b.state.value.screen!=null}
             assertTrue(main {a.state.value.connected})
+            waitFor("Mac initial metadata loaded") {b.state.value.programs.containsKey(b.state.value.selectedBlock)}
             main {b.takeControl()};waitFor("Mac owns its own pane") {b.state.value.controlled}
+            val chromeBeforeOutput=main {b.chromeState.value}
             main {b.type("B_ONLY\n")};waitFor("Mac received input") {b.state.value.screen?.plainText()?.contains("B_ONLY")==true}
+            assertSame("Terminal output must not republish surrounding UI",chromeBeforeOutput,main {b.chromeState.value})
             val keyA=sessionKey("a",args.getString("session_a")!!)
             val keyB=sessionKey("b",args.getString("session_b")!!)
             waitFor("Both hosts in shared session strip") {model.sessionTargets.any {it.key==keyA} && model.sessionTargets.any {it.key==keyB}}
+            val latency=mutableListOf<Double>()
+            repeat(10) {index->
+                val marker="LATENCY_${System.nanoTime()}_$index"
+                val start=System.nanoTime()
+                main {b.type(marker+"\n")}
+                kotlinx.coroutines.runBlocking {
+                    kotlinx.coroutines.withTimeout(5000) {b.terminal.first {it?.plainText()?.contains(marker)==true}}
+                }
+                latency+=(System.nanoTime()-start)/1e6
+            }
+            val sorted=latency.sorted()
+            instrumentation.sendStatus(0,android.os.Bundle().apply {putString("rexlet_input_delivery",
+                org.json.JSONObject().put("samples",10).put("median_ms",sorted[5]).put("p95_ms",sorted[9])
+                    .put("metric","input dispatch to Android terminal state, includes network").toString())})
             main {model.selectSessionTarget(keyA)}
             waitFor("Cross-server session selected") {model.activeServerId=="a" && a.state.value.selectedSession==args.getString("session_a")}
             assertEquals(keyB,main {model.lastSessionKey})

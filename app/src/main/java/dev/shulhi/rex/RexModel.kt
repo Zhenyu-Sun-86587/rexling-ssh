@@ -43,7 +43,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
             palette?.let(client::updateTerminalTheme)
             if(!foreground) client.pause()
             observers[profile.id]=viewModelScope.launch {
-                client.state.collect {state->
+                client.chromeState.collect {state->
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
                     updateSessionTargets()

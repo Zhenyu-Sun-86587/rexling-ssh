@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun RexWorkspace(model: RexModel,client: RexConnection) {
-    val state by client.state.collectAsState()
+    val state by client.chromeState.collectAsState()
     val navigation=client.navigationRequest
     val displayedSession=navigation.session ?: state.selectedSession
     val currentSessionKey=sessionKey(model.activeServerId,displayedSession)
@@ -92,7 +92,7 @@ class MainActivity : ComponentActivity() {
     val windows=if(changingSession) emptyList() else state.windows
     val window=windows.firstOrNull {w->w.blocks.any {it.id==displayedBlock}} ?: windows.firstOrNull {it.blocks.isNotEmpty()}
     val ready=state.connected && !navigation.pending && !state.creating
-    val controlled=state.controlled && ready && state.screen!=null
+    val controlled=state.controlled && ready && client.hasScreen
     val palette=LocalTerminalPalette.current
     var endpoint by rememberSaveable {mutableStateOf(client.savedEndpoint)}
     var showServer by rememberSaveable {mutableStateOf(true)}
@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
-                controlled,ready&&state.screen!=null,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
+                controlled,ready&&client.hasScreen,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
                 {if(controlled) client.releaseControl() else client.takeControl()},expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
@@ -132,12 +132,12 @@ class MainActivity : ComponentActivity() {
                             Text(model.activeServer.label,Modifier.padding(horizontal=16.dp,vertical=6.dp),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                             Text(if(state.connected) if(controlled) "In control" else "Viewing terminal" else state.phase,
                                 Modifier.padding(horizontal=16.dp,vertical=8.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            state.screen?.let {Text("${it.columns} × ${it.rows}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
+                            client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
                             DropdownMenuItem(text={Text("Appearance")},onClick={menu=false;appearance=true})
                             DropdownMenuItem(text={Text("Font size · $fontSize sp")},onClick={fontSize=when(fontSize){8->10;10->12;12->14;14->16;16->18;else->8}})
-                            DropdownMenuItem(text={Text("Copy viewport")},enabled=state.screen!=null,onClick={
-                                menu=false;state.screen?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
+                            DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
+                                menu=false;client.terminal.value?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
                             })
                             DropdownMenuItem(text={Text("Paste")},enabled=controlled,onClick={
                                 menu=false;(getClipboard(model.getApplication()) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(model.getApplication())?.toString()?.let(client::paste)
@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
                 })
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize()) {
-                    if(showServer || (state.phase=="disconnected"&&state.screen==null)) {
+                    if(showServer || (state.phase=="disconnected"&&!client.hasScreen)) {
                         Surface(Modifier.padding(12.dp),shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
                             Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Text(stringResource(R.string.app_name),fontWeight=FontWeight.Bold,fontSize=20.sp)
@@ -164,7 +164,7 @@ class MainActivity : ComponentActivity() {
                                     TextButton(onClick={servers=true}) {Text("Servers")}
                                     if(state.connected || state.phase=="reconnecting") TextButton(onClick={model.disconnectServer(model.activeServerId)}){Text("Disconnect")}
                                     else TextButton(onClick={model.previewServer(model.activeServerId)}){Text("Try preview")}
-                                    if(state.screen!=null) TextButton(onClick={showServer=false}){Text("Hide")}
+                                    if(client.hasScreen) TextButton(onClick={showServer=false}){Text("Hide")}
                                 }
                             }
                         }
@@ -174,7 +174,7 @@ class MainActivity : ComponentActivity() {
                     if(state.error.isNotBlank()) Text(state.error,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(10.dp),
                         color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     if(blocks.isNotEmpty()) {
-                        TerminalCarousel(blocks,chosen,liveBlock,state.screen,client.paneFrames,state.programs,controlled,fontSize.toFloat(),
+                        LiveTerminal(client,blocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::scrollToBottom,client::resize,client::selectBlock,{picker="panes"},{terminalView=it},
                             Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp))
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
@@ -278,4 +278,14 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
             Text("hold    long-press the name to jump to last",Modifier.padding(top=6.dp,bottom=20.dp),fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+
+@Composable private fun LiveTerminal(client: RexConnection,blocks: List<BlockItem>,chosen: String,liveBlock: String,
+    programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
+    onInput: (String)->Unit,onScroll: (Int)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
+    onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier) {
+    val screen by client.terminal.collectAsState()
+    TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
+        onInput,onScroll,onBottom,onDimensions,onSelect,onPanes,onView,modifier)
 }
