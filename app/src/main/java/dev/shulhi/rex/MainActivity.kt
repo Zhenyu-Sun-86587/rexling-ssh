@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
     val liveBlock=state.selectedBlock.ifBlank {if(state.phase=="preview") "preview" else ""}
+    LaunchedEffect(palette) { model.updateTerminalTheme(palette) }
     LaunchedEffect(state.phase) {if(state.connected || state.phase=="preview") showServer=false}
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
         model.rememberCurrentTerminal();model.openPreferredTerminal()

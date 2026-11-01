@@ -98,6 +98,7 @@ struct Actor {
     selected_block: String,
     navigation_id: u64,
     controlled: bool,
+    theme: Option<Value>,
     creating: bool,
     paused: bool,
     retry: Option<tokio::time::Instant>,
@@ -130,6 +131,7 @@ impl Actor {
             selected_block: String::new(),
             navigation_id: 0,
             controlled: false,
+            theme: None,
             creating: false,
             paused: false,
             retry: None,
@@ -300,6 +302,7 @@ impl Actor {
             self.set_view(&attached["view"]);
             if !self.selected_block.is_empty() {
                 let block = self.selected_block.clone();
+                self.apply_theme().await?;
                 let mut recovered = None;
                 if resumed && let Some(state) = self.data_resume.take() {
                     recovered = state.connect(&endpoint).await.ok();
@@ -677,10 +680,21 @@ impl Actor {
                 self.creating = false;
                 self.publish();
             }
+            "theme" => {
+                let args = value["args"].clone();
+                ensure!(args.is_object(), "theme arguments required");
+                ensure!(
+                    matches!(args["scheme"].as_str(), Some("light" | "dark")),
+                    "invalid theme scheme"
+                );
+                self.theme = Some(args);
+                self.apply_theme().await?;
+            }
             "take" => {
                 ensure!(!self.selected_block.is_empty(), "Choose a terminal first");
                 self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
                 self.refresh_view().await?;
+                self.apply_theme().await?;
                 self.notice = "You control this terminal".into();
                 self.publish();
             }
@@ -783,6 +797,7 @@ impl Actor {
         self.selected_block = block;
         self.controlled = false;
         self.screen = Value::Null;
+        self.apply_theme().await?;
         let data = Data::open(
             self.endpoint.as_ref().context("no server")?,
             self.control.as_mut().context("not connected")?,
@@ -796,6 +811,25 @@ impl Actor {
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
         self.refresh_view().await?;
+        Ok(())
+    }
+    async fn apply_theme(&mut self) -> Result<()> {
+        // Rex applies the owner's colors, or queues ours until we take ownership.
+        // Its canonical terminal answers OSC queries and sends scheme notifications.
+        if !self.paused
+            && !self.selected_session.is_empty()
+            && !self.selected_block.is_empty()
+            && let (Some(control), Some(theme)) = (&mut self.control, &self.theme)
+        {
+            control
+                .terminal(
+                    &self.selected_session,
+                    &self.selected_block,
+                    "set_theme",
+                    theme.clone(),
+                )
+                .await?;
+        }
         Ok(())
     }
     async fn release_selected(&mut self) -> Result<()> {
@@ -1070,6 +1104,99 @@ mod tests {
             });
             app.command(json!({"type":"release"})).unwrap();
             wait(&app, |v| v["controlled"] == false);
+            app.command(json!({"type":"disconnect"})).unwrap();
+            wait(&app, |v| v["phase"] == "disconnected");
+        }));
+        runtime
+            .block_on(writer.call("session.destroy", json!({"session_id":id})))
+            .unwrap();
+        runtime.block_on(writer.close()).unwrap();
+        result.unwrap();
+    }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server with nvim"]
+    fn live_neovim_theme_follows_ownership_and_survives_pause() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut writer = runtime
+            .block_on(Control::connect(
+                Endpoint::new(&server, Duration::from_secs(10)).unwrap(),
+                None,
+                Trace::default(),
+            ))
+            .unwrap();
+        let created = runtime.block_on(writer.call("session.create", json!({
+            "label":format!("rex-android-nvim-test-{}",std::process::id()),
+            "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell",
+                "options":{"shell":"none","command":["/bin/sh","-c",
+                    "exec nvim --clean -n -i NONE -c 'set laststatus=2 statusline=BG=%{&background}'"]}}}}]
+        }))).unwrap();
+        let id = created["session_id"].as_str().unwrap();
+        let block = created["initial_windows"][0]["block_ids"][0]
+            .as_str()
+            .unwrap();
+        runtime.block_on(writer.attach(id)).unwrap();
+        let theme = |light: bool| {
+            json!({"scheme":if light {"light"} else {"dark"},
+            "background":if light {"#ffffff"} else {"#11120f"},
+            "foreground":if light {"#202432"} else {"#d9dccf"}})
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime
+                .block_on(writer.call(
+                    "session.own_block",
+                    json!({"session_id":id,"block_ids":[block],"mode":"take"}),
+                ))
+                .unwrap();
+            runtime
+                .block_on(writer.terminal(id, block, "set_theme", theme(false)))
+                .unwrap();
+            let app = Session::spawn().unwrap();
+            // Store the resolved appearance before connecting, as Compose does.
+            app.command(json!({"type":"theme","args":theme(true)}))
+                .unwrap();
+            app.command(json!({"type":"connect","server":server}))
+                .unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":id})).unwrap();
+            wait(&app, |v| v["selectedSession"] == id);
+            app.command(json!({"type":"block","id":block})).unwrap();
+            wait(&app, |v| text(v).contains("BG=dark"));
+            app.command(json!({"type":"take"})).unwrap();
+            wait(&app, |v| {
+                v["controlled"] == true && text(v).contains("BG=light")
+            });
+            app.command(json!({"type":"theme","args":theme(false)}))
+                .unwrap();
+            wait(&app, |v| text(v).contains("BG=dark"));
+            app.command(json!({"type":"pause"})).unwrap();
+            wait(&app, |v| v["phase"] == "paused");
+            // Another client owns the terminal while Android is suspended.
+            runtime
+                .block_on(writer.call(
+                    "session.own_block",
+                    json!({"session_id":id,"block_ids":[block],"mode":"take"}),
+                ))
+                .unwrap();
+            runtime
+                .block_on(writer.terminal(id, block, "set_theme", theme(false)))
+                .unwrap();
+            app.command(json!({"type":"theme","args":theme(true)}))
+                .unwrap();
+            app.command(json!({"type":"resume"})).unwrap();
+            wait(&app, |v| {
+                v["phase"] == "connected" && text(v).contains("BG=dark")
+            });
+            app.command(json!({"type":"take"})).unwrap();
+            wait(&app, |v| {
+                v["controlled"] == true && text(v).contains("BG=light")
+            });
+            app.command(json!({"type":"theme","args":theme(false)}))
+                .unwrap();
+            wait(&app, |v| text(v).contains("BG=dark"));
             app.command(json!({"type":"disconnect"})).unwrap();
             wait(&app, |v| v["phase"] == "disconnected");
         }));

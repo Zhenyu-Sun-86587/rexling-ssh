@@ -153,6 +153,14 @@ class RexModel(application: Application) : AndroidViewModel(application) {
         if (current.connected && !current.creating) navigation.neighbourSession(current.sessions,
             navigationRequest.session ?: current.selectedSession, step)?.let(::selectSession)
     }
+    fun updateTerminalTheme(palette: TerminalPalette) {
+        fun hex(color: Int) = "#%06x".format(java.util.Locale.ROOT, color and 0xffffff)
+        command("theme", "args" to JSONObject()
+            .put("scheme", if(palette.dark) "dark" else "light")
+            .put("background", hex(palette.background)).put("foreground", hex(palette.foreground))
+            .put("cursor", hex(palette.accent))
+            .put("palette", org.json.JSONArray(palette.ansi.mapIndexed { index, color -> "$index=${hex(color)}" })))
+    }
     fun changeAppearance(value: Appearance) { appearance=value;preferences.edit { putString("appearance",value.name) } }
     fun jumpLastSession() { if(state.value.sessions.any { it.id==lastSessionId }) selectSession(lastSessionId) }
     fun refreshSessionDetails() { if(state.value.connected) command("sessions_info") }
