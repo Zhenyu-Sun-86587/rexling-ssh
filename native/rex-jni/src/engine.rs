@@ -1512,6 +1512,103 @@ mod tests {
         result.unwrap();
     }
     #[test]
+    #[ignore = "requires two explicitly supplied owned Rex servers"]
+    fn live_two_servers_isolate_input_selection_and_lifecycle() {
+        let endpoints = [
+            std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER"),
+            std::env::var("REX_TEST_SECOND_SERVER").expect("set REX_TEST_SECOND_SERVER"),
+        ];
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut writers: Vec<Control> = endpoints
+            .iter()
+            .map(|server| {
+                runtime
+                    .block_on(Control::connect(
+                        Endpoint::new(server, Duration::from_secs(10)).unwrap(),
+                        None,
+                        Trace::default(),
+                    ))
+                    .unwrap()
+            })
+            .collect();
+        let mut created = Vec::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for (index, writer) in writers.iter_mut().enumerate() {
+                let script = format!(
+                    "stty -echo; printf 'HOST_{index}_READY\\n'; while IFS= read -r line; do printf 'HOST_{index}_REPLY:%s\\n' \"$line\"; done"
+                );
+                let value=runtime.block_on(writer.call("session.create",json!({"label":format!("rexlet-multi-test-{}-{index}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}}]}))).unwrap();
+                let id = value["session_id"].as_str().unwrap().to_owned();
+                runtime.block_on(writer.attach(&id)).unwrap();
+                created.push(value);
+            }
+            let apps = [Session::spawn().unwrap(), Session::spawn().unwrap()];
+            for (index, app) in apps.iter().enumerate() {
+                app.command(json!({"type":"connect","server":endpoints[index]}))
+                    .unwrap();
+                wait(app, |v| v["phase"] == "connected");
+                app.command(json!({"type":"session","id":created[index]["session_id"]}))
+                    .unwrap();
+                wait(app, |v| {
+                    v["selectedSession"] == created[index]["session_id"]
+                });
+                app.command(json!({"type":"block","id":created[index]["initial_windows"][0]["block_ids"][0]})).unwrap();
+                wait(app, |v| text(v).contains(&format!("HOST_{index}_READY")));
+                app.command(json!({"type":"take"})).unwrap();
+                wait(app, |v| v["controlled"] == true);
+            }
+            apps[0]
+                .command(json!({"type":"input","text":"alpha\n"}))
+                .unwrap();
+            apps[1]
+                .command(json!({"type":"input","text":"beta\n"}))
+                .unwrap();
+            let a = wait(&apps[0], |v| text(v).contains("HOST_0_REPLY:alpha"));
+            let b = wait(&apps[1], |v| text(v).contains("HOST_1_REPLY:beta"));
+            assert_eq!(a["selectedSession"], created[0]["session_id"]);
+            assert_eq!(b["selectedSession"], created[1]["session_id"]);
+            assert!(!text(&a).contains("HOST_1_REPLY"));
+            assert!(!text(&b).contains("HOST_0_REPLY"));
+            apps[0].command(json!({"type":"pause"})).unwrap();
+            wait(&apps[0], |v| v["phase"] == "paused");
+            apps[1]
+                .command(json!({"type":"input","text":"still-connected\n"}))
+                .unwrap();
+            wait(&apps[1], |v| {
+                v["phase"] == "connected" && text(v).contains("HOST_1_REPLY:still-connected")
+            });
+            apps[0].command(json!({"type":"resume"})).unwrap();
+            wait(&apps[0], |v| {
+                v["phase"] == "connected" && text(v).contains("HOST_0_REPLY:alpha")
+            });
+            apps[0].command(json!({"type":"disconnect"})).unwrap();
+            wait(&apps[0], |v| v["phase"] == "disconnected");
+            apps[1]
+                .command(json!({"type":"input","text":"after-other-disconnect\n"}))
+                .unwrap();
+            wait(&apps[1], |v| {
+                text(v).contains("HOST_1_REPLY:after-other-disconnect")
+            });
+            apps[1].command(json!({"type":"disconnect"})).unwrap();
+            wait(&apps[1], |v| v["phase"] == "disconnected");
+        }));
+        for (index, value) in created.iter().enumerate() {
+            runtime
+                .block_on(
+                    writers[index]
+                        .call("session.destroy", json!({"session_id":value["session_id"]})),
+                )
+                .unwrap();
+        }
+        for writer in &mut writers {
+            runtime.block_on(writer.close()).unwrap();
+        }
+        result.unwrap();
+    }
+    #[test]
     #[ignore = "requires an explicitly supplied owned Rex server"]
     fn live_actor_creates_tabs_and_panes_and_rejects_stale_targets() {
         let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");

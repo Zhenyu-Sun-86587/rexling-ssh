@@ -75,8 +75,14 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun RexApp(model: RexModel) {
-    val state by model.state.collectAsState()
-    val navigation=model.navigationRequest
+    val client=model.activeClient
+    key(model.activeServerId) {RexWorkspace(model,client)}
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun RexWorkspace(model: RexModel,client: RexConnection) {
+    val state by client.state.collectAsState()
+    val navigation=client.navigationRequest
     val displayedSession=navigation.session ?: state.selectedSession
     val displayedBlock=navigation.block ?: state.selectedBlock
     val changingSession=navigation.session!=null && navigation.session!=state.selectedSession
@@ -85,8 +91,10 @@ class MainActivity : ComponentActivity() {
     val ready=state.connected && !navigation.pending && !state.creating
     val controlled=state.controlled && ready && state.screen!=null
     val palette=LocalTerminalPalette.current
-    var endpoint by rememberSaveable {mutableStateOf(model.savedEndpoint)}
+    var endpoint by rememberSaveable {mutableStateOf(client.savedEndpoint)}
     var showServer by rememberSaveable {mutableStateOf(true)}
+    var servers by remember {mutableStateOf(false)}
+    var connectionError by remember {mutableStateOf<String?>(null)}
     var picker by remember {mutableStateOf("")}
     var newSession by remember {mutableStateOf(false)}
     var newName by rememberSaveable {mutableStateOf("")}
@@ -102,22 +110,23 @@ class MainActivity : ComponentActivity() {
     LaunchedEffect(palette) { model.updateTerminalTheme(palette) }
     LaunchedEffect(state.phase) {if(state.connected || state.phase=="preview") showServer=false}
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
-        model.rememberCurrentTerminal();model.openPreferredTerminal()
+        client.rememberCurrentTerminal();client.openPreferredTerminal()
     }
     LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock) {
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
-        if(index>=0) model.prefetchPanes(listOfNotNull(blocks.getOrNull(index-1)?.id,blocks.getOrNull(index+1)?.id))
+        if(index>=0) client.prefetchPanes(listOfNotNull(blocks.getOrNull(index-1)?.id,blocks.getOrNull(index+1)?.id))
     }
-    LaunchedEffect(controlled) {if(controlled){model.applySize();terminalView?.keyboard()}}
-    LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
+    LaunchedEffect(controlled) {if(controlled){client.applySize();terminalView?.keyboard()}}
+    LaunchedEffect(picker) {if(picker=="sessions") client.refreshSessionDetails()}
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(state.sessions,displayedSession,state.connected,state.connected&&!state.creating,
-                controlled,ready&&state.screen!=null,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSession,model::jumpLastSession,
-                {if(controlled) model.releaseControl() else model.takeControl()},expanded=picker=="sessions",menu={
+                controlled,ready&&state.screen!=null,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},client::selectSession,client::jumpLastSession,
+                {if(controlled) client.releaseControl() else client.takeControl()},expanded=picker=="sessions",serverName=model.activeServer.label,menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+                            Text(model.activeServer.label,Modifier.padding(horizontal=16.dp,vertical=6.dp),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                             Text(if(state.connected) if(controlled) "In control" else "Viewing terminal" else state.phase,
                                 Modifier.padding(horizontal=16.dp,vertical=8.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             state.screen?.let {Text("${it.columns} × ${it.rows}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
@@ -128,10 +137,10 @@ class MainActivity : ComponentActivity() {
                                 menu=false;state.screen?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
                             })
                             DropdownMenuItem(text={Text("Paste")},enabled=controlled,onClick={
-                                menu=false;(getClipboard(model.getApplication()) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(model.getApplication())?.toString()?.let(model::paste)
+                                menu=false;(getClipboard(model.getApplication()) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(model.getApplication())?.toString()?.let(client::paste)
                             })
-                            DropdownMenuItem(text={Text("Server connection")},onClick={menu=false;showServer=!showServer})
-                            DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;model.refresh()})
+                            DropdownMenuItem(text={Text("Servers · ${model.connectedCount} connected")},onClick={menu=false;servers=true})
+                            DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;client.refresh()})
                             DropdownMenuItem(text={Text("Switch pane")},enabled=blocks.isNotEmpty(),onClick={menu=false;picker="panes"})
                         }
                     }
@@ -146,10 +155,12 @@ class MainActivity : ComponentActivity() {
                                 Text("Connect over Tailscale",fontWeight=FontWeight.SemiBold)
                                 OutlinedTextField(endpoint,{endpoint=it},Modifier.fillMaxWidth(),label={Text("Rex server URL")},singleLine=true,
                                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),shape=RoundedCornerShape(12.dp))
+                                connectionError?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=11.sp)}
                                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick={model.connect(endpoint)},enabled=state.phase!="connecting"){Text("Connect")}
-                                    if(state.connected || state.phase=="reconnecting") TextButton(onClick=model::disconnect){Text("Disconnect")}
-                                    else TextButton(onClick=model::preview){Text("Try preview")}
+                                    Button(onClick={connectionError=model.connect(endpoint)},enabled=state.phase!="connecting" && endpoint.isNotBlank()){Text("Connect")}
+                                    TextButton(onClick={servers=true}) {Text("Servers")}
+                                    if(state.connected || state.phase=="reconnecting") TextButton(onClick={model.disconnectServer(model.activeServerId)}){Text("Disconnect")}
+                                    else TextButton(onClick={model.previewServer(model.activeServerId)}){Text("Try preview")}
                                     if(state.screen!=null) TextButton(onClick={showServer=false}){Text("Hide")}
                                 }
                             }
@@ -160,8 +171,8 @@ class MainActivity : ComponentActivity() {
                     if(state.error.isNotBlank()) Text(state.error,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(10.dp),
                         color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     if(blocks.isNotEmpty()) {
-                        TerminalCarousel(blocks,chosen,liveBlock,state.screen,model.paneFrames,state.programs,controlled,fontSize.toFloat(),
-                            model::type,model::scroll,model::scrollToBottom,model::resize,model::selectBlock,{picker="panes"},{terminalView=it},
+                        TerminalCarousel(blocks,chosen,liveBlock,state.screen,client.paneFrames,state.programs,controlled,fontSize.toFloat(),
+                            client::type,client::scroll,client::scrollToBottom,client::resize,client::selectBlock,{picker="panes"},{terminalView=it},
                             Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp))
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
                         Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
@@ -169,36 +180,37 @@ class MainActivity : ComponentActivity() {
                     }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
-                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,model::selectWindow,{picker="panes"},panePrograms=model::tabPrograms,selectedPane=model::tabPaneIndex,add={
+                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,{picker="panes"},panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,add={
                                 Box {
                                     Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
                                         ChromeButton(ChromeIcon.ADD,"Add terminal",ready){add=true}
                                     }
                                     DropdownMenu(add,{add=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                                        DropdownMenuItem(text={Text("New tab")},onClick={add=false;model.createTab()})
-                                        DropdownMenuItem(text={Text("New pane")},enabled=state.selectedBlock.isNotBlank(),onClick={add=false;model.createPane()})
+                                        DropdownMenuItem(text={Text("New tab")},onClick={add=false;client.createTab()})
+                                        DropdownMenuItem(text={Text("New pane")},enabled=state.selectedBlock.isNotBlank(),onClick={add=false;client.createPane()})
                                     }
                                 }
                             })
-                            KeyboardBar(controlled,ready,model.controlModifier,model.altModifier,keyboardVisible,model::toggleControl,model::toggleAlt,model::key) {
-                                if(!controlled) model.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
+                            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,keyboardVisible,client::toggleControl,client::toggleAlt,client::key) {
+                                if(!controlled) client.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
                             }
                         }
                     }
                 }
-                if(picker=="sessions") SessionSwitcher(state,displayedSession,model.lastSessionId,
-                    onSelect={picker="";model.selectSession(it)},onClose={picker=""},onNew={picker="";newSession=true})
+                if(picker=="sessions") SessionSwitcher(state,displayedSession,client.lastSessionId,
+                    onSelect={picker="";client.selectSession(it)},onClose={picker=""},onNew={picker="";newSession=true})
             }
         }
     }
+    if(servers) ServersSheet(model){servers=false}
     if(picker=="panes") ModalBottomSheet(onDismissRequest={picker=""}) {
         Column(Modifier.fillMaxWidth().heightIn(max=450.dp).verticalScroll(rememberScrollState()).padding(bottom=20.dp)) {
             Text("Panes",Modifier.padding(20.dp),fontWeight=FontWeight.Bold,fontSize=18.sp)
             blocks.forEachIndexed {index,b->
-                Text("${index+1}  ${b.label}"+(if(b.id==chosen) "  ✓" else ""),Modifier.fillMaxWidth().clickable{picker="";model.selectBlock(b.id)}.padding(20.dp),
+                Text("${index+1}  ${b.label}"+(if(b.id==chosen) "  ✓" else ""),Modifier.fillMaxWidth().clickable{picker="";client.selectBlock(b.id)}.padding(20.dp),
                     color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
             }
-            TextButton(onClick={picker="";model.createPane()},enabled=ready){Text("New pane")}
+            TextButton(onClick={picker="";client.createPane()},enabled=ready){Text("New pane")}
         }
     }
     if(appearance) AlertDialog(onDismissRequest={appearance=false},title={Text("Appearance")},text={
@@ -211,7 +223,7 @@ class MainActivity : ComponentActivity() {
     },confirmButton={TextButton(onClick={appearance=false}){Text("Done")}})
     if(newSession) AlertDialog(onDismissRequest={newSession=false},title={Text("New session")},text={
         OutlinedTextField(newName,{newName=it},singleLine=true,label={Text("Name (optional)")},supportingText={Text("Leave blank for a name from Rex.")})
-    },confirmButton={Button(onClick={newSession=false;model.createSession(newName);newName=""},enabled=state.connected&&!state.creating){Text("Create")}},
+    },confirmButton={Button(onClick={newSession=false;client.createSession(newName);newName=""},enabled=state.connected&&!state.creating){Text("Create")}},
         dismissButton={TextButton(onClick={newSession=false}){Text("Cancel")}})
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)

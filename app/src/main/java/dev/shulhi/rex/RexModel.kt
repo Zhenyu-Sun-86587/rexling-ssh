@@ -4,215 +4,107 @@ import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import androidx.core.content.edit
 
-class RexModel(application: Application) : AndroidViewModel(application) {
-    private val preferences = application.getSharedPreferences("rex", 0)
-    val savedEndpoint: String = preferences.getString("endpoint", "https://rex.taildaac1.ts.net")!!
-    var appearance by mutableStateOf(runCatching { Appearance.valueOf(preferences.getString("appearance","SYSTEM")!!) }.getOrDefault(Appearance.SYSTEM))
+class RexModel @JvmOverloads constructor(application: Application, preferenceName: String="rex") : AndroidViewModel(application) {
+    private val preferences=application.getSharedPreferences(preferenceName,0)
+    var appearance by mutableStateOf(runCatching {Appearance.valueOf(preferences.getString("appearance","SYSTEM")!!)}.getOrDefault(Appearance.SYSTEM))
         private set
-    var lastSessionId by mutableStateOf(preferences.getString("last_session:$savedEndpoint","").orEmpty())
+    var servers by mutableStateOf(SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","https://rex.taildaac1.ts.net")!!))
         private set
-    var paneFrames by mutableStateOf<Map<String,TerminalScreen>>(emptyMap())
+    var activeServerId by mutableStateOf(preferences.getString("active_server",null)?.takeIf {id->servers.any {it.id==id}} ?: servers.firstOrNull()?.id.orEmpty())
         private set
-    private val mutableState = MutableStateFlow(AppState())
-    val state: StateFlow<AppState> = mutableState
-    var controlModifier by mutableStateOf(false)
+    var serverStatuses by mutableStateOf<Map<String,ServerStatus>>(emptyMap())
         private set
-    var altModifier by mutableStateOf(false)
+    private val connections=mutableMapOf<String,RexConnection>()
+    private val observers=mutableMapOf<String,Job>()
+    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
+    private var palette: TerminalPalette?=null
+    private var foreground=true
+    internal var activeClient by mutableStateOf(connection(activeServer))
         private set
-    var navigationRequest by mutableStateOf(NavigationRequest())
-        private set
-    private val navigation = WorkspaceNavigation()
-    private var navigationSerial = 0L
-    private var handle = 0L
-    private var resizeJob: Job? = null
-    private var lastSize = 0 to 0
-    @Volatile private var foreground = true
+    val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
+    val connectedCount: Int get()=serverStatuses.values.count {it.connected}
 
-    init {
-        try {
-            handle = NativeBridge.create()
-            check(handle != 0L) { "Could not start native terminal" }
-            viewModelScope.launch(Dispatchers.IO) {
-                var revision = 0L
-                while (true) {
-                    if (!foreground) { delay(500); continue }
-                    val json = NativeBridge.poll(handle, revision)
-                    if (json.isNotEmpty()) {
-                        try {
-                            val next = AppState.parse(json)
-                            revision = next.revision
-                            withContext(Dispatchers.Main.immediate) {
-                                navigationRequest = navigationRequest.acknowledge(next)
-                                val frames=paneFrames.toMutableMap()
-                                frames.putAll(next.previewFrames)
-                                if(next.screen!=null && next.selectedBlock.isNotBlank()) frames[next.selectedBlock]=next.screen
-                                while(frames.size>16) frames.remove(frames.keys.first())
-                                paneFrames=frames
-                                if(next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession) {
-                                    val old=state.value.selectedSession
-                                    if(old.isNotBlank() && !navigationRequest.pending) {
-                                        lastSessionId=old
-                                        preferences.edit {putString("last_session:${next.endpoint}",old)}
-                                    }
-                                    preferences.edit {putString("current_session:${next.endpoint}",next.selectedSession)}
-                                }
-                                mutableState.value = next
-                            }
-                        } catch (error: Exception) {
-                            withContext(Dispatchers.Main.immediate) {
-                                navigationRequest = NavigationRequest()
-                                mutableState.value = mutableState.value.copy(error = "Could not read terminal state: ${error.message}")
-                            }
-                        }
-                    }
-                    delay(if (navigationRequest.pending) 16 else 60)
+    init {desired.toList().forEach {id->connectServer(id,select=false)}}
+
+    private fun connection(profile: ServerProfile): RexConnection = connections.getOrPut(profile.id) {
+        RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences).also {client->
+            client.visible=profile.id==activeServerId
+            palette?.let(client::updateTerminalTheme)
+            if(!foreground) client.pause()
+            observers[profile.id]=viewModelScope.launch {
+                client.state.collect {state->
+                    val next=ServerStatus(state.phase,state.error)
+                    if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
                 }
             }
-        } catch (error: Throwable) {
-            mutableState.value = AppState(phase = "error", error = "Native terminal could not start: ${error.message}")
         }
     }
-    private fun command(type: String, vararg args: Pair<String, Any>) {
-        if (handle == 0L) return
-        val request = JSONObject().put("type", type)
-        args.forEach { (key, value) -> request.put(key, value) }
-        val error = NativeBridge.command(handle, request.toString())
-        if (error.isNotEmpty()) {
-            navigationRequest = NavigationRequest()
-            mutableState.value = mutableState.value.copy(error = error)
+    private fun persist() {preferences.edit {
+        putString("servers",SavedServers.encode(servers));putString("active_server",activeServerId)
+        putStringSet("connected_servers",desired)
+    }}
+    fun connectServer(id: String,select: Boolean=true) {
+        val profile=servers.firstOrNull {it.id==id} ?: return
+        val client=connection(profile)
+        if(select && activeServerId!=id) {
+            activeClient.releaseControl();activeClient.visible=false
+            client.visible=true;activeServerId=id;activeClient=client
         }
+        desired=desired+id;persist()
+        if(client.state.value.phase in listOf("disconnected","error","preview")) client.connect(profile.endpoint)
+        else if(foreground && client.state.value.phase=="paused") client.resume()
     }
-    fun connect(server: String) {
-        val value = server.trim()
-        navigationRequest = NavigationRequest()
-        paneFrames=emptyMap()
-        lastSessionId=preferences.getString("last_session:$value","").orEmpty()
-        preferences.edit { putString("endpoint", value) }
-        command("connect", "server" to value)
-    }
-    fun disconnect() { navigationRequest = NavigationRequest(); command("disconnect") }
-    fun preview() = command("preview")
-    fun selectSession(id: String) {
-        if (id == (navigationRequest.session ?: state.value.selectedSession)) return
-        val old=navigationRequest.session ?: state.value.selectedSession
-        if(old.isNotBlank() && old!=id) {
-            lastSessionId=old
-            preferences.edit { putString("last_session:${state.value.endpoint}",old) }
+    /** The legacy URL form also adds a new host without disconnecting existing ones. */
+    fun connect(endpoint: String): String? = runCatching {
+        val normalized=ServerProfile.normalizeEndpoint(endpoint)
+        val existing=servers.firstOrNull {it.endpoint==normalized}
+        if(existing!=null) connectServer(existing.id)
+        else saveServer(null,"",normalized)?.let {throw IllegalArgumentException(it)}
+    }.exceptionOrNull()?.message
+
+    fun saveServer(id: String?,label: String,endpoint: String): String? = runCatching {
+        val profile=ServerProfile.create(label,endpoint,id ?: java.util.UUID.randomUUID().toString())
+        require(servers.none {it.id!=profile.id && it.endpoint==profile.endpoint}) {"That server is already saved"}
+        val old=servers.firstOrNull {it.id==profile.id}
+        if(old!=null && old.endpoint!=profile.endpoint) {
+            connections.remove(old.id)?.let {it.releaseControl();it.disconnect();it.close()}
+            observers.remove(old.id)?.cancel();serverStatuses=serverStatuses-old.id
         }
-        navigationRequest = NavigationRequest(session = id, id = ++navigationSerial)
-        controlModifier = false; altModifier = false
-        command("session", "id" to id, "navigationId" to navigationRequest.id)
+        servers=if(old==null) servers+profile else servers.map {if(it.id==profile.id) profile else it}
+        persist()
+        val client=connection(profile)
+        if(activeServerId==profile.id) {activeClient=client;client.visible=true}
+        connectServer(profile.id)
+    }.exceptionOrNull()?.message
+
+    fun disconnectServer(id: String) {
+        desired=desired-id;persist()
+        connections[id]?.let {it.releaseControl();it.disconnect()}
     }
-    fun selectBlock(id: String) {
-        val current = state.value
-        if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
-        if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
-        if (current.windows.none { window -> window.blocks.any { it.id == id } }) return
-        navigationRequest = NavigationRequest(block = id, id = ++navigationSerial)
-        controlModifier = false; altModifier = false
-        navigation.remember(current.selectedSession, current.windows, id)
-        command("block", "id" to id, "navigationId" to navigationRequest.id)
-    }
-    fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {state.value.programs[it.id] ?: ProgramIdentity.Terminal}
-    fun tabPaneIndex(window: WindowItem): Int = window.blocks.indexOfFirst {it.id==navigation.pane(state.value.selectedSession,window)}.coerceAtLeast(0)
-    fun selectWindow(id: String) {
-        val current = state.value
-        current.windows.firstOrNull { it.id == id }?.let { window ->
-            navigation.pane(current.selectedSession, window)?.let(::selectBlock)
+    fun forgetServer(id: String) {
+        disconnectServer(id)
+        observers.remove(id)?.cancel();connections.remove(id)?.close()
+        servers=servers.filterNot {it.id==id};serverStatuses=serverStatuses-id
+        if(activeServerId==id) {
+            activeServerId=servers.firstOrNull()?.id.orEmpty()
+            activeClient=connection(activeServer);activeClient.visible=true
         }
+        persist()
     }
-    fun rememberCurrentTerminal() {
-        val current = state.value
-        if (!navigationRequest.pending) navigation.remember(current.selectedSession, current.windows, current.selectedBlock)
+    fun previewServer(id: String) {
+        if(id!=activeServerId) return
+        desired=desired-id;persist();activeClient.preview()
     }
-    fun openPreferredTerminal() {
-        val current = state.value
-        if(!navigationRequest.pending && current.connected && current.selectedSession.isBlank()) {
-            val saved=preferences.getString("current_session:${current.endpoint}","")
-            (current.sessions.firstOrNull { it.id==saved } ?: current.sessions.firstOrNull())?.let { selectSession(it.id) }
-        } else if (!navigationRequest.pending && current.connected && current.selectedSession.isNotBlank() && current.selectedBlock.isBlank()) {
-            navigation.pane(current.selectedSession, current.windows)?.let(::selectBlock)
-        }
-    }
-    fun swipePane(step: Int) {
-        val current = state.value
-        if (current.connected && !current.creating) navigation.neighbour(current.windows, navigationRequest.block ?: current.selectedBlock, step)?.let(::selectBlock)
-    }
-    fun swipeSession(step: Int) {
-        val current = state.value
-        if (current.connected && !current.creating) navigation.neighbourSession(current.sessions,
-            navigationRequest.session ?: current.selectedSession, step)?.let(::selectSession)
-    }
-    fun updateTerminalTheme(palette: TerminalPalette) {
-        fun hex(color: Int) = "#%06x".format(java.util.Locale.ROOT, color and 0xffffff)
-        command("theme", "args" to JSONObject()
-            .put("scheme", if(palette.dark) "dark" else "light")
-            .put("background", hex(palette.background)).put("foreground", hex(palette.foreground))
-            .put("cursor", hex(palette.accent))
-            .put("palette", org.json.JSONArray(palette.ansi.mapIndexed { index, color -> "$index=${hex(color)}" })))
-    }
-    fun changeAppearance(value: Appearance) { appearance=value;preferences.edit { putString("appearance",value.name) } }
-    fun jumpLastSession() { if(state.value.sessions.any { it.id==lastSessionId }) selectSession(lastSessionId) }
-    fun refreshSessionDetails() { if(state.value.connected) command("sessions_info") }
-    fun prefetchPanes(ids: List<String>) {
-        if(state.value.connected && !state.value.creating) command("peek","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
-    }
-    fun createSession(label: String) { if(state.value.connected && !state.value.creating && !navigationRequest.pending) command("new_session","label" to label) }
-    fun createTab() {
-        val current = state.value
-        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank()) command("new_tab", "session" to current.selectedSession)
-    }
-    fun createPane() {
-        val current = state.value
-        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) command("new_pane", "session" to current.selectedSession, "anchor" to current.selectedBlock)
-    }
-    fun refresh() = command("refresh")
-    fun takeControl() = command("take")
-    fun releaseControl() { controlModifier = false; altModifier = false; command("release") }
-    fun pause() {
-        navigationRequest = NavigationRequest()
-        foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false
-        mutableState.value = state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase)
-        command("pause")
-    }
-    fun resume() { foreground = true; command("resume") }
-    fun toggleControl() { controlModifier = !controlModifier }
-    fun toggleAlt() { altModifier = !altModifier }
-    fun type(text: String) {
-        if (!state.value.controlled || navigationRequest.pending || text.isEmpty()) return
-        val input = TerminalInput.modified(text, controlModifier, altModifier)
-        controlModifier = false; altModifier = false
-        command("input", "text" to input)
-    }
-    fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}
-    fun scrollToBottom() {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"bottom" to true)}
-    fun key(name: String) = type(TerminalInput.key(name))
-    fun paste(text: String) { if (state.value.controlled && !navigationRequest.pending) command("paste", "text" to text) }
-    fun resize(columns: Int, rows: Int) {
-        val size = columns.coerceIn(1, 512) to rows.coerceIn(1, 256)
-        lastSize = size
-        resizeJob?.cancel()
-        if (!state.value.controlled || navigationRequest.pending) return
-        resizeJob = viewModelScope.launch {
-            delay(150)
-            command("resize", "columns" to size.first, "rows" to size.second)
-        }
-    }
-    fun applySize() = resize(lastSize.first.coerceAtLeast(1), lastSize.second.coerceAtLeast(1))
-    override fun onCleared() {
-        if (handle != 0L) NativeBridge.destroy(handle)
-        handle = 0
-    }
+    fun updateTerminalTheme(value: TerminalPalette) {palette=value;connections.values.forEach {it.updateTerminalTheme(value)}}
+    fun changeAppearance(value: Appearance) {appearance=value;preferences.edit {putString("appearance",value.name)}}
+    fun pause() {foreground=false;connections.values.forEach {it.pause()}}
+    fun resume() {foreground=true;connections.values.forEach {it.resume()}}
+    override fun onCleared() {observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
 }
