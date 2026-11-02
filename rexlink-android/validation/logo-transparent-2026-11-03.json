@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-03",
+  "change": "User-supplied transparent blue paper-style dinosaur on white adaptive background",
+  "source_sha256": "0213d1a0cbb6095c70aa4fbc5557f290f1c7679a47afebde314f512820cd29e4",
+  "source_alpha_verified": true,
+  "source_copied_without_raster_changes": true,
+  "adaptive_background": "#FFFFFF",
+  "adaptive_inset_percent": 22,
+  "checks": {
+    "android_launcher_draw_passed": true,
+    "launcher_render_visually_reviewed": true,
+    "release_lint_passed": true,
+    "release_packaging_verified": true
+  },
+  "release_sha256": "c5b5f13347bbe63306ec966ea91a6382c98c1eaac6c84fe534b3b5348eb0a291",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true,
+  "reopened_after_update": true
+}

@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-03",
+  "change": "Latest close-up blue paper dinosaur with checkerboard removed",
+  "source_sha256": "dbcb9d8a56abfabb238d34dbd06bcc0227ebbcf238a8dbb713b606b128768ef0",
+  "foreground_sha256": "cb613f0add3d7db0b188ecc4943542f784ba08a5f18360b1cd2b02dced16e2bb",
+  "source_had_baked_checkerboard": true,
+  "preparation": "Built-in image_gen background-extraction edit",
+  "prompt": "artwork/rexlink/preparation-prompt.txt",
+  "output_alpha_verified": true,
+  "adaptive_background": "#FFFFFF",
+  "checks": {
+    "android_launcher_draw_passed": true,
+    "launcher_render_visually_reviewed": true,
+    "release_lint_passed": true,
+    "release_packaging_verified": true
+  },
+  "release_sha256": "da736f7a68cba3a77c2408614416d560fced162d353b33317b3f6923a7c037a7",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true,
+  "reopened_after_update": true
+}

@@ -1293,3 +1293,34 @@ render was visually reviewed. Release lint and signature, ART-profile and 16KiB
 packaging checks pass. Installed on S22+ RFCT21390SD with its data preserved; the
 installed base APK hash matches the shareable release. No terminal or notification
 behavior changed. See `validation/logo-2026-11-03.json`.
+
+
+## Transparent dinosaur icon on white — 2026-11-03
+
+Used the user's final transparent blue paper-style dinosaur PNG directly, with
+its alpha preserved and no raster editing. Android supplies the requested white
+adaptive background. The foreground inset is 22% to keep the head, tail and feet
+inside circular launcher masks. The root README uses the same transparent asset.
+
+The Android launcher inflation/draw check passes, and the actual 192-pixel render
+was visually reviewed on white. Release lint and signature, ART-profile and 16KiB
+packaging checks pass. Installed on S22+ RFCT21390SD with app data preserved and
+verified its base APK hash against the shareable release. Source/provenance and
+checks are in `artwork/rexlink/metadata.json` and
+`validation/logo-transparent-2026-11-03.json`.
+
+
+## Close-up paper dinosaur icon — 2026-11-03
+
+The latest user-selected PNG contained an opaque checkerboard. Removed that
+background with the built-in image tool in background-extraction edit mode,
+retaining transparent alpha over Android's white adaptive background. The supplied
+original, source/output hashes and exact edit prompt are retained under
+`artwork/rexlink/`. The README uses the prepared image.
+
+The focused Android launcher draw check and release lint pass. The actual
+192-pixel launcher render was visually reviewed on white; no checkerboard remains
+visible. Release signature, ART profiles and native-library alignment checks pass.
+Installed on S22+ RFCT21390SD with data preserved and verified the installed base
+APK hash against the shareable release. See
+`validation/logo-paper-2026-11-03.json`.
