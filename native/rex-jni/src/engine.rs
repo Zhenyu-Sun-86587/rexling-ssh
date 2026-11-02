@@ -8,7 +8,7 @@ use rex_core::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap,BTreeSet},
     future::{Future, pending},
     pin::Pin,
     sync::{Arc, Mutex},
@@ -121,6 +121,13 @@ struct Actor {
     activity: Value,
     activity_snapshot: Arc<Value>,
     activity_dirty: bool,
+    activity_panes: Value,
+    activity_full: bool,
+    activity_inflight_full: bool,
+    activity_pending: BTreeSet<String>,
+    activity_inflight: BTreeSet<String>,
+    activity_seen: Value,
+    attention_count: usize,
     activity_error: String,
     activity_partial: bool,
     program_task: Option<ProgramTask>,
@@ -168,7 +175,7 @@ impl Actor {
             preview_task: None,
             summary_task: None,
             activity_open:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
-            activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_error:String::new(),activity_partial:false,
+            activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
             program_task: None,
             programs: json!({}),
             directories: json!({}),
@@ -193,7 +200,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_task.is_some()}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_open && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -270,9 +277,28 @@ impl Actor {
                     if let Ok(details)=result {self.session_details=details;self.publish();}
                 },
                 result=async {match &mut self.activity_task {Some(task)=>task.await,None=>pending().await}}=>{
-                    self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
-                    match result {Ok(value)=>{if self.activity!=value["items"] {self.activity=value["items"].clone();self.activity_dirty=true;}self.activity_partial=value["partial"]==true;self.activity_error.clear();},Err(e)=>self.activity_error=e.to_string()}
-                    for (id,event) in &self.title_events {crate::activity::apply_title(&mut self.activity,&self.selected_session,id,event);}
+                    self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(1);
+                    match result {
+                        Ok(value)=>{
+                            let next=if value["full"]==true {
+                                self.activity_panes=value["panes"].clone();value["items"].clone()
+                            } else {
+                                let replaced:BTreeSet<_>=value["replace"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+                                let mut items:Vec<_>=self.activity.as_array().into_iter().flatten().filter(|item|
+                                    !replaced.contains(crate::activity::pane_key(item["session"].as_str().unwrap_or(""),item["block"].as_str().unwrap_or("")).as_str())).cloned().collect();
+                                items.extend(value["items"].as_array().into_iter().flatten().cloned());items.truncate(1024);json!(items)
+                            };
+                            if self.activity!=next {self.activity=next;self.activity_dirty=true;}
+                            self.activity_partial=value["partial"]==true;self.activity_error.clear();
+                        },
+                        Err(e)=>{
+                            self.activity_error=e.to_string();self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(5);
+                            if self.activity_inflight_full {self.activity_full=true;} else {self.activity_pending.extend(self.activity_inflight.iter().cloned());}
+                        }
+                    }
+                    self.activity_inflight.clear();
+                    for (id,event) in &self.title_events {if crate::activity::apply_title(&mut self.activity,&self.selected_session,id,event) {self.activity_dirty=true;}}
+                    self.attention_count=crate::activity::attention_count(&self.activity,&self.activity_seen);
                     self.publish();
                 },
                 result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
@@ -287,9 +313,17 @@ impl Actor {
                         self.retry=None;
                         if let Err(e)=self.reconnect().await{self.recover(e);}
                     }
-                    if self.phase=="connected" && self.activity_open && self.activity_task.is_none() && self.activity_refresh<=now {
-                        self.activity_task=Some(Box::pin(crate::activity::scan(self.endpoint.clone().unwrap())));
-                        self.activity_refresh=now+Duration::from_secs(4);self.publish();
+                    if self.phase=="connected" && self.activity_task.is_none() && self.activity_refresh<=now && (self.activity_full || !self.activity_pending.is_empty()) {
+                        self.activity_inflight_full=self.activity_full;
+                        self.activity_inflight=std::mem::take(&mut self.activity_pending);
+                        self.activity_task=if self.activity_full {
+                            self.activity_full=false;Some(Box::pin(crate::activity::scan(self.endpoint.clone().unwrap())))
+                        } else {
+                            let panes=self.activity_panes.as_array().into_iter().flatten().filter(|p|
+                                self.activity_inflight.contains(&crate::activity::pane_key(p["session"]["session_id"].as_str().unwrap_or(""),p["block"]["block_id"].as_str().unwrap_or("")))).cloned().collect();
+                            Some(Box::pin(crate::activity::refresh(self.endpoint.clone().unwrap(),panes)))
+                        };
+                        if self.activity_open {self.publish();}
                     }
                     if self.phase=="connected" && self.program_task.is_none() && !self.selected_session.is_empty()
                         && self.program_refresh<=tokio::time::Instant::now()
@@ -327,7 +361,7 @@ impl Actor {
         self.activity_task=None;
         self.program_task = None;
         self.preview_updates.clear();
-        self.session_details = json!({});self.activity=json!([]);self.activity_dirty=true;self.activity_error.clear();self.activity_partial=false;
+        self.session_details = json!({});self.activity=json!([]);self.activity_dirty=true;self.activity_panes=json!([]);self.attention_count=0;self.activity_pending.clear();self.activity_inflight.clear();self.activity_full=false;self.activity_error.clear();self.activity_partial=false;
         self.programs = json!({});
         self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
         self.retry = None;
@@ -376,7 +410,7 @@ impl Actor {
         let resumed = control.welcome()["client"]["resumed"] == true;
         self.control_token = control.token().map(str::to_owned);
         self.sessions = control
-            .call("session.attach_all", json!({"event_scope":"session"}))
+            .call("session.attach_all", json!({"event_scope":"all"}))
             .await?["sessions"]
             .clone();
         let who = control.call("server.whoami", json!({})).await?;
@@ -386,6 +420,7 @@ impl Actor {
             .to_owned();
         self.control = Some(control);
         self.phase = "connected".into();
+        self.activity_full=true;self.activity_refresh=tokio::time::Instant::now();
         self.error.clear();
         self.backoff = 1;
         if !self.selected_session.is_empty() {
@@ -553,6 +588,7 @@ impl Actor {
             event["type"].as_str(),
             Some("session_created" | "session_destroyed" | "session_changed")
         ) {
+            self.activity_full=true;
             self.sessions = self
                 .control
                 .as_mut()
@@ -564,13 +600,23 @@ impl Actor {
         if event["type"] == "session_event" {
             let inner = &event["payload"]["event"];
             if inner["type"]=="block_event" {
-                let block=&inner["payload"];
-                if block["creator_name"]=="com.superlogical.terminal"
-                    && event["payload"]["session_id"]==self.selected_session
-                    && let (Some(id),Some(name))=(block["block_id"].as_str(),block["name"].as_str()) {
-                    self.program_event(id,name,&block["payload"]);
+                let block=&inner["payload"];let sid=event["payload"]["session_id"].as_str().unwrap_or("");
+                if block["creator_name"]=="com.superlogical.terminal" && let (Some(id),Some(name))=(block["block_id"].as_str(),block["name"].as_str()) {
+                    if matches!(name,"program_status_changed"|"program_status_removed"|"process_changed"|"child_exited") {
+                        let key=crate::activity::pane_key(sid,id);
+                        if self.activity_panes.as_array().into_iter().flatten().any(|p|
+                            p["session"]["session_id"]==sid && p["block"]["block_id"]==id) {self.activity_pending.insert(key);} else {self.activity_full=true;}
+                    }
+                    if sid==self.selected_session {
+                        self.program_event(id,name,&block["payload"]);
+                        if matches!(name,"title_changed"|"process_changed"|"program_status_changed"|"program_status_removed"|"child_exited") {self.publish();}
+                    } else if name=="title_changed" && self.activity_open && crate::activity::apply_title(&mut self.activity,sid,id,&block["payload"]) {
+                        self.activity_dirty=true;self.publish();
+                    }
                 }
+                return Ok(());
             }
+            if inner["type"]=="session_view_changed" || inner["type"]=="block_closed" {self.activity_full=true;}
             if matches!(
                 inner["type"].as_str(),
                 Some("session_view_changed" | "block_owner_changed" | "block_closed")
@@ -646,14 +692,14 @@ impl Actor {
             }
             "activity" => {
                 self.activity_open=value["open"].as_bool().unwrap_or(false);
-                if !self.activity_open {self.activity_task=None;} else {
-                    self.activity_refresh=tokio::time::Instant::now();
-                    if self.phase=="connected" && !self.paused && self.activity_task.is_none() {
-                        self.activity_task=Some(Box::pin(crate::activity::scan(self.endpoint.clone().context("no server")?)));
-                        self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
-                    }
-                }
+                if self.activity_open {self.activity_full=true;self.activity_refresh=tokio::time::Instant::now();}
                 self.publish();
+            }
+            "activity_seen" => {
+                if let Some(items)=value["items"].as_object() {
+                    self.activity_seen=json!(items.iter().take(2048).filter(|(k,v)|k.len()<=1024 && v.as_str().is_some_and(|v|v.len()<=4096)).map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<_,_>>());
+                    self.attention_count=crate::activity::attention_count(&self.activity,&self.activity_seen);self.publish();
+                }
             }
             "peek" => {
                 if self.phase != "connected"

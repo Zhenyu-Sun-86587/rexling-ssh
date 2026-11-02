@@ -21,13 +21,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun ActivitySheet(sources: List<ActivitySource>,onRefresh: ()->Unit,onSelect: (ActivityTarget)->Unit,onClose: ()->Unit) {
+@Composable internal fun ActivitySheet(sources: List<ActivitySource>,onRefresh: ()->Unit,onSelect: (ActivityTarget)->Unit,onClose: ()->Unit,onSeen: (ActivityTarget)->Unit={},onMarkAll: ()->Unit={}) {
     var filter by remember {mutableStateOf(ActivityFilter.ALL)}
     val filtered=remember(sources,filter) {sources.map {it to ActivityCatalog.records(it,filter)}}
     ModalBottomSheet(onDismissRequest=onClose,containerColor=MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max=640.dp).padding(bottom=20.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Activity",Modifier.weight(1f),fontSize=20.sp,fontWeight=FontWeight.Bold)
+                TextButton(onClick=onMarkAll,enabled=sources.any {source->source.connected && source.items.any {it.state in listOf(ActivityState.BLOCKED,ActivityState.ERROR) && it.key !in source.seen}}) {Text("Mark seen",fontSize=11.sp)}
                 TextButton(onClick=onRefresh,enabled=sources.any {it.connected}) {Text("Refresh")}
                 ChromeButton(ChromeIcon.CLOSE,"Close activity",onClick=onClose)
             }
@@ -58,7 +59,7 @@ import androidx.compose.ui.unit.sp
                                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                                         Text(record.label,Modifier.weight(1f),fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
-                                        Text(record.stateLabel,fontSize=10.sp,color=if(attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                                        Text(if(record.key in source.seen) "Seen" else record.stateLabel,fontSize=10.sp,color=if(record.key in source.seen) MaterialTheme.colorScheme.onSurfaceVariant else if(attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                                     }
                                     if(record.message.isNotBlank()) Text(record.message,fontSize=12.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
                                     Text(listOf(record.sessionLabel,record.windowLabel,record.id).filter {it.isNotBlank()}.joinToString(" · "),fontSize=10.sp,
@@ -70,6 +71,12 @@ import androidx.compose.ui.unit.sp
                                         }
                                     }
                                 }
+                                if(attention && record.key !in source.seen) TextButton(
+                                    onClick={onSeen(ActivityTarget(source.server,record))},enabled=source.connected,
+                                    modifier=Modifier.semantics {contentDescription="Mark ${record.label} seen"},
+                                    shape=RoundedCornerShape(10.dp),contentPadding=PaddingValues(horizontal=8.dp,vertical=6.dp),
+                                    colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.onSurfaceVariant)
+                                ) {Text("Mark seen",fontSize=10.sp,fontWeight=FontWeight.Medium)}
                             }
                         }
                     }

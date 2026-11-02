@@ -11,7 +11,7 @@ class ActivityCatalogTest {
     @Test fun filtersAndPriorityPreserveExactPaneTargets() {
         val items=listOf(record("working"),record("done","done"),record("blocked","worker"),record("error","error"))
         val source=ActivitySource(server,true,false,"",false,items)
-        assertEquals(listOf("blocked","error","done","working"),ActivityCatalog.records(source,ActivityFilter.ALL).map {it.state.wire})
+        assertEquals(listOf("blocked","error","working","done"),ActivityCatalog.records(source,ActivityFilter.ALL).map {it.state.wire})
         assertEquals(2,ActivityCatalog.records(source,ActivityFilter.ATTENTION).size)
         assertEquals("done",ActivityCatalog.records(source,ActivityFilter.FINISHED).single().state.wire)
         assertEquals("worker",ActivityCatalog.records(source,ActivityFilter.ALL).first().id)
@@ -28,4 +28,10 @@ class ActivityCatalogTest {
         assertEquals(1,state.activity.size);assertEquals(42,state.activity.single().progress)
         assertTrue(state.activityLoading);assertTrue(state.activityPartial)
     }
+    @Test fun seenAttentionMovesBehindCurrentWork() {
+        val blocked=record("blocked");val working=record("working","work")
+        val source=ActivitySource(server,true,false,"",false,listOf(blocked,working),setOf(blocked.key))
+        assertEquals(working.key,ActivityCatalog.records(source,ActivityFilter.ALL).first().key)
+    }
+
 }

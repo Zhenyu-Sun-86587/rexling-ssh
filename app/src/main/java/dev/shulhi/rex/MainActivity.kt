@@ -207,7 +207,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
                             TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},animateWorking=!model.activityVisible,actions={
                                 TerminalActions(ready,model.connectedCount>0,blocks.isNotEmpty(),state.selectedBlock.isNotBlank(),
-                                    {model.showActivity(true)},{picker="panes"},client::createPane,client::createTab)
+                                    {model.showActivity(true)},{picker="panes"},client::createPane,client::createTab,attentionCount=model.attentionCount)
                             })
                             KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
                                 client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget) {
@@ -221,7 +221,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             }
         }
     }
-    if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity) {model.showActivity(false)}
+    if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
     if(servers) ServersSheet(model){servers=false}
     if(picker=="panes") ModalBottomSheet(onDismissRequest={picker=""}) {
         Column(Modifier.fillMaxWidth().heightIn(max=450.dp).verticalScroll(rememberScrollState()).padding(bottom=20.dp)) {

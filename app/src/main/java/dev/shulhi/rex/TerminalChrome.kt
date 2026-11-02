@@ -271,7 +271,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,canSwitch: Boolean,canSplit: Boolean,
-    onActivity: ()->Unit,onPanes: ()->Unit,onNewPane: ()->Unit,onNewTab: ()->Unit) {
+    onActivity: ()->Unit,onPanes: ()->Unit,onNewPane: ()->Unit,onNewTab: ()->Unit,attentionCount: Int=0) {
     var expanded by remember {mutableStateOf(false)}
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
         Box {
@@ -284,7 +284,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             }
         }
         Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
-            ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,onClick=onActivity)
+            ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,modifier=Modifier.semantics {stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},onClick=onActivity)
+            if(attentionCount>0) Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(6.dp).background(MaterialTheme.colorScheme.primary,RoundedCornerShape(3.dp)))
         }
     }
 }

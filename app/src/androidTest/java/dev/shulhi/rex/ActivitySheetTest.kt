@@ -49,4 +49,17 @@ class ActivitySheetTest {
         ui.onNodeWithContentDescription("Finished task, Finished, Session s, Linux").assertIsNotEnabled()
         ui.runOnIdle {assertFalse(selected)}
     }
+    @Test fun markingAnItemSeenDoesNotOpenItsTerminal() {
+        val server=ServerProfile.create("Linux","https://linux.example","a");val task=record("blocked","Review","s","p")
+        val seen=androidx.compose.runtime.mutableStateOf<Set<String>>(emptySet());var opened=0
+        ui.setContent {MaterialTheme {ActivitySheet(listOf(ActivitySource(server,true,false,"",false,listOf(task),seen.value)),{},{opened++},{},onSeen={seen.value=setOf(it.record.key)})}}
+        ui.onNodeWithContentDescription("Mark Review seen").performClick()
+        ui.onNodeWithText("Seen").assertIsDisplayed();ui.onNodeWithText("Mark seen").assertIsNotEnabled()
+        ui.runOnIdle {assertEquals(0,opened)}
+    }
+    @Test fun eyeHasAnAccessibleAttentionIndicator() {
+        ui.setContent {MaterialTheme {TerminalActions(true,true,true,true,{},{},{},{},attentionCount=2)}}
+        ui.onNodeWithContentDescription("Activity").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"2 new activity items"))
+    }
+
 }

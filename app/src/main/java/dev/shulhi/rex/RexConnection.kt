@@ -49,6 +49,13 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun keyTarget(): String = "$keyEpoch:$navigationSerial:${state.value.selectedSession}:${state.value.selectedBlock}"
     fun keyForTarget(name: String,target: String) {if(target==keyTarget()) key(name)}
     fun activity(open: Boolean) = command("activity","open" to open)
+    private var seen=runCatching {JSONObject(preferences.getString("activity_seen:$savedEndpoint","{}").orEmpty())}.getOrDefault(JSONObject())
+    fun isActivitySeen(record: ActivityRecord)=record.attentionKey.isNotBlank() && seen.optString(record.attentionKey)==record.attentionVersion
+    fun markActivitySeen(records: List<ActivityRecord>) {
+        for(record in records) if(record.attentionKey.isNotBlank() && record.attentionVersion.isNotBlank()) seen.put(record.attentionKey,record.attentionVersion)
+        if(seen.length()>2048) {val keys=seen.keys().asSequence().toList();keys.take(keys.size-2048).forEach {seen.remove(it)}}
+        preferences.edit {putString("activity_seen:$savedEndpoint",seen.toString())};command("activity_seen","items" to seen)
+    }
     private var handle = 0L
     private var resizeJob: Job? = null
     private var lastSize = 0 to 0
@@ -62,6 +69,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         try {
             handle = NativeBridge.create()
             check(handle != 0L) { "Could not start native terminal" }
+            command("activity_seen","items" to seen)
             pollJob = scope.launch(Dispatchers.IO) {
                 val decoder=TerminalUpdates()
                 while (!closed) {

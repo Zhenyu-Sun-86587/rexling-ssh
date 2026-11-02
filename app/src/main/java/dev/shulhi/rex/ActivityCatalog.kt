@@ -4,11 +4,11 @@ import org.json.JSONObject
 import java.time.Instant
 
 enum class ActivityState(val wire: String,val label: String,val priority: Int) {
-    BLOCKED("blocked","Needs you",0),ERROR("error","Failed",1),DONE("done","Finished",2),WORKING("working","Working",3),IDLE("idle","Idle",4)
+    BLOCKED("blocked","Needs you",0),ERROR("error","Failed",1),DONE("done","Finished",3),WORKING("working","Working",2),IDLE("idle","Idle",4)
 }
 data class ActivityRecord(val session: String,val sessionLabel: String,val window: String,val windowLabel: String,
     val block: String,val blockLabel: String,val id: String,val title: String,val message: String,val state: ActivityState,
-    val kind: String,val progress: Int?,val updated: String,val program: ProgramIdentity) {
+    val kind: String,val progress: Int?,val updated: String,val program: ProgramIdentity,val attentionKey: String="",val attentionVersion: String="") {
     val key: String =listOf(session,block,id).joinToString("") {"${it.length}:$it"}
     val label: String get()=program.paneTitle(blockLabel,title)
     val timestamp: Long =runCatching {Instant.parse(updated).toEpochMilli()}.getOrDefault(0)
@@ -22,16 +22,16 @@ data class ActivityRecord(val session: String,val sessionLabel: String,val windo
             val progress=if(value.isNull("progress") || state !in listOf(ActivityState.WORKING,ActivityState.BLOCKED)) null else value.optInt("progress",-1).takeIf {it in 0..100}
             return ActivityRecord(session,value.clean("sessionLabel",256),value.clean("window",256),value.clean("windowLabel",256),
                 block,value.clean("blockLabel",256),value.clean("id",128),value.clean("title",256),value.clean("message",2048),state,
-                value.clean("kind",32),progress,value.clean("updatedAt",64),ProgramIdentity.resolve(listOf(value.clean("app",64),value.clean("owner",64))))
+                value.clean("kind",32),progress,value.clean("updatedAt",64),ProgramIdentity.resolve(listOf(value.clean("app",64),value.clean("owner",64))),value.clean("attentionKey",1024),value.clean("attentionVersion",64))
         }
     }
 }
-internal data class ActivitySource(val server: ServerProfile,val connected: Boolean,val loading: Boolean,val error: String,val partial: Boolean,val items: List<ActivityRecord>)
+internal data class ActivitySource(val server: ServerProfile,val connected: Boolean,val loading: Boolean,val error: String,val partial: Boolean,val items: List<ActivityRecord>,val seen: Set<String> = emptySet())
 internal data class ActivityTarget(val server: ServerProfile,val record: ActivityRecord)
 internal enum class ActivityFilter(val label: String) {ALL("All"),ATTENTION("Needs you"),WORKING("Working"),FINISHED("Finished")}
 internal object ActivityCatalog {
     fun records(source: ActivitySource,filter: ActivityFilter): List<ActivityRecord> = source.items.filter {record->when(filter) {
         ActivityFilter.ALL->true;ActivityFilter.ATTENTION->record.state in listOf(ActivityState.BLOCKED,ActivityState.ERROR)
         ActivityFilter.WORKING->record.state==ActivityState.WORKING;ActivityFilter.FINISHED->record.state==ActivityState.DONE
-    }}.distinctBy {it.key}.sortedWith(compareBy<ActivityRecord> {it.state.priority}.thenByDescending {it.timestamp}.thenBy {it.key})
+    }}.distinctBy {it.key}.sortedWith(compareBy<ActivityRecord> {if(it.key in source.seen) it.state.priority+5 else it.state.priority}.thenByDescending {it.timestamp}.thenBy {it.key})
 }

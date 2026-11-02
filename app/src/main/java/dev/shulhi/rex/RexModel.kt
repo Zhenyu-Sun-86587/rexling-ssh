@@ -22,17 +22,28 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         activityVisible=open;connections.values.forEach {it.activity(open)};updateActivity()
     }
     internal fun refreshActivity() {connections.values.forEach {it.activity(activityVisible)}}
+    internal var attentionCount by mutableIntStateOf(0)
+        private set
     private fun updateActivity() {
         activitySources=servers.mapNotNull {server->connections[server.id]?.state?.value?.let {state->
             if(state.phase in listOf("disconnected","preview")) null else ActivitySource(server,state.connected,state.activityLoading,
-                if(state.connected) state.activityError else "Connection interrupted",state.activityPartial,state.activity)
+                if(state.connected) state.activityError else "Connection interrupted",state.activityPartial,state.activity,state.activity.filter {connections[server.id]?.isActivitySeen(it)==true}.map {it.key}.toSet())
         }}
+    }
+    internal fun markActivitySeen(target: ActivityTarget) {
+        val client=connections[target.server.id] ?: return
+        if(client.savedEndpoint!=target.server.endpoint) return
+        val current=client.state.value.activity.firstOrNull {it.key==target.record.key && it.attentionVersion==target.record.attentionVersion} ?: return
+        client.markActivitySeen(listOf(current));updateActivity()
+    }
+    internal fun markAllActivitySeen() {
+        activitySources.filter {it.connected}.forEach {source->connections[source.server.id]?.markActivitySeen(source.items)};updateActivity()
     }
     internal fun openActivity(target: ActivityTarget) {
         val profile=servers.firstOrNull {it.id==target.server.id && it.endpoint==target.server.endpoint} ?: return
         val source=activitySources.firstOrNull {it.server.id==profile.id && it.connected} ?: return
         val record=source.items.firstOrNull {it.key==target.record.key} ?: return
-        rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
+        markActivitySeen(target);rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
     }
     private val preferences=application.getSharedPreferences(preferenceName,0)
     internal val themes by lazy {ThemeCatalog.load(application)}
@@ -90,6 +101,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                 client.chromeState.collect {state->
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
+                    attentionCount=connections.values.sumOf {if(it.state.value.connected) it.state.value.attentionCount else 0}
                     updateSessionTargets()
                     if(activityVisible) updateActivity()
                     if(closingSessionKey.isNotBlank() && profile.id==closingServerId) {
