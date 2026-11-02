@@ -34,7 +34,7 @@ import kotlin.math.roundToInt
 @Composable internal fun TerminalCarousel(blocks: List<BlockItem>,selectedBlock: String,liveBlock: String,
     liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
-    onView: (TerminalView)->Unit,modifier: Modifier=Modifier) {
+    onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null) {
     val palette=LocalTerminalPalette.current
     val scope=rememberCoroutineScope()
     var visualId by remember(blocks.map {it.id}) {mutableStateOf(selectedBlock)}
@@ -105,7 +105,8 @@ import kotlin.math.roundToInt
                             update={view ->
                                 view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
                                 view.setTerminalPaddingDp(12,8,if(blocks.size>1) 14 else 6)
-                                view.palette=palette;view.textSp=fontSize;view.screen=frame
+                                view.palette=palette;view.textSp=fontSize
+                                if(block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
                                 view.onInput=onInput

@@ -2,9 +2,6 @@ package dev.shulhi.rex
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlinx.coroutines.suspendCancellableCoroutine
-import android.view.Choreographer
-import kotlin.coroutines.resume
 
 /** State is decoder-local: row deltas never cross a connection or an unknown base. */
 internal class TerminalUpdates {
@@ -69,10 +66,4 @@ internal class TerminalUpdates {
         state=next;revision=nextRevision
         return next
     }
-}
-internal suspend fun awaitDisplayFrame()=suspendCancellableCoroutine<Unit> {continuation->
-    val clock=Choreographer.getInstance()
-    val callback=Choreographer.FrameCallback {if(continuation.isActive) continuation.resume(Unit)}
-    clock.postFrameCallback(callback)
-    continuation.invokeOnCancellation {clock.removeFrameCallback(callback)}
 }

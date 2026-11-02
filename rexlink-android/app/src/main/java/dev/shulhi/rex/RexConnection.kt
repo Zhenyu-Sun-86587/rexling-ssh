@@ -27,6 +27,54 @@ internal class RexConnection(application: Application, private val scope: Corout
     val chromeState: StateFlow<AppState> = mutableChrome
     private val mutableTerminal=MutableStateFlow<TerminalScreen?>(null)
     val terminal: StateFlow<TerminalScreen?> = mutableTerminal
+    private val mutableDisplayLayout=MutableStateFlow(TerminalDisplayLayout())
+    val displayLayout: StateFlow<TerminalDisplayLayout> = mutableDisplayLayout
+    private data class DisplayFrame(val target: String,val screen: TerminalScreen,val token: String)
+    private var queuedScreen: TerminalScreen?=null
+    private var queuedTarget=""
+    private var displayedToken: String?=null
+    private var displayedTarget=""
+    private var boundTarget=""
+    private var boundView: java.lang.ref.WeakReference<TerminalView>?=null
+    private val displayFrames by lazy {LatestDisplayFrame<DisplayFrame>(AndroidDisplayFrameClock()) {frame->
+        queuedScreen=null;queuedTarget=""
+        if(!closed && foreground && visible && !navigationRequest.pending && frame.target==frameTarget(state.value)) {
+            android.os.Trace.beginSection("Rexlink.present.${frame.token}")
+            try {
+                displayedTarget=frame.target;displayedToken=frame.token
+                if(boundTarget==frame.target) boundView?.get()?.let {view->if(view.isAttachedToWindow) view.presentFrame(frame.screen,frame.token)}
+                mutableTerminal.value=frame.screen
+                mutableDisplayLayout.value=TerminalDisplayLayout(frame.target,true,frame.screen.columns,frame.screen.rows,frame.screen.scroll.below>0)
+            } finally {android.os.Trace.endSection()}
+        }
+    }}
+    private fun frameTarget(value: AppState)="${value.endpoint}:${value.connectionEpoch}:${value.navigationId}:${value.selectedSession}:${value.selectedBlock}"
+    private fun cancelDisplay() {displayFrames.clear();queuedScreen=null;queuedTarget="";boundView=null;boundTarget=""}
+    private fun queueDisplay(next: AppState) {
+        val target=frameTarget(next)
+        if(next.screen==null || (displayedTarget.isNotEmpty() && displayedTarget!=target)) {
+            cancelDisplay();displayedTarget="";mutableTerminal.value=null;mutableDisplayLayout.value=TerminalDisplayLayout(target=target)
+        }
+        if(target==displayedTarget && next.screen==mutableTerminal.value) {displayFrames.clear();queuedScreen=null;queuedTarget="";return}
+        if(target==queuedTarget && next.screen==queuedScreen) return
+        if(next.screen!=null && foreground && visible && !navigationRequest.pending) {
+            queuedScreen=next.screen;queuedTarget=target
+            displayFrames.offer(DisplayFrame(target,next.screen,"$handle.${next.revision}"))
+        }
+    }
+    // Compose observes geometry/scroll affordances; live pixels are pushed to
+    // the Android view. This snapshot is only for mounting/previews.
+    fun screenForLayout(layout: TerminalDisplayLayout): TerminalScreen? =
+        mutableTerminal.value.takeIf {layout.hasScreen && layout.target==displayedTarget}
+    fun bindTerminalView(block: String,view: TerminalView): Boolean {
+        val current=state.value
+        val live=current.selectedBlock.ifBlank {if(current.phase=="preview") "preview" else ""}
+        if(block!=live) return false
+        boundTarget=frameTarget(current);boundView=java.lang.ref.WeakReference(view)
+        val latest=mutableTerminal.value.takeIf {displayedTarget==boundTarget} ?: return false
+        view.presentFrame(latest,displayedToken)
+        return true
+    }
     var screenDimensions by mutableStateOf<Pair<Int,Int>?>(null)
         private set
     var keyboardRequest by mutableStateOf("")
@@ -66,7 +114,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) {resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else activation.navigate();command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -84,8 +132,8 @@ internal class RexConnection(application: Application, private val scope: Corout
                         try {
                             android.os.Trace.beginSection("Rexlet.decodeUpdate")
                             val next=try {decoder.decode(NativeBridge.readUpdate(handle,decoder.revision))} finally {android.os.Trace.endSection()}
+                            android.os.Trace.beginSection("Rexlink.ready.$handle.${next.revision}");android.os.Trace.endSection()
                             withContext(Dispatchers.Main.immediate) {
-                                if(visible) awaitDisplayFrame()
                                 navigationRequest = navigationRequest.acknowledge(next)
                                 val frames=paneFrames.toMutableMap()
                                 frames.putAll(next.previewFrames)
@@ -105,7 +153,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 if(old.controlled!=next.controlled || old.selectedBlock!=next.selectedBlock || old.phase!=next.phase) cancelKeyRepeats()
                                 if(!next.controlled || old.selectedBlock!=next.selectedBlock) resetModifiers()
                                 mutableState.value = next
-                                mutableTerminal.value=next.screen
+                                queueDisplay(next)
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
                                 mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())
@@ -138,7 +186,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
-        cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
+        cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         resetModifiers()
         val value = server.trim()
         navigationRequest = NavigationRequest()
@@ -148,7 +196,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         preferences.edit { putString("endpoint", value) }
         command("connect", "server" to value)
     }
-    fun disconnect() { cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         if (id == (navigationRequest.session ?: state.value.selectedSession)) return
@@ -157,7 +205,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             lastSessionId=old
             preferences.edit { putString("last_session:${state.value.endpoint}",old) }
         }
-        cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
+        cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         navigationRequest = NavigationRequest(session = id, id = ++navigationSerial)
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         command("session", "id" to id, "navigationId" to navigationRequest.id)
@@ -167,7 +215,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
         if (current.windows.none { window -> window.blocks.any { it.id == id } }) return
-        cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
+        cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         navigationRequest = NavigationRequest(block = id, id = ++navigationSerial)
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         navigation.remember(current.selectedSession, current.windows, id)
@@ -179,7 +227,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(current.selectedSession.isNotBlank() && current.selectedSession!=session) {
             lastSessionId=current.selectedSession;preferences.edit {putString("last_session:${current.endpoint}",lastSessionId)}
         }
-        cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
+        cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
         command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
     }
@@ -281,7 +329,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun releaseControl() { activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
-        cancelKeyRepeats()
+        cancelDisplay();cancelKeyRepeats()
         navigationRequest = NavigationRequest()
         foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
@@ -322,6 +370,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun applySize() = resize(lastSize.first.coerceAtLeast(1), lastSize.second.coerceAtLeast(1))
     fun close() {
+        cancelDisplay()
         closed=true;pollJob?.cancel();resizeJob?.cancel()
         if (handle != 0L) NativeBridge.destroy(handle)
         handle = 0

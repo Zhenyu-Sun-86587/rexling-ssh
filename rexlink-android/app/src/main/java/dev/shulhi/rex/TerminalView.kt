@@ -67,8 +67,18 @@ class TerminalView(context: Context) : View(context) {
     var onPaneSwipe: (Int) -> Unit = {}
     var onDimensions: (Int, Int) -> Unit = { _, _ -> }
         set(value) {val changed=field!=value;field=value;if(changed && width>0 && height>0) reportDimensions(force=true)}
-    var screen: TerminalScreen? = null
-        set(value) { if(field!==value) {val columns=field?.columns;field = value;if(columns!=value?.columns) configureRendering();postInvalidateOnAnimation()} }
+    private var currentScreen: TerminalScreen?=null
+    var screen: TerminalScreen?
+        get()=currentScreen
+        set(value) {setScreen(value,false)}
+    private var frameTraceToken: String?=null
+    internal fun presentFrame(value: TerminalScreen?,token: String?=null) {setScreen(value,true);frameTraceToken=token}
+    private fun setScreen(value: TerminalScreen?,onDisplayFrame: Boolean) {
+        if(currentScreen===value) return
+        val columns=currentScreen?.columns;currentScreen=value;frameTraceToken=null
+        if(columns!=value?.columns) configureRendering()
+        if(onDisplayFrame) invalidate() else postInvalidateOnAnimation()
+    }
     var controlled: Boolean = false
         set(value) {
             if (field != value) {
@@ -151,6 +161,8 @@ class TerminalView(context: Context) : View(context) {
         val visibleColumns = minOf(frame.columns, max(1, ceil(contentWidth / cellWidth).toInt()))
         val visibleRows = minOf(frame.rows, max(1, ceil(contentHeight / cellHeight).toInt()))
         android.os.Trace.beginSection("Rexlet.drawTerminal")
+        val token=frameTraceToken.takeIf {selection==null}
+        if(token!=null) android.os.Trace.beginSection("Rexlink.draw.$token")
         val geometry="$width:$height:${frame.columns}:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom:${canvas.isHardwareAccelerated}"
         if(geometry!=rowGeometry) {clearRows();recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
         val rowLinks=linkIndex.update(frame)
@@ -205,6 +217,7 @@ class TerminalView(context: Context) : View(context) {
         canvas.restore()
         drawSelection(canvas)
         canvas.restoreToCount(saved)
+        if(token!=null) android.os.Trace.endSection()
         android.os.Trace.endSection()
     }
     private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float) {
