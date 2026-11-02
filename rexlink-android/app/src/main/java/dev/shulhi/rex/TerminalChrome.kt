@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlin.math.abs
 
 internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE }
@@ -113,16 +114,26 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
-    val pager=rememberPagerState(initialPage=selectedIndex,pageCount={sessions.size.coerceAtLeast(1)})
+    val looping=sessions.size>1
+    val sessionIds=sessions.map {it.id}
+    val pager=key(sessionIds) {rememberPagerState(initialPage=selectedIndex+if(looping) 1 else 0,
+        pageCount={if(looping) sessions.size+2 else 1})}
+    fun logicalPage(page: Int)=if(looping) Math.floorMod(page-1,sessions.size) else 0
     val latestSelected by rememberUpdatedState(selectedId)
     val latestSelect by rememberUpdatedState(onSelect)
-    LaunchedEffect(selectedId,sessions.map { it.id }) {
-        if(sessions.isNotEmpty() && !pager.isScrollInProgress && pager.currentPage!=selectedIndex) pager.animateScrollToPage(selectedIndex)
+    LaunchedEffect(selectedId,sessionIds) {
+        if(sessions.isNotEmpty() && !pager.isScrollInProgress) {
+            val destination=selectedIndex+if(looping) 1 else 0
+            if(looping && (pager.currentPage==0 || pager.currentPage==sessions.size+1)) pager.scrollToPage(destination)
+            else if(logicalPage(pager.currentPage)!=selectedIndex) pager.animateScrollToPage(destination)
+        }
     }
     LaunchedEffect(pager,sessions,enabled) {
-        // The initial page is not a swipe; startup selection comes from saved session history.
-        snapshotFlow { pager.settledPage }.distinctUntilChanged().drop(1).collect { index ->
-            if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let { latestSelect(it.id) }
+        // Sentinel pages let either edge wrap naturally. Rebase invisibly after
+        // settling; distinct logical indices prevent a duplicate navigation.
+        snapshotFlow {pager.settledPage}.map {logicalPage(it)}.distinctUntilChanged().drop(1).collect {index->
+            if(looping && (pager.settledPage==0 || pager.settledPage==sessions.size+1)) pager.scrollToPage(index+1)
+            if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let {latestSelect(it.id)}
         }
     }
     Row(Modifier.fillMaxWidth().heightIn(min=50.dp).padding(horizontal=9.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -144,9 +155,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 val pageWidth=if(expanded) 160.dp else maxWidth.coerceAtLeast(40.dp)
                 val pagePadding=if(expanded) ((maxWidth-pageWidth)/2).coerceAtLeast(0.dp) else 0.dp
                 Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else 17.dp),userScrollEnabled=enabled && sessions.size>1,
-                        pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={sessions.getOrNull(it)?.id ?: "empty"}) { index ->
-                        val item=sessions.getOrNull(index)
+                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else 17.dp).semantics {contentDescription="Session strip"},userScrollEnabled=enabled && sessions.size>1,
+                        pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={"$it:${sessions.getOrNull(logicalPage(it))?.id.orEmpty()}"}) { page ->
+                        val item=sessions.getOrNull(logicalPage(page))
                         val active=item?.id==selectedId
                         Row(Modifier.requiredWidth(pageWidth).fillMaxHeight().clip(RoundedCornerShape(19.dp))
                             .border(1.dp,if(expanded && active) MaterialTheme.colorScheme.primary.copy(alpha=.5f) else Color.Transparent,RoundedCornerShape(19.dp))
@@ -163,7 +174,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(if(expanded) 13.dp else 11.dp),MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    if(expanded && sessions.size>1) PositionDots(pager.currentPage,sessions.size,Modifier.height(5.dp))
+                    if(expanded && sessions.size>1) PositionDots(logicalPage(pager.currentPage),sessions.size,Modifier.height(5.dp))
                 }
             }
         }

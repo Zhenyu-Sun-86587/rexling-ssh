@@ -8,14 +8,14 @@ class WorkspaceNavigation {
     fun neighbourSession(available: List<SessionItem>, session: String, step: Int): String? {
         if (step != -1 && step != 1) return null
         val index = available.indexOfFirst { it.id == session }
-        return if (index < 0) null else available.getOrNull(index + step)?.id
+        return if (index < 0 || available.size<2) null else available[Math.floorMod(index+step,available.size)].id
     }
 
     fun neighbour(available: List<WindowItem>, block: String, step: Int): String? {
         if (step != -1 && step != 1) return null
         val window = available.firstOrNull { it.blocks.any { pane -> pane.id == block } } ?: return null
         val index = window.blocks.indexOfFirst { it.id == block }
-        return window.blocks.getOrNull(index + step)?.id
+        return if(window.blocks.size<2) null else window.blocks[Math.floorMod(index+step,window.blocks.size)].id
     }
 
     fun remember(session: String, available: List<WindowItem>, block: String) {

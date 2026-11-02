@@ -129,7 +129,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock) {
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
-        if(index>=0) client.prefetchPanes(listOfNotNull(blocks.getOrNull(index-1)?.id,blocks.getOrNull(index+1)?.id))
+        if(index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
     }
     LaunchedEffect(ready,chosen,client.hasScreen) {if(ready) client.claimActivePane()}
     LaunchedEffect(controlled,client.keyboardRequest,terminalView) {

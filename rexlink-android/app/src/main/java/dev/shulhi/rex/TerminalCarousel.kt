@@ -63,31 +63,35 @@ import kotlin.math.roundToInt
         val candidate by remember(stride,blocks) {derivedStateOf {
             if(settling || toast) blocks.indexOfFirst {it.id==(settlingTarget ?: visualId)}.coerceAtLeast(0) else {
                 val current=blocks.indexOfFirst {it.id==visualId}.coerceAtLeast(0)
-                (current+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
+                if(blocks.isEmpty()) 0 else Math.floorMod(current+if(drag< -stride*.12f) 1 else if(drag>stride*.12f) -1 else 0,blocks.size)
             }
         }}
         val flingSpeed=with(LocalDensity.current){450.dp.toPx()}
         fun finish(dx: Float,velocity: Float) {
             val step=if(dx < -stride*.18f || (dx< -20f && velocity < -flingSpeed)) 1 else if(dx > stride*.18f || (dx>20f && velocity>flingSpeed)) -1 else 0
-            val target=(index+step).coerceIn(0,(blocks.size-1).coerceAtLeast(0))
+            val target=if(blocks.isEmpty()) 0 else Math.floorMod(index+step,blocks.size)
             Snapshot.withMutableSnapshot {
                 settlingTarget=blocks.getOrNull(target)?.id;toast=target!=index;settling=true;dragging=false
             }
             if(target!=index) blocks.getOrNull(target)?.let {latestSelect(it.id)}
             scope.launch {
                 val animation=Animatable(drag)
-                animation.animateTo(if(target==index) 0f else if(target>index) -stride else stride,tween(190)) {drag=value}
+                animation.animateTo(if(target==index) 0f else if(step>0) -stride else stride,tween(190)) {drag=value}
                 Snapshot.withMutableSnapshot {
                     if(target!=index) visualId=blocks[target].id
                     drag=0f;settling=false
                 }
             }
         }
-        for(i in (index-1).coerceAtLeast(0)..(index+1).coerceAtMost(blocks.lastIndex)) {
+        // Two-pane rings share one neighbor: render it on the gesture side so
+        // each real pane keeps one AndroidView and one stable key.
+        val offsets=when(blocks.size) {0->emptyList();1->listOf(0);2->listOf(0,if(drag>0) -1 else 1);else->listOf(-1,0,1)}
+        for(offset in offsets) {
+            val i=Math.floorMod(index+offset,blocks.size)
             val block=blocks[i]
-            val center=i==index
+            val center=offset==0
             val frame=if(block.id==liveBlock && liveScreen!=null) liveScreen else frames[block.id]
-            val pageOffset=(i-index)*stride
+            val pageOffset=offset*stride
             key(block.id) {
                 Box(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
                     val position=pageOffset+drag
@@ -111,7 +115,7 @@ import kotlin.math.roundToInt
                                 view.onPaneDrag=if(center) {dx,active ->
                                     if(!settling) {
                                         dragging=active;toast=false
-                                        drag=if((index==0&&dx>0)||(index==blocks.lastIndex&&dx<0)) dx*.2f else dx
+                                        drag=if(blocks.size<2) dx*.2f else dx
                                         if(!active) drag=0f
                                     }
                                 } else null

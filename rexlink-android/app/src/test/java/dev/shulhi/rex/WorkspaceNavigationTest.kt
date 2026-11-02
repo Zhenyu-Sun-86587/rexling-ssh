@@ -17,23 +17,23 @@ class WorkspaceNavigationTest {
         assertEquals("a", navigation.pane("session-b", listOf(first, second)))
     }
 
-    @Test fun swipesStayWithinTheirTabAndStopAtTheEdges() {
+    @Test fun paneSwipesWrapWithinTheirOwnTab() {
         val navigation = WorkspaceNavigation()
         assertEquals("b", navigation.neighbour(listOf(first, second), "a", 1))
         assertEquals("a", navigation.neighbour(listOf(first, second), "b", -1))
-        assertNull(navigation.neighbour(listOf(first, second), "a", -1))
-        assertNull(navigation.neighbour(listOf(first, second), "b", 1))
+        assertEquals("b",navigation.neighbour(listOf(first, second), "a", -1))
+        assertEquals("a",navigation.neighbour(listOf(first, second), "b", 1))
         assertNull(navigation.neighbour(listOf(first, second), "missing", 1))
         assertNull(navigation.neighbour(listOf(first, second), "a", 0))
     }
 
-    @Test fun sessionSwipesFollowThePickerOrderAndStopAtTheEdges() {
+    @Test fun sessionSwipesFollowPickerOrderAndWrapAtBothEdges() {
         val navigation = WorkspaceNavigation()
         val sessions = listOf(SessionItem("one", "First"), SessionItem("two", "Second"), SessionItem("three", "Third"))
         assertEquals("two", navigation.neighbourSession(sessions, "one", 1))
         assertEquals("two", navigation.neighbourSession(sessions, "three", -1))
-        assertNull(navigation.neighbourSession(sessions, "one", -1))
-        assertNull(navigation.neighbourSession(sessions, "three", 1))
+        assertEquals("three",navigation.neighbourSession(sessions, "one", -1))
+        assertEquals("one",navigation.neighbourSession(sessions, "three", 1))
         assertNull(navigation.neighbourSession(sessions, "missing", 1))
         assertNull(navigation.neighbourSession(sessions, "one", 0))
     }
@@ -47,4 +47,11 @@ class WorkspaceNavigationTest {
         assertNull(navigation.pane("session", emptyList<WindowItem>()))
         assertNull(navigation.pane("session", first.copy(blocks = emptyList())))
     }
+    @Test fun emptyAndSingleItemListsDoNotNavigate() {
+        val navigation=WorkspaceNavigation()
+        assertNull(navigation.neighbourSession(emptyList(),"a",1))
+        assertNull(navigation.neighbourSession(listOf(SessionItem("a","Only")),"a",-1))
+        assertNull(navigation.neighbour(listOf(second),"c",1))
+    }
+
 }
