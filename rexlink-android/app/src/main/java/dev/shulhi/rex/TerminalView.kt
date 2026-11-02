@@ -8,7 +8,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Picture
 import android.graphics.Paint
 import android.text.InputType
 import android.view.ActionMode
@@ -83,7 +82,7 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
     private val fonts = TerminalFonts(context)
-    private data class RecordedRow(val cells: List<TerminalCell>,val picture: Picture,val links: List<TerminalLink>)
+    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>)
     private val linkIndex=TerminalLinks.Index()
     private var recorded= arrayOfNulls<RecordedRow>(0)
     private var rowGeometry=""
@@ -91,7 +90,7 @@ class TerminalView(context: Context) : View(context) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int,String>,Float>?)=size>4096
     }
     internal var recordedRowCount=0;private set
-    private fun clearRows() {recorded=arrayOfNulls(0);rowGeometry=""}
+    private fun clearRows() {recorded.forEach {it?.recording?.release()};recorded=arrayOfNulls(0);rowGeometry=""}
     private fun advance(text: String,style: Int): Float=advances.getOrPut(style to text){paint.measureText(text)}
     private var cellWidth = 1f
     private var cellHeight = 1f
@@ -152,29 +151,30 @@ class TerminalView(context: Context) : View(context) {
         val visibleColumns = minOf(frame.columns, max(1, ceil(contentWidth / cellWidth).toInt()))
         val visibleRows = minOf(frame.rows, max(1, ceil(contentHeight / cellHeight).toInt()))
         android.os.Trace.beginSection("Rexlet.drawTerminal")
-        val geometry="$width:$height:${frame.columns}:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom"
-        if(geometry!=rowGeometry) {recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
+        val geometry="$width:$height:${frame.columns}:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom:${canvas.isHardwareAccelerated}"
+        if(geometry!=rowGeometry) {clearRows();recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
         val rowLinks=linkIndex.update(frame)
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
             var row=recorded[y]
             val links=rowLinks[y]
-            if(row==null || row.cells!=cells || row.links!=links) {
+            if(row==null || !row.recording.valid || row.cells!=cells || row.links!=links) {
                 val origin=if(y==0) 0f else insetTop+y*cellHeight
                 val top=if(y==0) insetTop else 0f
                 val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
-                val picture=Picture()
-                val target=picture.beginRecording(width,bottom.toInt().coerceAtLeast(1))
-                drawRow(target,cells,visibleColumns,top,bottom)
-                target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
-                backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
-                for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
-                    insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
-                target.restore()
-                picture.endRecording();row=RecordedRow(cells,picture,links);recorded[y]=row;recordedRowCount++
+                val recording=row?.recording ?: TerminalRowRecording.create(canvas.isHardwareAccelerated)
+                recording.record(width,bottom.toInt().coerceAtLeast(1)) { target ->
+                    drawRow(target,cells,visibleColumns,top,bottom)
+                    target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
+                    backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
+                    for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
+                        insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
+                    target.restore()
+                }
+                row=RecordedRow(cells,recording,links);recorded[y]=row;recordedRowCount++
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
-            canvas.drawPicture(row.picture);canvas.restore()
+            row.recording.draw(canvas);canvas.restore()
         }
         canvas.save()
         canvas.clipRect(insetHorizontal,insetTop,width-insetHorizontal,height-insetBottom)
@@ -210,7 +210,7 @@ class TerminalView(context: Context) : View(context) {
     private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float) {
         var start=0;var end=0;var color=0
         fun flush() {
-            if(end<=start || start>=columns) return
+            if(end<=start || start>=columns || color==palette.background) return
             backgroundPaint.color=color
             canvas.drawRect(if(start==0) 0f else insetHorizontal+start*cellWidth,0f,
                 if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth,bottom,backgroundPaint)
@@ -276,7 +276,7 @@ class TerminalView(context: Context) : View(context) {
             postInvalidateOnAnimation()
         }
     }
-    override fun onDetachedFromWindow() {clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
+    override fun onDetachedFromWindow() {clearRows();clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if(selection!=null && event.actionMasked==MotionEvent.ACTION_SCROLL) return true
         if(interactive && event.actionMasked==MotionEvent.ACTION_SCROLL) {
