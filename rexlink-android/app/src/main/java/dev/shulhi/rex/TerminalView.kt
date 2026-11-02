@@ -171,7 +171,8 @@ class TerminalView(context: Context) : View(context) {
         if(token!=null) android.os.Trace.beginSection("Rexlink.draw.$token")
         val geometry="$width:$height:${frame.columns}:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom:${canvas.isHardwareAccelerated}"
         if(geometry!=rowGeometry) {clearRows();recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
-        val rowLinks=linkIndex.update(frame)
+        android.os.Trace.beginSection("Rexlink.linkIndex")
+        val rowLinks=try {linkIndex.update(frame)} finally {android.os.Trace.endSection()}
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
             var row=recorded[y]
