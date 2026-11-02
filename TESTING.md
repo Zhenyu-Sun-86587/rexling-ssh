@@ -27,3 +27,7 @@ Hold an arrow, Delete or Backspace to repeat. Sliding the arrow strip scrolls it
 Activity groups reported program states by connected server. Filter Needs you, Working or Finished; tap an entry to open and take control of its exact session and pane. It refreshes while open and stops scanning when dismissed or backgrounded. Programs must report Rex status; missing reports are not inferred from output.
 
 The hold-Ctrl popup uses a three-by-three grid. ^J sends line feed (byte 0x0A).
+
+Open **⋮ → Appearance** for System/Dark/Light mode and separate light/dark preset choices. Each list starts with **Rexlink Default**, which keeps the original blue app and terminal colors. The 41 presets from the installed Rex catalog (27 dark, 14 light) recolor panels, controls, menus and terminal together. Choices are saved locally on the phone; changing the Mac's selected theme does not change these selections. Taking control applies the chosen terminal palette to the shared pane. Programs using explicit RGB colors retain those colors.
+
+Open **⋮ → Font size** for a preview, slider and −/+ controls from 8 to 20 sp in 1 sp steps. The chosen size is saved across restarts.
