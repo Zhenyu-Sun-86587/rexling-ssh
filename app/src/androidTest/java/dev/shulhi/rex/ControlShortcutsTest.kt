@@ -72,6 +72,17 @@ class ControlShortcutsTest {
         ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
         ui.runOnIdle {assertEquals(listOf("w"),sent);assertEquals(0,toggles)}
     }
+    @Test fun holdSlideAndReleaseCanReachTheNewControlJCell() {
+        fixture();val start=bounds("Control");val down=SystemClock.uptimeMillis();ui.mainClock.autoAdvance=false
+        touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
+        ui.mainClock.advanceTimeBy(650);repeat(3){ui.mainClock.advanceTimeByFrame()};ui.waitForIdle()
+        val target=bounds("Control J")
+        touch(MotionEvent.ACTION_MOVE,target.exactCenterX(),target.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.onNodeWithContentDescription("Control J").assertIsSelected()
+        touch(MotionEvent.ACTION_UP,target.exactCenterX(),target.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.runOnIdle {assertEquals(listOf("j"),sent);assertEquals(0,toggles)}
+    }
     @Test fun releasingOutsideThePopupCancelsWithoutTogglingOrTyping() {
         fixture();val start=bounds("Control");val down=SystemClock.uptimeMillis();ui.mainClock.autoAdvance=false
         touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
