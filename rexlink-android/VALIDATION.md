@@ -1121,3 +1121,23 @@ The same overlay covers connection/reconnection and creation progress. Release
 build, release lint, signature/ART/16 KiB checks pass. This is a layout-only
 change; native/input and renderer logic are unchanged. The release is installed
 on S22+; its base APK matches the shareable dist APK: `bc430bf37d430098295c08844e1eb5e6047c0a8a4b34735272b358d58729dee6`.
+
+
+## Stable three-line header (2026-11-02)
+
+The compact header allocates fixed font-scaled slots for its title and directory,
+and a fixed minimum session row that grows for large system fonts. The directory
+slot remains reserved when metadata is temporarily empty. Fallback star/emoji
+fonts can move a title baseline even within a fixed-height box (reproduced as a
+3 px change with ✳). The title therefore places its text against a cached
+primary-font reference baseline while keeping reported title characters intact.
+
+Five emulator checks pass: animated star/braille/emoji title variants keep their
+allocated row size, actual placed baseline, directory/session positions and
+header size unchanged at 1×, 1.5× and 2× font scaling; temporary directory absence
+retains its slot; existing session wrapping/catalog behavior remains intact.
+The geometry check distinguishes variable fallback glyph bounds from the fixed
+line allocation and verifies actual placed coordinates. Release build, release
+lint, signature, ART profiles and 16 KiB alignment checks pass. Native/input and
+terminal renderer logic are unchanged. The final release is installed on S22+;
+its base APK matches the shareable dist APK: `2504eae05ec3ccc8261f8f66bb106ba859e5379f337dfbfafe38124cdce5c4d8`.

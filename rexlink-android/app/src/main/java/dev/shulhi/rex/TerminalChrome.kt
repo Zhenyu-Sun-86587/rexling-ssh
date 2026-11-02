@@ -35,6 +35,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.combinedClickable
@@ -113,6 +120,15 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
     onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
+    val titleHeight=with(LocalDensity.current) {16.sp.toDp()}
+    val directoryHeight=with(LocalDensity.current) {12.sp.toDp()}
+    val sessionHeight=maxOf(17.dp,directoryHeight)
+    val lineStyle=androidx.compose.ui.text.TextStyle(
+        platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false),
+        lineHeightStyle=LineHeightStyle(LineHeightStyle.Alignment.Center,LineHeightStyle.Trim.None))
+    val titleBaseline=rememberTextMeasurer().measure("Ag",
+        style=androidx.compose.material3.LocalTextStyle.current.merge(lineStyle).copy(fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,letterSpacing=0.sp),
+        maxLines=1).firstBaseline.roundToInt()
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val looping=sessions.size>1
     val sessionIds=sessions.map {it.id}
@@ -145,17 +161,23 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         }
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.Center) {
             if(!expanded) {
-                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,
-                    overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth())
-                if(directory.isNotBlank()) Text(directory,Modifier.fillMaxWidth(),
-                    fontFamily=MonoUi,fontSize=9.sp,lineHeight=12.sp,style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,
+                    overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth().height(titleHeight).layout {measurable,constraints->
+                        // Fallback/emoji metrics must not move the ordinary title text.
+                        val text=measurable.measure(constraints.copy(minHeight=0,maxHeight=Constraints.Infinity))
+                        layout(text.width,constraints.maxHeight,mapOf(FirstBaseline to titleBaseline)) {
+                            text.placeRelative(0,titleBaseline-text[FirstBaseline])
+                        }
+                    })
+                Text(directory,Modifier.fillMaxWidth().height(directoryHeight),
+                    fontFamily=MonoUi,fontSize=9.sp,lineHeight=12.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else 17.dp)) {
+            BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else sessionHeight)) {
                 val pageWidth=if(expanded) 160.dp else maxWidth.coerceAtLeast(40.dp)
                 val pagePadding=if(expanded) ((maxWidth-pageWidth)/2).coerceAtLeast(0.dp) else 0.dp
                 Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
-                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else 17.dp).semantics {contentDescription="Session strip"},userScrollEnabled=enabled && sessions.size>1,
+                    HorizontalPager(pager,Modifier.fillMaxWidth().height(if(expanded) 32.dp else sessionHeight).semantics {contentDescription="Session strip"},userScrollEnabled=enabled && sessions.size>1,
                         pageSize=PageSize.Fixed(pageWidth),contentPadding=PaddingValues(horizontal=pagePadding),pageSpacing=6.dp,key={"$it:${sessions.getOrNull(logicalPage(it))?.id.orEmpty()}"}) { page ->
                         val item=sessions.getOrNull(logicalPage(page))
                         val active=item?.id==selectedId
