@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -37,9 +38,11 @@ import androidx.compose.ui.unit.dp
         for((layer,index) in others.reversed().withIndex()) {
             val shift=step*(others.size-layer)
             PaneProgramTile(items[index],Modifier.offset(x=shift,y=frontY+1.dp)
+                .graphicsLayer {rotationZ=3f+(others.size-layer-1)*3f}
                 .size(if(framed) 32.dp else 21.dp,if(framed) 25.dp else 16.dp),framed)
         }
         PaneProgramTile(active,Modifier.offset(y=frontY)
+            .graphicsLayer {rotationZ=if(others.isNotEmpty()) -6f else 0f}
             .size(if(framed) 34.dp else 22.dp,if(framed) 27.dp else 18.dp),framed)
     }
 }
