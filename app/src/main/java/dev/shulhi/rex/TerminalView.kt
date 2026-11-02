@@ -1,5 +1,9 @@
 package dev.shulhi.rex
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -32,6 +36,8 @@ class TerminalView(context: Context) : View(context) {
     private var selectionMode: ActionMode?=null
     private var selectionTouch=false
     private var moveSelectionAnchor=false
+    private var pressedLink: TerminalLink?=null
+    internal var onOpenLink: (String)->Unit={openWebLink(it)}
     private var pressX=0f
     private var pressY=0f
     private val longPress=Runnable {performLongClick()}
@@ -73,7 +79,7 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
     private val fonts = TerminalFonts(context)
-    private data class RecordedRow(val cells: List<TerminalCell>,val picture: Picture)
+    private data class RecordedRow(val cells: List<TerminalCell>,val picture: Picture,val links: List<TerminalLink>,val continues: Boolean,val boundary: Boolean)
     private var recorded= arrayOfNulls<RecordedRow>(0)
     private var rowGeometry=""
     private val advances=object: LinkedHashMap<Pair<Int,String>,Float>(256,.75f,true) {
@@ -108,7 +114,7 @@ class TerminalView(context: Context) : View(context) {
 
     init {
         isFocusable = true; isFocusableInTouchMode = true;isLongClickable=true
-        contentDescription = "Terminal output. Tap to take control and type. Long press to select and copy text."
+        contentDescription = "Terminal output. Tap web links to open them. Tap elsewhere to take control and type. Long press to select and copy text."
         metrics()
     }
     private fun metrics() {
@@ -141,19 +147,27 @@ class TerminalView(context: Context) : View(context) {
         val visibleColumns = minOf(frame.columns, max(1, ceil(contentWidth / cellWidth).toInt()))
         val visibleRows = minOf(frame.rows, max(1, ceil(contentHeight / cellHeight).toInt()))
         android.os.Trace.beginSection("Rexlet.drawTerminal")
-        val geometry="$width:$height:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom"
+        val geometry="$width:$height:${frame.columns}:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom"
         if(geometry!=rowGeometry) {recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
             var row=recorded[y]
-            if(row==null || row.cells!=cells) {
+            val continues=continuesInNextRow(frame,y)
+            if(row==null || row.cells!=cells || (row.boundary && row.continues!=continues)) {
                 val origin=if(y==0) 0f else insetTop+y*cellHeight
                 val top=if(y==0) insetTop else 0f
                 val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
                 val picture=Picture()
                 val target=picture.beginRecording(width,bottom.toInt().coerceAtLeast(1))
+                val rawLinks=TerminalLinks.row(cells,y,frame.columns)
+                val links=rawLinks.filterNot {it.end>=frame.columns && continues}
                 drawRow(target,cells,visibleColumns,top,bottom)
-                picture.endRecording();row=RecordedRow(cells,picture);recorded[y]=row;recordedRowCount++
+                target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
+                backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
+                for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
+                    insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
+                target.restore()
+                picture.endRecording();row=RecordedRow(cells,picture,links,continues,rawLinks.any {it.end>=frame.columns});recorded[y]=row;recordedRowCount++
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
             canvas.drawPicture(row.picture);canvas.restore()
@@ -280,6 +294,34 @@ class TerminalView(context: Context) : View(context) {
         requestFocus()
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(this, 0)
     }
+    private fun continuesInNextRow(frame: TerminalScreen,row: Int): Boolean =
+        frame.lines.getOrNull(row+1)?.firstOrNull {it.width>0 && it.x==0}?.text?.any {c->!c.isWhitespace()}==true
+    private fun linksForRow(frame: TerminalScreen,row: Int): List<TerminalLink> {
+        val cells=frame.lines.getOrNull(row) ?: return emptyList()
+        // Row-wrap flags are not yet exported. Never launch an apparent URL
+        // prefix at a full row boundary when the next row could continue it.
+        return TerminalLinks.row(cells,row,frame.columns).filterNot {
+            it.end>=frame.columns && continuesInNextRow(frame,row)
+        }
+    }
+    private fun linkAt(x: Float,y: Float): TerminalLink? {
+        val frame=screen ?: return null
+        if(x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom) return null
+        val column=((x-insetHorizontal)/cellWidth).toInt();val row=((y-insetTop)/cellHeight).toInt()
+        val cells=frame.lines.getOrNull(row) ?: return null
+        val links=recorded.getOrNull(row)?.takeIf {it.cells==cells && (!it.boundary || it.continues==continuesInNextRow(frame,row))}?.links ?: linksForRow(frame,row)
+        return links.firstOrNull {it.contains(column)}
+    }
+    private fun openWebLink(url: String) {
+        val safe=TerminalLinks.webUrl(url) ?: return
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(safe)).addCategory(Intent.CATEGORY_BROWSABLE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context,"No app can open this web link",Toast.LENGTH_SHORT).show()
+        } catch (_: SecurityException) {
+            Toast.makeText(context,"Could not open this web link",Toast.LENGTH_SHORT).show()
+        }
+    }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if(!interactive) return false
         if(selectionTouch || selection!=null) return selectionEvent(event)
@@ -288,7 +330,7 @@ class TerminalView(context: Context) : View(context) {
         sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
         touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
+            MotionEvent.ACTION_DOWN -> {pressedLink=linkAt(event.x,event.y);pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount != 1) { removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
                 else {
@@ -302,7 +344,7 @@ class TerminalView(context: Context) : View(context) {
                     else if(dragging) onPaneDrag?.invoke(dx,true)
                 }
             }
-            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false}
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {pressedLink=null;removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false}
             MotionEvent.ACTION_UP -> if(scrolling) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 val velocity=-(touchVelocity?.yVelocity ?: 0f).toInt()
@@ -317,13 +359,13 @@ class TerminalView(context: Context) : View(context) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
             } else when (paneGesture.finish(event.x, event.y)) {
-                PaneGesture.Result.TAP -> performClick()
+                PaneGesture.Result.TAP -> {val link=pressedLink;if(link==null) performClick() else if(link==linkAt(event.x,event.y)) onOpenLink(link.url)}
                 PaneGesture.Result.NEXT -> onPaneSwipe(1)
                 PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
                 PaneGesture.Result.NONE -> Unit
             }
         }
-        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {removeCallbacks(longPress);touchVelocity?.recycle();touchVelocity=null}
+        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {pressedLink=null;removeCallbacks(longPress);touchVelocity?.recycle();touchVelocity=null}
         return true
     }
     private fun clearSelection() {
@@ -358,6 +400,7 @@ class TerminalView(context: Context) : View(context) {
     override fun performLongClick(): Boolean {
         val frame=screen ?: return false
         if(!interactive) return false
+        pressedLink=null
         removeCallbacks(longPress);paneGesture.cancel();dragging=false;scrolling=false;scrollFling.abortAnimation();onPaneDrag?.invoke(0f,false)
         selection=TerminalSelection(frame,((pressX-insetHorizontal)/cellWidth).toInt(),((pressY-insetTop)/cellHeight).toInt()).also {it.word()}
         selectionTouch=true;moveSelectionAnchor=false;parent?.requestDisallowInterceptTouchEvent(true)
