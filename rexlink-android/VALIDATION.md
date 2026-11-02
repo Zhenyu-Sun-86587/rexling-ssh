@@ -1005,3 +1005,71 @@ and temporary phone traces removed. Raw traces remain local in ignored
 `.build/ui-renderer-ab/`.
 
 Full measurements: [s22plus-ui-renderer-improvement-2026-11-02.json](validation/s22plus-ui-renderer-improvement-2026-11-02.json).
+
+## Display-synchronized terminal presentation (2026-11-02)
+
+Live screens now use a bounded latest-complete-screen slot with at most one
+pending Choreographer callback. Decoded control/navigation state applies before
+presentation. Native VT parsing and input ordering are unchanged, as is the
+native 16 ms snapshot-production cap. The callback pushes the screen directly
+into the bound Android view and invalidates it within the display callback;
+Compose observes target, geometry and scroll affordances rather than every
+cell/cursor change. Superseded complete snapshots can be replaced without
+losing terminal bytes. Target/epoch/navigation guards and cancellation cover
+navigation, hidden state, pause, connection changes and close. A stale Compose
+update cannot overwrite the newer live screen; cached previews remain until a
+complete live screen is ready.
+
+All 82 JVM tests, 72 emulator UI checks and the live two-server emulator fixture
+pass. Debug/release builds and release lint pass. New tests cover one-callback
+burst coalescing, stale callback cancellation, reentrant updates, idle behavior,
+chrome recomposition and preview/live handoff. The separate live attention
+fixture was not rerun for this presentation-only change.
+
+Five sequential 20-second S22+ stress traces used the same disposable two-pane
+fixture, colored output up to 30 Hz, four pane swipes, restart and scroll. Tests
+ran baseline, candidate, warmed candidate, reverse-order baseline and finally a
+baseline with correlation markers only. The original baseline whole-frame mean
+changed from 11.87 ms to 13.44 ms on repetition, showing substantial run-to-run
+variation. Candidate means were 13.00 and 13.11 ms. These samples do **not** show
+a clear overall jank/whole-frame improvement: gfxinfo late-frame percentages
+were 53.77–58.24% for the baseline and 55.38–56.64% for the candidate, with one
+or two FrameTimeline dropped frames per run. This is a synthetic stress test,
+not a measurement of normal typing. Missing RenderThread sections in minimal
+tracing are not zero-cost samples. No data-loss/error/overwrite counters were
+reported.
+
+Correlation markers reveal the narrower improvement this change targets:
+
+| Decoded-ready to first Canvas recording completion | Baseline + markers | Candidate | Warm candidate |
+| --- | ---: | ---: | ---: |
+| Matched screens | 446 | 443 | 426 |
+| Mean | 25.56 ms | 10.15 ms | 10.09 ms |
+| Median | 25.56 ms | 9.50 ms | 9.68 ms |
+| p95 | 30.45 ms | 16.36 ms | 15.65 ms |
+
+The baseline published state after its display wait, then incurred another UI
+handoff before drawing (17.29 ms mean from handoff to draw start); the candidate
+pushes the live view during the callback (1.03/0.97 ms). Baseline tokens use
+screen object identity; candidate tokens use native handle/revision. Each token
+is paired with its first ready/presentation/draw, with monotonic ordering
+checked. The diagnostic baseline had trace-only additions and was removed
+before rebuilding the final source. These are decoded-ready-to-Canvas timings,
+not native-publication, network/key-to-pixel or SurfaceFlinger presentation.
+During pane movement an off-center live pane can be recorded too. Runs were
+short and sequential, not randomized statistical trials. The change is kept
+for lower UI handoff delay; overall frame pacing still needs further work.
+
+The final source rebuild matches the physically tested candidate byte for byte.
+The installed S22+ base APK and shareable
+`dist/Rexlink-0.1.0-arm64-release.apk` both have SHA-256
+`dff755a482dec5c4a8ca56d9159ea939f500e2345cfdab2b72cb8d8a58d82551`.
+Signature, non-debuggable status, ART profiles and 16 KiB alignment pass. The
+original session was restored under its current work label, with control
+released/viewing mode. The client was restarted to recover stale selection
+after fixture removal; no server was restarted. Only the disposable session
+was destroyed, no test input went to user terminals, and temporary phone trace
+files were removed. Raw traces remain local in ignored
+`.build/display-coordinator-ab/`.
+
+Full measurements: [s22plus-display-coordinator-2026-11-02.json](validation/s22plus-display-coordinator-2026-11-02.json).

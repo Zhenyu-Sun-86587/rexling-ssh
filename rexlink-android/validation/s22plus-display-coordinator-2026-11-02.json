@@ -1,0 +1,390 @@
+{
+  "date": "2026-11-02",
+  "device": "Samsung Galaxy S22+ SM-S906E, Android 16",
+  "implementation_commit": "6a4deac1ca8ed6c8d156b242b5137edcc6c37d6c",
+  "changes": [
+    "Keep one pending Choreographer callback and replace only the latest complete screen snapshot",
+    "Apply decoded control/navigation state immediately; preserve native ordered VT parsing and input commands",
+    "Push live screens directly into the bound TerminalView; Compose observes target, geometry and scroll affordances",
+    "Cancel pending presentation on navigation, connection changes, hidden state, pause and close; validate endpoint/epoch/navigation/session/block before presentation",
+    "Prevent stale Compose snapshots from replacing a newer directly presented screen",
+    "Trace decoded-ready, presentation and first Canvas recording with correlated screen identifiers"
+  ],
+  "unchanged": "Native 16 ms snapshot-production cap, transport, ordered input, typography and retained-row renderer",
+  "validation": {
+    "jvm_tests": 82,
+    "emulator_ui_tests": 72,
+    "live_two_server_emulator_tests": 1,
+    "checks": [
+      "Debug/release builds and release lint",
+      "Burst coalescing, stale callback cancellation, reentrant offers and idle behavior",
+      "Direct presentation survives chrome recomposition; cached preview survives mounting",
+      "Existing GPU row, text, selection, links, keyboard and pane gesture checks",
+      "Live two-server input/ownership, hidden-input rejection and pause/resume",
+      "Signed non-debuggable release APK, ART profiles, 16 KiB alignment"
+    ],
+    "excluded_fixture": "ActivityAttentionTest requires its own live attention fixture and was not rerun for this UI-only change"
+  },
+  "methodology": {
+    "workload": "20 seconds: disposable two-pane fixture, 23 colored rows repainted at up to 30 Hz, four pane swipes, output restart and scroll",
+    "order": [
+      "baseline",
+      "candidate",
+      "candidate-warm",
+      "baseline-reverse",
+      "baseline-markers"
+    ],
+    "trace_sources": "FrameTimeline and app-only atrace markers; broad gfx events omitted to reduce instrumentation overhead",
+    "original_baseline_sha256": "32c5ab86f5746bd8dd23ad2cc93bb7f8cbc82f1f45daf4a016230a4beb0cd5d0",
+    "candidate_sha256": "dff755a482dec5c4a8ca56d9159ea939f500e2345cfdab2b72cb8d8a58d82551",
+    "baseline_markers": "HEAD 6d1b08b plus timing markers only at decoded-ready, post-await UI state handoff and TerminalView.onDraw; object identity correlates baseline screens. Candidate uses handle/revision tokens. Diagnostic baseline changes were removed before final rebuild.",
+    "handoff_definition": "For each screen token, pair earliest decoded-ready, earliest presentation and first matching Canvas recording. Require presentation >= ready and draw start >= presentation. Report draw end minus ready.",
+    "handoff_scope": "Decoded-ready to first Canvas recording completion, not native publication, network/key-to-pixel or SurfaceFlinger presentation. During pane animation an off-center live pane can be recorded too.",
+    "limits": [
+      "Sequential short stress runs, not randomized repeated trials or ordinary typing",
+      "Initial baseline whole-frame mean 11.87 ms changed to 13.44 ms on the reverse-order run: material run-to-run variation",
+      "Frame flags overlap and cannot be summed",
+      "RenderThread sections absent with minimal tracing; missing timings are not zero cost",
+      "No trace data-loss/errors/overwrite counters reported"
+    ]
+  },
+  "decision": "Keep for reduced UI handoff latency. Do not claim reduced whole-frame jank or network latency.",
+  "runs": {
+    "baseline": {
+      "pid": 2124,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 579.0,
+          "mean_ms": 1.843556,
+          "p50_ms": 1.319687,
+          "p95_ms": 5.117953,
+          "max_ms": 27.831145
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 474.0,
+          "mean_ms": 2.437826,
+          "p50_ms": 2.402188,
+          "p95_ms": 4.002143,
+          "max_ms": 7.296771
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 710.0,
+          "mean_ms": 11.868124,
+          "p50_ms": 11.287396,
+          "p95_ms": 17.833763,
+          "max_ms": 24.610885
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": "[NULL]",
+          "p50_ms": "[NULL]",
+          "p95_ms": "[NULL]",
+          "max_ms": "[NULL]"
+        }
+      },
+      "frame_flags": {
+        "frames": 710.0,
+        "app_deadline_missed": 332.0,
+        "compositor_cpu_missed": 15.0,
+        "buffer_stuffed": 306.0,
+        "dropped": 1.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "716",
+        "jank_percent": "53.77",
+        "p95_ms": "18"
+      }
+    },
+    "candidate": {
+      "pid": 24063,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 607.0,
+          "mean_ms": 1.577546,
+          "p50_ms": 1.416511,
+          "p95_ms": 2.799974,
+          "max_ms": 29.240781
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 477.0,
+          "mean_ms": 2.984337,
+          "p50_ms": 3.085729,
+          "p95_ms": 4.344021,
+          "max_ms": 9.340417
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 709.0,
+          "mean_ms": 13.003026,
+          "p50_ms": 12.362656,
+          "p95_ms": 18.6915,
+          "max_ms": 37.367916
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": "[NULL]",
+          "p50_ms": "[NULL]",
+          "p95_ms": "[NULL]",
+          "max_ms": "[NULL]"
+        }
+      },
+      "frame_flags": {
+        "frames": 709.0,
+        "app_deadline_missed": 395.0,
+        "compositor_cpu_missed": 25.0,
+        "buffer_stuffed": 299.0,
+        "dropped": 1.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "715",
+        "jank_percent": "56.64",
+        "p95_ms": "20"
+      }
+    },
+    "candidate-warm": {
+      "pid": 24063,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 591.0,
+          "mean_ms": 1.611275,
+          "p50_ms": 1.525105,
+          "p95_ms": 2.478906,
+          "max_ms": 28.906614
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 464.0,
+          "mean_ms": 3.030533,
+          "p50_ms": 3.535938,
+          "p95_ms": 4.163883,
+          "max_ms": 7.134636
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 701.0,
+          "mean_ms": 13.109228,
+          "p50_ms": 13.017448,
+          "p95_ms": 17.608854,
+          "max_ms": 36.477708
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": "[NULL]",
+          "p50_ms": "[NULL]",
+          "p95_ms": "[NULL]",
+          "max_ms": "[NULL]"
+        }
+      },
+      "frame_flags": {
+        "frames": 701.0,
+        "app_deadline_missed": 379.0,
+        "compositor_cpu_missed": 19.0,
+        "buffer_stuffed": 310.0,
+        "dropped": 1.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "706",
+        "jank_percent": "55.38",
+        "p95_ms": "19"
+      }
+    },
+    "baseline-reverse": {
+      "pid": 28213,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 580.0,
+          "mean_ms": 1.680957,
+          "p50_ms": 1.433984,
+          "p95_ms": 4.862299,
+          "max_ms": 21.340469
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 466.0,
+          "mean_ms": 3.020874,
+          "p50_ms": 3.516432,
+          "p95_ms": 4.229192,
+          "max_ms": 7.093802
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 699.0,
+          "mean_ms": 13.441117,
+          "p50_ms": 13.224583,
+          "p95_ms": 19.266792,
+          "max_ms": 30.445521
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": "[NULL]",
+          "p50_ms": "[NULL]",
+          "p95_ms": "[NULL]",
+          "max_ms": "[NULL]"
+        }
+      },
+      "frame_flags": {
+        "frames": 699.0,
+        "app_deadline_missed": 392.0,
+        "compositor_cpu_missed": 15.0,
+        "buffer_stuffed": 297.0,
+        "dropped": 2.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "704",
+        "jank_percent": "58.24",
+        "p95_ms": "20"
+      }
+    },
+    "baseline-markers": {
+      "pid": 30814,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 596.0,
+          "mean_ms": 1.746436,
+          "p50_ms": 1.358646,
+          "p95_ms": 4.932969,
+          "max_ms": 25.759323
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 485.0,
+          "mean_ms": 2.794616,
+          "p50_ms": 2.92224,
+          "p95_ms": 4.211552,
+          "max_ms": 6.963333
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 722.0,
+          "mean_ms": 12.910253,
+          "p50_ms": 12.320911,
+          "p95_ms": 18.87655,
+          "max_ms": 31.018541
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": "[NULL]",
+          "p50_ms": "[NULL]",
+          "p95_ms": "[NULL]",
+          "max_ms": "[NULL]"
+        }
+      },
+      "frame_flags": {
+        "frames": 722.0,
+        "app_deadline_missed": 395.0,
+        "compositor_cpu_missed": 20.0,
+        "buffer_stuffed": 311.0,
+        "dropped": 2.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "726",
+        "jank_percent": "57.02",
+        "p95_ms": "19"
+      }
+    }
+  },
+  "handoff_results": {
+    "baseline-markers": [
+      {
+        "metric": "decoded_ready_to_draw_end",
+        "n": 446,
+        "mean_ms": 25.564844,
+        "p50_ms": 25.559505,
+        "p95_ms": 30.445248,
+        "max_ms": 35.005
+      },
+      {
+        "metric": "decoded_ready_to_present",
+        "n": 446,
+        "mean_ms": 5.336489,
+        "p50_ms": 5.243099,
+        "p95_ms": 9.666614,
+        "max_ms": 21.272865
+      },
+      {
+        "metric": "present_to_draw_start",
+        "n": 446,
+        "mean_ms": 17.286032,
+        "p50_ms": 17.512474,
+        "p95_ms": 19.005638,
+        "max_ms": 20.660156
+      }
+    ],
+    "candidate": [
+      {
+        "metric": "decoded_ready_to_draw_end",
+        "n": 443,
+        "mean_ms": 10.153557,
+        "p50_ms": 9.495833,
+        "p95_ms": 16.359959,
+        "max_ms": 31.275364
+      },
+      {
+        "metric": "decoded_ready_to_present",
+        "n": 443,
+        "mean_ms": 6.014348,
+        "p50_ms": 5.630833,
+        "p95_ms": 10.800917,
+        "max_ms": 11.816667
+      },
+      {
+        "metric": "present_to_draw_start",
+        "n": 443,
+        "mean_ms": 1.033884,
+        "p50_ms": 0.87401,
+        "p95_ms": 1.354494,
+        "max_ms": 19.164062
+      }
+    ],
+    "candidate-warm": [
+      {
+        "metric": "decoded_ready_to_draw_end",
+        "n": 426,
+        "mean_ms": 10.089311,
+        "p50_ms": 9.679297,
+        "p95_ms": 15.649922,
+        "max_ms": 25.633958
+      },
+      {
+        "metric": "decoded_ready_to_present",
+        "n": 426,
+        "mean_ms": 5.951504,
+        "p50_ms": 5.486667,
+        "p95_ms": 10.796159,
+        "max_ms": 12.815989
+      },
+      {
+        "metric": "present_to_draw_start",
+        "n": 426,
+        "mean_ms": 0.967548,
+        "p50_ms": 0.829531,
+        "p95_ms": 1.168086,
+        "max_ms": 17.792656
+      }
+    ]
+  },
+  "delivery": {
+    "installed_sha256": "dff755a482dec5c4a8ca56d9159ea939f500e2345cfdab2b72cb8d8a58d82551",
+    "shareable_apk": "dist/Rexlink-0.1.0-arm64-release.apk",
+    "cleanup": "Original session restored under its current work label display-frame-pacing, with control released/viewing mode. Client restarted to recover stale selection after fixture removal. Only disposable session destroyed; no test input sent to user terminals, no server restart. Temporary phone trace files removed.",
+    "raw_traces": "Local ignored .build/display-coordinator-ab/; not committed"
+  }
+}
