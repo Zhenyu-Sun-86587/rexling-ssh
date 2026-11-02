@@ -37,6 +37,7 @@ import kotlin.math.roundToInt
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
     onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""}) {
     val palette=LocalTerminalPalette.current
+    val backdrop=MaterialTheme.colorScheme.background
     val scope=rememberCoroutineScope()
     var visualId by remember(blocks.map {it.id}) {mutableStateOf(selectedBlock)}
     var drag by remember {mutableFloatStateOf(0f)}
@@ -44,6 +45,12 @@ import kotlin.math.roundToInt
     var settling by remember {mutableStateOf(false)}
     var toast by remember {mutableStateOf(false)}
     var settlingTarget by remember {mutableStateOf<String?>(null)}
+    LaunchedEffect(dragging || settling) {
+        if(android.os.Build.VERSION.SDK_INT>=29) android.os.Trace.setCounter("Rexlink.paneMotion",if(dragging || settling) 1L else 0L)
+    }
+    DisposableEffect(Unit) {onDispose {
+        if(android.os.Build.VERSION.SDK_INT>=29) android.os.Trace.setCounter("Rexlink.paneMotion",0L)
+    }}
     val latestSelect by rememberUpdatedState(onSelect)
     val index=blocks.indexOfFirst {it.id==visualId}.coerceAtLeast(0)
     LaunchedEffect(selectedBlock,settling,dragging) {
@@ -97,8 +104,8 @@ import kotlin.math.roundToInt
                 Box(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
                     val position=pageOffset+drag
                     translationX=kotlin.math.round(leftPx+position)
-                    alpha=1f-(abs(position)/stride).coerceIn(0f,1f)*.48f
                 }.clip(RoundedCornerShape(21.dp)).background(Color(palette.background))
+                    .paneScrim(backdrop) {(abs(pageOffset+drag)/stride).coerceIn(0f,1f)*.48f}
                     .then(if(center) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
                     Box(Modifier.fillMaxSize()) {
                         if(frame!=null) AndroidView(
