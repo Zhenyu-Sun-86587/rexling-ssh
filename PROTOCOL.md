@@ -475,3 +475,12 @@ Reproduce against an owned server with `REX_TEST_SERVER=https://your-rex-server 
 Root activity labels prefer a nonempty terminal OSC title validated against that report's foreground owner. Existing title events update matching root records in the attached session immediately and are reapplied after slow scans. Child tasks retain their own titles; exited-process results cannot inherit a new foreground program's title. Off-session activity remains snapshot-based at the scan cadence.
 
 The native Activity cache is retained when the sheet closes, but its report array is excluded from ordinary JNI metadata while hidden. Reopening republishes the cache and starts a fresh scan. This avoids catalog serialization/parsing on each streamed title frame without changing the Rex wire protocol.
+
+
+## Active-pane ownership policy (2026-11-02)
+
+Android now claims the active pane once after navigation is acknowledged, its terminal frame exists and positive phone dimensions are available. This supersedes tap-only ownership in the Android UI, including Activity-entry navigation. The lower-level native open operation remains read-only until an explicit `take` command is sent. Automatic takeover does not set the soft-keyboard request. Keyboard focus follows the controlled pane.
+
+Taking control still uses `session.own_block`, applies appearance/focus and resizes the shared PTY. Bound local take/resize commands carry session, block and navigation ID; stale commands, hidden connections and paused clients cannot affect the newly selected pane. Pending resize and held-key gestures cancel on navigation. An old owned frame does not consume a new activation. A claim is attempted only once per activation; another client's takeover does not start an ownership fight. Explicit Release preserves viewing mode, including resume, until another navigation.
+
+The existing old-pane disown on block/session changes is retained. Hiding a server's workspace explicitly disowns its selected pane; lifecycle pause makes a bounded two-second disown attempt before dropping connections. Background connections cannot claim ownership.

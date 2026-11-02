@@ -8,7 +8,7 @@ Fresh installs start with no preset server. Enter an authorized Rex server URL a
 
 Long-press a tab to close it. Close a pane using its X in the pane picker or **Close pane** in the three-dot menu. Confirmation is required because closing ends the running program; closing a tab ends every program in that tab.
 
-Viewing a pane leaves its shared terminal size alone. Tapping its content takes control and resizes the shared PTY for the phone, which also changes the grid seen by other clients.
+Opening a pane, switching tabs/sessions/servers or selecting an Activity entry automatically takes control once its snapshot and the phone dimensions are ready. The shared PTY resizes for the phone, so other clients see that grid too. The previous pane is released when you leave it; backgrounding the app releases control. The pointer button can explicitly release the current pane into viewing mode until you navigate again. Ownership lost to another client is not repeatedly reclaimed. Navigation itself does not explicitly open the soft keyboard.
 
 The default keyboard accessory is one row. Esc/Ctrl/Alt/Shift/Tab are separate symbol buttons with gaps between them, followed by a shared arrow group and the keyboard toggle. Swipe the arrow group sideways to reveal clipped arrows, then tap to send. Arrow scrolling leaves the modifier buttons fixed. Tap Shift for the next key or hold it while tapping several keys. Scrolling sends no input. Reveal the chevron before Esc to expand F1–F12 and Home/End, paging, Insert and Delete keys.
 
@@ -20,8 +20,10 @@ The key row keeps its contrast while pane navigation temporarily disables input.
 
 Long-press a web link for Open link, Copy link address and Share link (some actions may be in the floating toolbar overflow). Copy and Select all still operate on terminal text. Link actions use the frozen destination even if live output changes. Share opens Android's chooser; you select the recipient/app.
 
-While controlling the terminal, quickly tap Ctrl to toggle it for the next key. Hold Ctrl to show the eight label-only shortcuts (^C, ^D, ^Z, ^R, ^L, ^A, ^E, ^W), slide onto one and release to send it once. Releasing outside cancels. The popup shows no shortcut descriptions.
+While controlling the terminal, quickly tap Ctrl to toggle it for the next key. Hold Ctrl to show the nine label-only shortcuts (^C, ^D, ^Z, ^R, ^L, ^A, ^E, ^W, ^J), slide onto one and release to send it once. Releasing outside cancels. The popup shows no shortcut descriptions.
 
 Hold an arrow, Delete or Backspace to repeat. Sliding the arrow strip scrolls it without typing. Releasing, changing panes, losing control or leaving the app cancels repeat.
 
-Activity groups reported program states by connected server. Filter Needs you, Working or Finished; tap an entry to open its exact session and pane without taking control. It refreshes while open and stops scanning when dismissed or backgrounded. Programs must report Rex status; missing reports are not inferred from output.
+Activity groups reported program states by connected server. Filter Needs you, Working or Finished; tap an entry to open and take control of its exact session and pane. It refreshes while open and stops scanning when dismissed or backgrounded. Programs must report Rex status; missing reports are not inferred from output.
+
+The hold-Ctrl popup uses a three-by-three grid. ^J sends line feed (byte 0x0A).
