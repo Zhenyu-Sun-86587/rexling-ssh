@@ -42,6 +42,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     var navigationRequest by mutableStateOf(NavigationRequest())
         private set
     private val navigation = WorkspaceNavigation()
+    private val activation=PaneActivation()
     private var navigationSerial = 0L
     private var keyEpoch by mutableStateOf(0L)
     fun cancelKeyRepeats() {keyEpoch++}
@@ -54,7 +55,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) {resetModifiers();cancelKeyRepeats()};command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else activation.navigate();command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -95,7 +96,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
                                 mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())
-                                rememberCurrentTerminal(); openPreferredTerminal()
+                                rememberCurrentTerminal(); openPreferredTerminal();claimActivePane()
                             }
                         } catch (error: Exception) {
                             withContext(Dispatchers.Main.immediate) {
@@ -124,7 +125,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
-        cancelKeyRepeats()
+        cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         resetModifiers()
         val value = server.trim()
         navigationRequest = NavigationRequest()
@@ -143,6 +144,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             lastSessionId=old
             preferences.edit { putString("last_session:${state.value.endpoint}",old) }
         }
+        cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         navigationRequest = NavigationRequest(session = id, id = ++navigationSerial)
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         command("session", "id" to id, "navigationId" to navigationRequest.id)
@@ -152,6 +154,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
         if (current.windows.none { window -> window.blocks.any { it.id == id } }) return
+        cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         navigationRequest = NavigationRequest(block = id, id = ++navigationSerial)
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         navigation.remember(current.selectedSession, current.windows, id)
@@ -163,7 +166,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(current.selectedSession.isNotBlank() && current.selectedSession!=session) {
             lastSessionId=current.selectedSession;preferences.edit {putString("last_session:${current.endpoint}",lastSessionId)}
         }
-        cancelKeyRepeats();resetModifiers();keyboardRequest=""
+        cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
         command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
     }
@@ -216,34 +219,40 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(!current.connected || current.creating || navigationRequest.pending || current.sessions.none {it.id==id}) return false
         command("close_session","id" to id);return true
     }
-    fun createSession(label: String) { if(state.value.connected && !state.value.creating && !navigationRequest.pending) command("new_session","label" to label) }
+    fun createSession(label: String) { if(state.value.connected && !state.value.creating && !navigationRequest.pending) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_session","label" to label)} }
     fun createTab() {
         val current = state.value
-        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank()) command("new_tab", "session" to current.selectedSession)
+        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank()) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_tab", "session" to current.selectedSession)}
     }
     fun createPane() {
         val current = state.value
-        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) command("new_pane", "session" to current.selectedSession, "anchor" to current.selectedBlock)
+        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_pane", "session" to current.selectedSession, "anchor" to current.selectedBlock)}
     }
     fun closePane(session: String,id: String) {
         val current=state.value
         if(current.connected && !current.creating && !navigationRequest.pending && session==current.selectedSession) {
-            if(id==current.selectedBlock) {controlModifier=false;altModifier=false;shiftState=ShiftKeyState();keyboardRequest=""}
+            if(id==current.selectedBlock) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();controlModifier=false;altModifier=false;shiftState=ShiftKeyState();keyboardRequest=""}
             command("close_pane","session" to session,"id" to id)
         }
     }
     fun closeTab(session: String,id: String,blocks: List<String>) {
         val current=state.value
         if(current.connected && !current.creating && !navigationRequest.pending && session==current.selectedSession) {
-            if(current.selectedBlock in blocks) {controlModifier=false;altModifier=false;shiftState=ShiftKeyState();keyboardRequest=""}
+            if(current.selectedBlock in blocks) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();controlModifier=false;altModifier=false;shiftState=ShiftKeyState();keyboardRequest=""}
             command("close_tab","session" to session,"id" to id,"blocks" to org.json.JSONArray(blocks))
         }
     }
     fun refresh() = command("refresh")
+    fun claimActivePane() {
+        val current=state.value
+        if(activation.shouldTake(current,navigationRequest,visible && foreground,lastSize)) sendTake(current)
+    }
+    private fun sendTake(current: AppState) = command("take","session" to current.selectedSession,"block" to current.selectedBlock,
+        "navigationId" to current.navigationId,"columns" to lastSize.first,"rows" to lastSize.second)
     fun takeControl() {
         val current=state.value
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) {
-            keyboardRequest=current.selectedBlock;command("take","columns" to lastSize.first,"rows" to lastSize.second)
+            keyboardRequest=current.selectedBlock;sendTake(current)
         }
     }
     fun keyboardShown() {keyboardRequest=""}
@@ -252,7 +261,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
             command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
     }
-    fun releaseControl() { cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
+    fun releaseControl() { activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
         cancelKeyRepeats()
         navigationRequest = NavigationRequest()
@@ -260,7 +269,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
         command("pause")
     }
-    fun resume() { foreground = true; command("resume") }
+    fun resume() { if(!foreground) activation.resume();foreground = true; command("resume") }
     fun toggleControl() { controlModifier = !controlModifier }
     fun toggleAlt() { altModifier = !altModifier }
     fun toggleShift() {shiftState=ShiftKeyState(latched=!shiftState.active)}
@@ -284,10 +293,13 @@ internal class RexConnection(application: Application, private val scope: Corout
         val size = columns.coerceIn(1, 512) to rows.coerceIn(1, 256)
         lastSize = size
         resizeJob?.cancel()
-        if (!visible || !state.value.controlled || navigationRequest.pending) return
+        claimActivePane()
+        val current=state.value
+        if (!visible || !foreground || !current.controlled || navigationRequest.pending) return
         resizeJob = scope.launch {
             delay(150)
-            command("resize", "columns" to size.first, "rows" to size.second)
+            command("resize", "session" to current.selectedSession,"block" to current.selectedBlock,"navigationId" to current.navigationId,
+                "columns" to size.first, "rows" to size.second)
         }
     }
     fun applySize() = resize(lastSize.first.coerceAtLeast(1), lastSize.second.coerceAtLeast(1))

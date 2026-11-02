@@ -130,8 +130,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
         if(index>=0) client.prefetchPanes(listOfNotNull(blocks.getOrNull(index-1)?.id,blocks.getOrNull(index+1)?.id))
     }
+    LaunchedEffect(ready,chosen,client.hasScreen) {if(ready) client.claimActivePane()}
     LaunchedEffect(controlled,client.keyboardRequest,terminalView) {
         if(controlled) {
+            terminalView?.requestFocus()
             client.applySize()
             if(client.keyboardRequest==displayedBlock && terminalView!=null) {terminalView?.keyboard();client.keyboardShown()}
         }

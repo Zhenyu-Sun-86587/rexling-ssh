@@ -220,6 +220,7 @@ impl Actor {
                     if value["type"]=="visibility" {
                         self.visible=value["visible"].as_bool().unwrap_or(true);
                         if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
+                        else {if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
                         continue;
                     }
                     let navigation_id=value["navigationId"].as_u64();
@@ -913,6 +914,9 @@ impl Actor {
                 self.apply_theme().await?;
             }
             "take" => {
+                if value["session"].is_string() && (!self.visible || self.paused || self.phase!="connected"
+                    || value["session"]!=self.selected_session || value["block"]!=self.selected_block
+                    || value["navigationId"].as_u64()!=Some(self.navigation_id)) {return Ok(());}
                 self.take_selected().await?;
                 if let (Some(columns),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
                     && columns>0 && rows>0 {
@@ -972,6 +976,9 @@ impl Actor {
                 }
             }
             "input" | "paste" | "resize" => {
+                if value["type"]=="resize" && value["session"].is_string() && (!self.visible || self.paused
+                    || value["session"]!=self.selected_session || value["block"]!=self.selected_block
+                    || value["navigationId"].as_u64()!=Some(self.navigation_id)) {return Ok(());}
                 ensure!(self.controlled, "Take control before typing or resizing");
                 let kind = value["type"].as_str().unwrap();
                 if kind != "resize"
@@ -999,6 +1006,8 @@ impl Actor {
                 }
             }
             "pause" => {
+                // Always drop connections after this bounded explicit-release attempt.
+                let _=tokio::time::timeout(Duration::from_secs(2),self.release_selected()).await;
                 self.paused = true;
                 self.retry = None;
                 self.lose_connections();
@@ -1896,7 +1905,8 @@ mod tests {
             let hidden:Value=serde_json::from_str(&apps[0].poll(0).unwrap()).unwrap();
             assert!(!text(&hidden).contains("HOST_0_REPLY:hidden-update"));
             apps[0].command(json!({"type":"visibility","visible":true})).unwrap();
-            wait(&apps[0],|v|text(v).contains("HOST_0_REPLY:hidden-update"));
+            let visible=wait(&apps[0],|v|v["controlled"]==false);
+            assert!(!text(&visible).contains("HOST_0_REPLY:hidden-update"));
             apps[0].command(json!({"type":"pause"})).unwrap();
             wait(&apps[0], |v| v["phase"] == "paused");
             apps[1]
@@ -2275,6 +2285,24 @@ while True:
         assert!(published()["activity"].is_null());assert_eq!(actor.activity[0]["title"],"Cached task");
         actor.activity_open=true;actor.publish();assert_eq!(published()["activity"][0]["title"],"Cached task");
         actor.activity_open=false;actor.publish();assert!(published()["activity"].is_null());
+    }
+
+    #[test] fn stale_or_hidden_take_and_resize_commands_cannot_target_the_new_pane() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.phase="connected".into();actor.selected_session="s".into();actor.selected_block="b".into();actor.navigation_id=2;
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        for kind in ["take","resize"] {
+            for (session,block,nav) in [("old","b",2),("s","old",2),("s","b",1)] {
+                runtime.block_on(actor.command(json!({"type":kind,"session":session,"block":block,"navigationId":nav,"columns":40,"rows":30}))).unwrap();
+                assert!(!actor.controlled);
+            }
+            actor.visible=false;
+            runtime.block_on(actor.command(json!({"type":kind,"session":"s","block":"b","navigationId":2,"columns":40,"rows":30}))).unwrap();
+            actor.visible=true;actor.paused=true;
+            runtime.block_on(actor.command(json!({"type":kind,"session":"s","block":"b","navigationId":2,"columns":40,"rows":30}))).unwrap();
+            actor.paused=false;
+        }
     }
 
 }
