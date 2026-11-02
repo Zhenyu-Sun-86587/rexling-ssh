@@ -210,6 +210,10 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   while (ghostty_render_state_row_iterator_next(t->rows)) {
     r=ghostty_render_state_row_get(t->rows,GHOSTTY_RENDER_STATE_ROW_DATA_CELLS,&t->cells);
     if(r!=0)break;
+    GhosttyRow raw_row=0; bool wrapped=false,continuation=false;
+    r=ghostty_render_state_row_get(t->rows,GHOSTTY_RENDER_STATE_ROW_DATA_RAW,&raw_row);if(r!=0)break;
+    r=ghostty_row_get(raw_row,GHOSTTY_ROW_DATA_WRAP,&wrapped);if(r!=0)break;
+    r=ghostty_row_get(raw_row,GHOSTTY_ROW_DATA_WRAP_CONTINUATION,&continuation);if(r!=0)break;
     uint16_t x=0;
     while (ghostty_render_state_row_cells_next(t->cells)) {
       uint32_t count=0;
@@ -231,7 +235,9 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
         graphemes=next; capacity=count;
       }
       if(count) { CELL(GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,graphemes); }
-      uint32_t flags=style.bold | (style.italic<<1) | (style.faint<<2) |
+      // Client-local row metadata occupies bits above the color-role fields.
+      uint32_t row_flags=(1u<<29)|((uint32_t)wrapped<<27)|((uint32_t)continuation<<28);
+      uint32_t flags=row_flags | style.bold | (style.italic<<1) | (style.faint<<2) |
           (style.inverse<<3) | (style.invisible<<4) | (style.strikethrough<<5) |
           ((style.underline!=0)<<6) | (fg_default<<7) | (bg_default<<8);
       if (style.fg_color.tag == GHOSTTY_STYLE_COLOR_PALETTE)

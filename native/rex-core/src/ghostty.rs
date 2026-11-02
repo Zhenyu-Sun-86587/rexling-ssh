@@ -622,4 +622,18 @@ mod tests {
         assert_ne!(next.cells[0],first.cells[0]);
     }
 
+    #[test]
+    fn soft_wrap_flags_survive_snapshots_and_distinguish_hard_newlines() {
+        let mut terminal=Terminal::new(10,5).unwrap();
+        terminal.write(b"https://example.com/abc\r\nNEXT").unwrap();
+        let frame=terminal.frame().unwrap();
+        let flags=|row:u16|frame.cells.iter().find(|c|c.x==0 && c.y==row).unwrap().attributes;
+        assert_ne!(flags(0)&(1<<29),0);assert_ne!(flags(0)&(1<<27),0);
+        assert_ne!(flags(1)&(1<<28),0);assert_ne!(flags(1)&(1<<27),0);
+        assert_ne!(flags(2)&(1<<28),0);assert_eq!(flags(2)&(1<<27),0);
+        assert_eq!(flags(3)&(1<<28),0);
+        let (mut restored,_)=Terminal::decode(&terminal.encode().unwrap()).unwrap();
+        assert_eq!(frame.cells,restored.frame().unwrap().cells);
+    }
+
 }
