@@ -2,6 +2,7 @@ package dev.shulhi.rex
 
 import android.app.Application
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
@@ -34,6 +35,21 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
     }
     private val preferences=application.getSharedPreferences(preferenceName,0)
+    internal val themes by lazy {ThemeCatalog.load(application)}
+    private var darkTheme by mutableStateOf(preferences.getString("dark_theme","rexlink-default-dark").orEmpty())
+    private var lightTheme by mutableStateOf(preferences.getString("light_theme","rexlink-default-light").orEmpty())
+    var fontSize by mutableIntStateOf(preferences.getInt("font_size",10).coerceIn(8,20))
+        private set
+    internal fun theme(dark: Boolean): AppTheme {
+        val id=if(dark) darkTheme else lightTheme
+        return ThemeCatalog.defaults.firstOrNull {it.id==id && it.terminal.dark==dark} ?: ThemeCatalog.resolve(themes,dark,id)
+    }
+    internal fun chooseTheme(id: String) {
+        val theme=themes.firstOrNull {it.id==id} ?: return
+        if(theme.terminal.dark) darkTheme=id else lightTheme=id
+        preferences.edit {putString(if(theme.terminal.dark) "dark_theme" else "light_theme",id)}
+    }
+    fun changeFontSize(size: Int) {fontSize=size.coerceIn(8,20);preferences.edit {putInt("font_size",fontSize)}}
     var appearance by mutableStateOf(runCatching {Appearance.valueOf(preferences.getString("appearance","SYSTEM")!!)}.getOrDefault(Appearance.SYSTEM))
         private set
     var servers by mutableStateOf(SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty()))

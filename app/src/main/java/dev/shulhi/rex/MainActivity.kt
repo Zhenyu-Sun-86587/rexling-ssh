@@ -44,14 +44,14 @@ class MainActivity : ComponentActivity() {
             SideEffect {WindowCompat.getInsetsController(window,window.decorView).apply {
                 isAppearanceLightStatusBars=!dark;isAppearanceLightNavigationBars=!dark
             }}
-            RexTheme(dark) {RexApp(model)}
+            RexTheme(dark,model.theme(dark)) {RexApp(model)}
         }
     }
     override fun onStart(){super.onStart();model.resume()}
     override fun onStop(){model.pause();super.onStop()}
 }
 
-@Composable private fun RexTheme(dark: Boolean,content: @Composable ()->Unit) {
+@Composable private fun RexTheme(dark: Boolean,theme: AppTheme,content: @Composable ()->Unit) {
     val base=if(dark) darkColorScheme(primary=Color(0xff315cf4),onPrimary=Color.White,
         background=Color(0xff090c11),surface=Color(0xff141922),onSurface=Color(0xffe5e9f2),
         surfaceVariant=Color(0xff232934),onSurfaceVariant=Color(0xff969fb1),outline=Color(0xff2b3341))
@@ -68,8 +68,8 @@ class MainActivity : ComponentActivity() {
         primaryContainer=primaryContainer,onPrimaryContainer=onPrimaryContainer,
         secondary=base.primary,onSecondary=base.onPrimary,secondaryContainer=primaryContainer,onSecondaryContainer=onPrimaryContainer,
         tertiary=base.primary,onTertiary=base.onPrimary,tertiaryContainer=primaryContainer,onTertiaryContainer=onPrimaryContainer)
-    CompositionLocalProvider(LocalTerminalPalette provides if(dark) TerminalPalette.Dark else TerminalPalette.Light) {
-        MaterialTheme(colorScheme=scheme,content=content)
+    CompositionLocalProvider(LocalTerminalPalette provides theme.terminal) {
+        MaterialTheme(colorScheme=scheme.withPreset(theme),content=content)
     }
 }
 
@@ -107,7 +107,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var menu by remember {mutableStateOf(false)}
     var appearance by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
-    var fontSize by rememberSaveable {mutableIntStateOf(10)}
+    val fontSize=model.fontSize
+    var fontPicker by remember {mutableStateOf(false)}
     var terminalView by remember {mutableStateOf<TerminalView?>(null)}
     val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
@@ -153,7 +154,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
                             DropdownMenuItem(text={Text("Appearance")},onClick={menu=false;appearance=true})
-                            DropdownMenuItem(text={Text("Font size · $fontSize sp")},onClick={fontSize=when(fontSize){8->10;10->12;12->14;14->16;16->18;else->8}})
+                            DropdownMenuItem(text={Text("Font size · $fontSize sp")},onClick={menu=false;fontPicker=true})
                             DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
                                 menu=false;client.terminal.value?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
                             })
@@ -255,14 +256,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             }) {Text("Close",color=MaterialTheme.colorScheme.error)}},
             dismissButton={TextButton(onClick={closeTarget=null}) {Text("Cancel")}})
     }
-    if(appearance) AlertDialog(onDismissRequest={appearance=false},title={Text("Appearance")},text={
-        Column {Appearance.entries.forEach {mode->
-            Row(Modifier.fillMaxWidth().clickable{model.changeAppearance(mode);appearance=false}.padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically) {
-                RadioButton(model.appearance==mode,onClick={model.changeAppearance(mode);appearance=false})
-                Text(when(mode){Appearance.SYSTEM->"System";Appearance.DARK->"Dark";Appearance.LIGHT->"Light"})
-            }
-        }}
-    },confirmButton={TextButton(onClick={appearance=false}){Text("Done")}})
+    if(appearance) AppearanceSheet(model.appearance,model.themes,model.theme(false),model.theme(true),model::changeAppearance,model::chooseTheme) {appearance=false}
+    if(fontPicker) FontSizeDialog(fontSize,model::changeFontSize) {fontPicker=false}
     if(newSession) AlertDialog(onDismissRequest={newSession=false},title={Text("New session")},text={
         OutlinedTextField(newName,{newName=it},singleLine=true,label={Text("Name (optional)")},supportingText={Text("Leave blank for a name from Rex.")})
     },confirmButton={Button(onClick={newSession=false;client.createSession(newName);newName=""},enabled=state.connected&&!state.creating){Text("Create")}},
