@@ -164,10 +164,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             })
                             DropdownMenuItem(text={Text("Servers · ${model.connectedCount} connected")},onClick={menu=false;servers=true})
                             DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;client.refresh()})
-                            DropdownMenuItem(text={Text("Switch pane")},enabled=blocks.isNotEmpty(),onClick={menu=false;picker="panes"})
-                            HorizontalDivider(Modifier.padding(vertical=6.dp))
-                            DropdownMenuItem(text={Text("Close pane")},enabled=ready && blocks.any {it.id==chosen},onClick={menu=false;blocks.firstOrNull {it.id==chosen}?.let {closeTarget=closePaneTarget(it)}})
-                            DropdownMenuItem(text={Text("Close tab")},enabled=ready && window!=null,onClick={menu=false;window?.let {closeTarget=closeTabTarget(it)}})
                         }
                     }
                 })
