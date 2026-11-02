@@ -16,11 +16,12 @@ Source-head IDs and migration details are recorded in `MIGRATION.json`.
 git log --all --graph --decorate --oneline
 git log legacy/android --oneline
 git log legacy/probe --oneline
-git log --follow -- rexlink-core/src/control.rs
-git log --follow -- rexlink-android/app/src/main/java/dev/shulhi/rex/MainActivity.kt
+git log -m --follow -- rexlink-core/src/control.rs
+git log -m --follow -- rexlink-android/app/src/main/java/dev/shulhi/rex/MainActivity.kt
 ```
 
-Git follows individual file renames heuristically. The explicit legacy branches
+Use `-m` to examine the import merge against each parent when following file
+renames into the original roots. Git follows individual file renames heuristically. The explicit legacy branches
 always expose full pre-migration history even if a directory-level log does not
 cross the merge automatically. There are no submodules or nested `.git` repos.
 Nothing was pushed to a remote service by this migration.
