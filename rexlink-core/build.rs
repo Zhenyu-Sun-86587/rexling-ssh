@@ -8,7 +8,7 @@ fn main() {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| {
             std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
-                .join("../../.build/ghostty-host")
+                .join(".build/ghostty-host")
         });
     let prefix = std::fs::canonicalize(prefix).expect(
         "build Ghostty first with python3 scripts/build_native.py --host-test (or set GHOSTTY_PREFIX)",

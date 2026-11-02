@@ -1,4 +1,4 @@
-//! Verified Rex transport and native Ghostty replica, vendored from rex-probe.
+//! Direct Rex transport and native Ghostty replica used by Rexlink.
 pub mod control;
 pub mod data;
 pub mod ghostty;

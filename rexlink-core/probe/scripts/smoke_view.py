@@ -20,8 +20,8 @@ def main():
     parser.add_argument("--server", default=os.environ.get("REX_SERVER"), required="REX_SERVER" not in os.environ)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    probe = [str(root / "target/debug/rex-probe"), "-S", args.server]
-    viewer = [str(root / "target/debug/rex-view"), "-S", args.server]
+    probe = [str(root.parent / "target/debug/rex-probe"), "-S", args.server]
+    viewer = [str(root.parent / "target/debug/rex-view"), "-S", args.server]
 
     def call(method, payload, session=None):
         command = probe + ["call", method, json.dumps(payload)]

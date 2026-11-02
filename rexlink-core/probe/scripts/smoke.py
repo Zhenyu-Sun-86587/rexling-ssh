@@ -12,7 +12,7 @@ import uuid
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--probe", default="target/debug/rex-probe")
+    parser.add_argument("--probe", default=str(Path(__file__).resolve().parents[2] / "target/debug/rex-probe"))
     parser.add_argument("--server", default=os.environ.get("REX_SERVER"), required="REX_SERVER" not in os.environ)
     args = parser.parse_args()
     command = [str(Path(args.probe).resolve()), "-S", args.server]

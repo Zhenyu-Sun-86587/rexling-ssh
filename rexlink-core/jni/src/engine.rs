@@ -1119,7 +1119,7 @@ impl Actor {
                 self.sessions = json!([]);
                 self.windows = json!([]);
                 let metadata: Value = serde_json::from_str(include_str!(
-                    "../../rex-core/tests/fixtures/ghostty-remote.json"
+                    "../../tests/fixtures/ghostty-remote.json"
                 ))?;
                 let mut replica = Replica::new(
                     metadata["nonce"]
@@ -1127,7 +1127,7 @@ impl Actor {
                         .context("preview nonce missing")?,
                 );
                 for chunk in
-                    include_bytes!("../../rex-core/tests/fixtures/ghostty-remote.bin").chunks(7)
+                    include_bytes!("../../tests/fixtures/ghostty-remote.bin").chunks(7)
                 {
                     replica.feed(chunk)?;
                 }

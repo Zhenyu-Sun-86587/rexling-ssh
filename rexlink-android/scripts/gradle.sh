@@ -7,4 +7,5 @@ fi
 if [ -z "${ANDROID_HOME:-}" ] && [ -d "$HOME/Library/Android/sdk" ]; then
   export ANDROID_HOME="$HOME/Library/Android/sdk"
 fi
+cd "$REX_PROJECT_ROOT"
 exec "$REX_PROJECT_ROOT/gradlew" "$@"

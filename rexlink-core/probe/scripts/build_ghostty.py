@@ -23,15 +23,15 @@ def download(url, sha, destination):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prefix", type=Path, default=ROOT / "target/ghostty-native")
+    parser.add_argument("--prefix", type=Path, default=ROOT.parent / ".build/ghostty-host")
     args = parser.parse_args()
-    manifest = json.loads((ROOT / "native/ghostty-source.json").read_text())
+    manifest = json.loads((ROOT.parent / "native/ghostty-source.json").read_text())
     architecture = {"arm64": "aarch64", "aarch64": "aarch64", "x86_64": "x86_64", "AMD64": "x86_64"}.get(platform.machine())
     system = {"Darwin": "macos", "Linux": "linux"}.get(platform.system())
     key = f"{architecture}-{system}"
     if key not in manifest["zig"]:
         raise RuntimeError(f"unsupported build host {key}; build Ghostty manually and set GHOSTTY_PREFIX")
-    cache = ROOT / "target/ghostty-build"
+    cache = ROOT.parent / ".build/cache"
     cache.mkdir(parents=True, exist_ok=True)
     toolchain = manifest["zig"][key]
     zig_archive = cache / Path(toolchain["tarball"]).name

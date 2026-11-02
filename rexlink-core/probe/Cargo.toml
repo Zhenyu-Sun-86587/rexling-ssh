@@ -2,6 +2,7 @@
 name = "rex-probe"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.93"
 description = "Independent Rex control and terminal-data protocol probe"
 
 [features]

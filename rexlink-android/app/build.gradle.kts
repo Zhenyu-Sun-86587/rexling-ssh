@@ -64,7 +64,8 @@ dependencies {
 val buildRust by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir)
     commandLine("python3", "scripts/build_native.py")
-    inputs.files(rootProject.fileTree("native") { exclude("**/target/**") })
+    inputs.files(rootProject.fileTree("../rexlink-core") { exclude("**/target/**", "**/.build/**") })
+    inputs.file(rootProject.file("../rexlink-core/scripts/build_native.py"))
     inputs.file(rootProject.file("scripts/build_native.py"))
     outputs.dir(project.file("src/main/jniLibs/arm64-v8a"))
 }
