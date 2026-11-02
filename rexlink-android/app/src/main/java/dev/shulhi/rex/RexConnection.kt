@@ -135,13 +135,10 @@ internal class RexConnection(application: Application, private val scope: Corout
                             android.os.Trace.beginSection("Rexlink.ready.$handle.${next.revision}");android.os.Trace.endSection()
                             withContext(Dispatchers.Main.immediate) {
                                 navigationRequest = navigationRequest.acknowledge(next)
-                                val frames=paneFrames.toMutableMap()
-                                frames.putAll(next.previewFrames)
                                 val old=state.value
                                 if(old.connectionEpoch!=next.connectionEpoch) {activation.resume();cancelKeyRepeats();resetModifiers()}
-                                if(old.selectedBlock!=next.selectedBlock && old.screen!=null && old.selectedBlock.isNotBlank()) frames[old.selectedBlock]=old.screen
-                                while(frames.size>16) frames.remove(frames.keys.first())
-                                paneFrames=frames
+                                android.os.Trace.beginSection("Rexlink.previewCache")
+                                try {paneFrames=updatePaneFrames(paneFrames,old,next)} finally {android.os.Trace.endSection()}
                                 if(next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession) {
                                     val old=state.value.selectedSession
                                     if(old.isNotBlank() && !navigationRequest.pending) {
