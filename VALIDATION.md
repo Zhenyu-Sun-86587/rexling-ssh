@@ -617,3 +617,12 @@ Shareable release SHA256: `fd7fb1a89fef60f55caa75daf3eca5421b41b631d42dee9c74891
 All 37 emulator checks pass, including real hold/slide/release selection across the popup window, outside cancellation, short Ctrl toggle and read-only guards. Link-menu checks copy the actual destination through Android's clipboard (restoring prior clipboard contents), capture Open and Sharesheet intents, preserve frozen destinations through output changes and keep ordinary text selection. No messages were sent and no external browser page was opened by tests. Wrapped continuation taps open the complete URI. Existing keyboard/pane pixel stability, selection, rendering-cache and performance checks pass.
 
 Debug/release builds, release lint, signature, non-debuggable, native alignment and ART-profile checks pass. Updated shareable release SHA256: `0f3d4bf23105661f360df058da2657d83b12d63f8c7b91cdc72457fbe1d401e5`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; existing settings preserved.
+
+
+## Keyboard repeat and multi-server activity — 2026-11-02
+
+All 44 emulator checks pass, including held-arrow repeat/release, scroll cancellation, target changes, disabled input, activity grouping/filtering, stale records and the combined pane menu with Activity on the right. Existing Ctrl popup, Shift, links, selection and rendering checks still pass. 59 JVM tests and 24 non-live native tests pass; Clippy with warnings denied passes. Debug/release builds and release lint pass.
+
+The disposable-session live activity test passes on both owned Linux and Mac servers. It verifies root/child reports from multiple sessions, exact-pane navigation, no ownership or dimension changes, and stale-pane handling. Fixture sessions were removed. No user sessions or server settings were changed.
+
+Signature, non-debuggable release, ART profiles and 16KiB native alignment are verified. Installed on S22+ RFCT21390SD; installed base APK matches shareable release `dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `d3d35b6f3ff2cb34569cf3e93c928c5db347d07029e0b03b67a4919ce76062a8`. Existing application data was preserved. Performance review follows this delivery.

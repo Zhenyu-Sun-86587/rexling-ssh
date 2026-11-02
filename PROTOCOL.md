@@ -460,3 +460,14 @@ Android joins adjacent rows only when both the preceding wrap and following cont
 Long press freezes both text and link target. The native floating selection toolbar adds Open link, Copy link address and Share link while retaining Copy/Select all. Copy address uses the clipboard; Share creates an Android ACTION_SEND/text/plain chooser containing only the URL. Merely opening the chooser sends nothing. Actions do not take ownership or type terminal input.
 
 Hold-Ctrl shortcuts are local UI controls. A short tap keeps one-shot Ctrl behavior. A long press displays eight labels without descriptions; moving highlights a choice and release sends exactly its control byte, guarded by current ownership/navigation state. Outside release/cancellation sends nothing. No descriptions or automatic shortcut execution are inferred from terminal content.
+
+
+## Program activity snapshots (2026-11-02)
+
+Official program-status documentation: https://www.superlogical.com/rex/docs/build/program-status . Installed Linux API 7 and Mac API 9 expose terminal `program_status`, including root/child records, `effective_app`, `owner`, `state`, `kind`, `msg`, `progress`, and `updated_at`. States are working, blocked, done, error and idle. Done/error reports intentionally survive process exit. Live owned reports are matched against the foreground pid/name; an exited process does not hide its completed report.
+
+No dedicated activity feed was discovered. A separately authenticated read-only control connection lists sessions, attaches their views and walks `view.windows[].layers[].blocks[]`. Only `com.superlogical.terminal` blocks are queried. Status is requested before process/title; no records means those additional queries are skipped. The helper never opens PTY data, takes ownership, writes input or resizes. Its client label is `rex-android-activity` and is excluded from user attachment summaries.
+
+The Activity sheet scans each connected server only while open and foregrounded, with four seconds between completed scans. Closing cancels in-flight work. A scan has a 15-second total timeout, ten-second traversal budget and caps of 64 sessions, 256 panes and 1,024 records. Errors retain the last snapshot with a visible error; partial scans are identified. Selecting an entry carries server, session and block identity through navigation and opens the exact pane read-only. A missing pane reports that activity needs refreshing.
+
+Reproduce against an owned server with `REX_TEST_SERVER=https://your-rex-server GHOSTTY_PREFIX="$PWD/.build/ghostty-host" CARGO_TARGET_DIR="$PWD/.build/rust" cargo test --locked --manifest-path native/Cargo.toml --workspace live_activity_ -- --ignored`. This creates and removes only its own two fixture sessions, verifies root/child reports across sessions, exact-pane navigation and unchanged ownership/dimensions.
