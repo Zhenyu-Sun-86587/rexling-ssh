@@ -12,6 +12,27 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class RexModel @JvmOverloads constructor(application: Application, preferenceName: String="rex") : AndroidViewModel(application) {
+    internal var activityVisible by mutableStateOf(false)
+        private set
+    internal var activitySources by mutableStateOf<List<ActivitySource>>(emptyList())
+        private set
+    internal fun showActivity(open: Boolean) {
+        if(open) activeClient.cancelKeyRepeats()
+        activityVisible=open;connections.values.forEach {it.activity(open)};updateActivity()
+    }
+    internal fun refreshActivity() {connections.values.forEach {it.activity(activityVisible)}}
+    private fun updateActivity() {
+        activitySources=servers.mapNotNull {server->connections[server.id]?.state?.value?.let {state->
+            if(state.phase in listOf("disconnected","preview")) null else ActivitySource(server,state.connected,state.activityLoading,
+                if(state.connected) state.activityError else "Connection interrupted",state.activityPartial,state.activity)
+        }}
+    }
+    internal fun openActivity(target: ActivityTarget) {
+        val profile=servers.firstOrNull {it.id==target.server.id && it.endpoint==target.server.endpoint} ?: return
+        val source=activitySources.firstOrNull {it.server.id==profile.id && it.connected} ?: return
+        val record=source.items.firstOrNull {it.key==target.record.key} ?: return
+        rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
+    }
     private val preferences=application.getSharedPreferences(preferenceName,0)
     var appearance by mutableStateOf(runCatching {Appearance.valueOf(preferences.getString("appearance","SYSTEM")!!)}.getOrDefault(Appearance.SYSTEM))
         private set
@@ -46,6 +67,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private fun connection(profile: ServerProfile): RexConnection = connections.getOrPut(profile.id) {
         RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences).also {client->
             client.visible=profile.id==activeServerId
+            if(activityVisible) client.activity(true)
             palette?.let(client::updateTerminalTheme)
             if(!foreground) client.pause()
             observers[profile.id]=viewModelScope.launch {
@@ -53,6 +75,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
                     updateSessionTargets()
+                    if(activityVisible) updateActivity()
                     if(closingSessionKey.isNotBlank() && profile.id==closingServerId) {
                         if(state.sessions.none {it.id==closingSessionId}) closingSessionKey=""
                         else if(state.error.isNotBlank() || !state.connected) {

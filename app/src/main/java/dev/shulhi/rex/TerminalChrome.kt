@@ -49,7 +49,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlin.math.abs
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER }
+internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -78,6 +78,8 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.UP -> arrow(0f,-1f)
             ChromeIcon.DOWN -> arrow(0f,1f)
             ChromeIcon.ESCAPE -> {drawArc(color,-90f,270f,false,Offset(4f*u,4f*u),Size(16f*u,16f*u),style=Stroke(width));line(4f,4f,12f,12f);line(4f,4f,4f,9f);line(4f,4f,9f,4f)}
+            ChromeIcon.EYE -> {drawOval(color,Offset(2f*u,6f*u),Size(20f*u,12f*u),style=Stroke(width));drawCircle(color,3f*u,Offset(12f*u,12f*u),style=Stroke(width))}
+            ChromeIcon.BACKSPACE -> {line(9f,5f,21f,5f);line(21f,5f,21f,19f);line(21f,19f,9f,19f);line(9f,19f,2f,12f);line(2f,12f,9f,5f);line(12f,9f,17f,15f);line(17f,9f,12f,15f)}
             ChromeIcon.POINTER -> {line(5f,3f,5f,20f);line(5f,20f,10f,15f);line(10f,15f,14f,22f);line(14f,22f,17f,20f);line(17f,20f,13f,13f);line(13f,13f,20f,13f);line(20f,13f,5f,3f)}
             ChromeIcon.CONTROL -> {line(6f,15f,12f,9f);line(12f,9f,18f,15f)}
             ChromeIcon.ALT -> {line(3f,6f,8f,6f);line(8f,6f,15f,18f);line(15f,18f,21f,18f);line(14f,6f,21f,6f)}
@@ -211,7 +213,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,onPanes: ()->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},add: @Composable ()->Unit) {
+    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},actions: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -264,13 +266,31 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 }
             }
         }
-        ChromeButton(ChromeIcon.SPLIT,"Switch pane",enabled,onClick=onPanes)
-        add()
+        actions()
+    }
+}
+
+@Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,canSwitch: Boolean,canSplit: Boolean,
+    onActivity: ()->Unit,onPanes: ()->Unit,onNewPane: ()->Unit,onNewTab: ()->Unit) {
+    var expanded by remember {mutableStateOf(false)}
+    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+        Box {
+            Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
+                ChromeButton(ChromeIcon.SPLIT,"Pane options",enabled,readable=activityEnabled) {expanded=true}
+            }
+            androidx.compose.material3.DropdownMenu(expanded,{expanded=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+                androidx.compose.material3.DropdownMenuItem(text={Text("Switch pane")},enabled=canSwitch,onClick={expanded=false;onPanes()})
+                androidx.compose.material3.HorizontalDivider()
+                androidx.compose.material3.DropdownMenuItem(text={Text("New pane")},enabled=canSplit,onClick={expanded=false;onNewPane()})
+                androidx.compose.material3.DropdownMenuItem(text={Text("New tab")},onClick={expanded=false;onNewTab()})
+            }
+        }
+        ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,onClick=onActivity)
     }
 }
 
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
-    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},onKeyboard: ()->Unit) {
+    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},inputKey: String="",onKeyboard: ()->Unit) {
     var expanded by remember {mutableStateOf(false)}
     val hiddenStart=with(androidx.compose.ui.platform.LocalDensity.current) {26.dp.roundToPx()}
     val keyScroll=rememberScrollState(hiddenStart)
@@ -297,25 +317,25 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     }
                 }
             }
-            ArrowKeyGroup(controlled,Modifier.weight(1f).fillMaxHeight(),onKey,readable=readable)
+            ArrowKeyGroup(controlled,Modifier.weight(1f).fillMaxHeight(),onKey,readable=readable,inputKey=inputKey)
             ChromeButton(if(keyboardVisible) ChromeIcon.HIDE_KEYBOARD else ChromeIcon.KEYBOARD,
                 if(!controlled) "Take control and show keyboard" else if(keyboardVisible) "Hide keyboard" else "Show keyboard",enabled,readable=readable,onClick=onKeyboard)
         }
         if(expanded) {
             val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"},
-                listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete"))
+                listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete","Backspace" to "backspace"))
             for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
-                for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f),readable=readable) {onKey(key)}
+                for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f),readable=readable,icon=if(key=="backspace") ChromeIcon.BACKSPACE else null,repeat=key in listOf("delete","backspace"),inputKey=inputKey) {onKey(key)}
             }
         }
     }
 }
 
-@Composable private fun DockKey(label: String,enabled: Boolean,active: Boolean=false,description: String=label,modifier: Modifier=Modifier.width(if(label=="ctrl") 47.dp else 40.dp),icon: ChromeIcon?=null,readable: Boolean=enabled,onClick: ()->Unit) {
+@Composable private fun DockKey(label: String,enabled: Boolean,active: Boolean=false,description: String=label,modifier: Modifier=Modifier.width(if(label=="ctrl") 47.dp else 40.dp),icon: ChromeIcon?=null,readable: Boolean=enabled,repeat: Boolean=false,inputKey: String="",onClick: ()->Unit) {
     Box(modifier.fillMaxHeight().clip(RoundedCornerShape(11.dp))
         .background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
         .semantics(mergeDescendants=true) {contentDescription=description;selected=active}
-        .clickable(enabled=enabled,role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center) {
+        .then(if(repeat) Modifier.repeatKey(enabled,inputKey,onClick) else Modifier.clickable(enabled=enabled,role=Role.Button,onClick=onClick)),contentAlignment=Alignment.Center) {
         val color=(if(active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(readable) 1f else .38f)
         if(icon!=null) ChromeSymbol(icon,Modifier.size(20.dp),color)
         else Text(label,fontFamily=MonoUi,fontSize=11.sp,fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,color=color,letterSpacing=0.sp)
@@ -357,7 +377,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 /** Arrow keys scroll as a group. Only an individual tap sends input. */
-@Composable internal fun ArrowKeyGroup(enabled: Boolean,modifier: Modifier=Modifier,onKey: (String)->Unit,readable: Boolean=enabled) {
+@Composable internal fun ArrowKeyGroup(enabled: Boolean,modifier: Modifier=Modifier,onKey: (String)->Unit,readable: Boolean=enabled,inputKey: String="") {
     val keys=listOf("left" to "Left arrow","down" to "Down arrow","up" to "Up arrow","right" to "Right arrow")
     val icons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN,"up" to ChromeIcon.UP,"right" to ChromeIcon.RIGHT)
     Row(modifier.clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
@@ -367,7 +387,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             if(i>0) Box(Modifier.width(1.dp).height(15.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.6f)))
             Box(Modifier.width(40.dp).fillMaxHeight().clip(RoundedCornerShape(9.dp))
                 .semantics {contentDescription=description}
-                .clickable(enabled=enabled,role=Role.Button) {onKey(key)},contentAlignment=Alignment.Center) {
+                .repeatKey(enabled,inputKey) {onKey(key)},contentAlignment=Alignment.Center) {
                 val color=MaterialTheme.colorScheme.onSurface.copy(alpha=if(readable) 1f else .38f)
                 ChromeSymbol(icons.getValue(key),Modifier.size(18.dp),color)
             }

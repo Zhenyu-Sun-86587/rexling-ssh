@@ -43,13 +43,18 @@ internal class RexConnection(application: Application, private val scope: Corout
         private set
     private val navigation = WorkspaceNavigation()
     private var navigationSerial = 0L
+    private var keyEpoch by mutableStateOf(0L)
+    fun cancelKeyRepeats() {keyEpoch++}
+    fun keyTarget(): String = "$keyEpoch:$navigationSerial:${state.value.selectedSession}:${state.value.selectedBlock}"
+    fun keyForTarget(name: String,target: String) {if(target==keyTarget()) key(name)}
+    fun activity(open: Boolean) = command("activity","open" to open)
     private var handle = 0L
     private var resizeJob: Job? = null
     private var lastSize = 0 to 0
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) resetModifiers();command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {resetModifiers();cancelKeyRepeats()};command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -83,6 +88,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                     }
                                     preferences.edit {putString("current_session:${next.endpoint}",next.selectedSession)}
                                 }
+                                if(old.controlled!=next.controlled || old.selectedBlock!=next.selectedBlock || old.phase!=next.phase) cancelKeyRepeats()
                                 if(!next.controlled || old.selectedBlock!=next.selectedBlock) resetModifiers()
                                 mutableState.value = next
                                 mutableTerminal.value=next.screen
@@ -118,6 +124,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
+        cancelKeyRepeats()
         resetModifiers()
         val value = server.trim()
         navigationRequest = NavigationRequest()
@@ -127,7 +134,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         preferences.edit { putString("endpoint", value) }
         command("connect", "server" to value)
     }
-    fun disconnect() { resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         if (id == (navigationRequest.session ?: state.value.selectedSession)) return
@@ -149,6 +156,16 @@ internal class RexConnection(application: Application, private val scope: Corout
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         navigation.remember(current.selectedSession, current.windows, id)
         command("block", "id" to id, "navigationId" to navigationRequest.id)
+    }
+    fun openActivity(session: String,block: String) {
+        val current=state.value
+        if(!visible || !current.connected || current.creating) return
+        if(current.selectedSession.isNotBlank() && current.selectedSession!=session) {
+            lastSessionId=current.selectedSession;preferences.edit {putString("last_session:${current.endpoint}",lastSessionId)}
+        }
+        cancelKeyRepeats();resetModifiers();keyboardRequest=""
+        navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
+        command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
     }
     fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {state.value.programs[it.id] ?: ProgramIdentity.Terminal}
     fun tabPaneIndex(window: WindowItem): Int = window.blocks.indexOfFirst {it.id==navigation.pane(state.value.selectedSession,window)}.coerceAtLeast(0)
@@ -235,8 +252,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
             command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
     }
-    fun releaseControl() { controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
+    fun releaseControl() { cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
+        cancelKeyRepeats()
         navigationRequest = NavigationRequest()
         foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))

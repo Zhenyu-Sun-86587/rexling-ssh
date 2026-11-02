@@ -95,6 +95,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val window=windows.firstOrNull {w->w.blocks.any {it.id==displayedBlock}} ?: windows.firstOrNull {it.blocks.isNotEmpty()}
     val ready=state.connected && !navigation.pending && !state.creating
     val controlled=state.controlled && ready && client.hasScreen
+    val keyTarget=client.keyTarget()
     val palette=LocalTerminalPalette.current
     var endpoint by rememberSaveable {mutableStateOf(client.savedEndpoint)}
     var showServer by rememberSaveable {mutableStateOf(true)}
@@ -104,7 +105,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var newSession by remember {mutableStateOf(false)}
     var newName by rememberSaveable {mutableStateOf("")}
     var menu by remember {mutableStateOf(false)}
-    var add by remember {mutableStateOf(false)}
     var appearance by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
     var fontSize by rememberSaveable {mutableIntStateOf(10)}
@@ -202,19 +202,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
-                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,{picker="panes"},panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},add={
-                                Box {
-                                    Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
-                                        ChromeButton(ChromeIcon.ADD,"Add terminal",ready){add=true}
-                                    }
-                                    DropdownMenu(add,{add=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                                        DropdownMenuItem(text={Text("New tab")},onClick={add=false;client.createTab()})
-                                        DropdownMenuItem(text={Text("New pane")},enabled=state.selectedBlock.isNotBlank(),onClick={add=false;client.createPane()})
-                                    }
-                                }
+                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},actions={
+                                TerminalActions(ready,model.connectedCount>0,blocks.isNotEmpty(),state.selectedBlock.isNotBlank(),
+                                    {model.showActivity(true)},{picker="panes"},client::createPane,client::createTab)
                             })
                             KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
-                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,client::key,readable=state.connected,onControlShortcut=client::controlShortcut) {
+                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget) {
                                 if(!controlled) client.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
                             }
                         }
@@ -225,6 +218,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             }
         }
     }
+    if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity) {model.showActivity(false)}
     if(servers) ServersSheet(model){servers=false}
     if(picker=="panes") ModalBottomSheet(onDismissRequest={picker=""}) {
         Column(Modifier.fillMaxWidth().heightIn(max=450.dp).verticalScroll(rememberScrollState()).padding(bottom=20.dp)) {
