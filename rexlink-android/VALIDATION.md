@@ -767,3 +767,50 @@ and the angle correction were recorded in separate signed commits on main.
 
 
 Tab spacing follow-up: the explicit icon/title gap is reduced from 5 dp to 2 dp. The release builds and passes static APK verification. It was installed on S22+ RFCT21390SD with ADB Success before follow-up checks. Release SHA256: `9655d431561287dbb5398dcf938817988685ec2a86626a9007fedc3fd0914976`.
+
+
+Header icon slot follow-up: the top bar reserves a constant 52×35 dp slot for one, two or three program tiles, centering their painted widths inside it. Other ProgramStack callers retain their existing sizing. The release builds and passes static APK verification. Installation was attempted but the S22+ was disconnected; the user confirmed it is not currently connected. The shareable APK is ready for later installation, SHA256 `272c35fef943adcb2f0bfeadb76e8f346c6a6ffca5419d0581d8a5975bcc2bde`.
+
+
+## Cellular typing backlog follow-up (2026-11-02)
+
+Input RPC acknowledgments are dispatched by request ID instead of being awaited
+inside the actor’s command handler. The output/render regression deliberately
+holds an acknowledgment until VT has arrived and a frame containing its marker
+has been published; output remains responsive with zero replies received.
+
+An overlapping raw-write experiment exposed real byte reordering on the Linux
+Rex server. Production uses the documented ordered `block.event` key path
+instead, with an eight-request window. Both owned Linux/Mac servers pass raw
+PTY capture of ordered UTF-8, long text, emoji, all C0 bytes, DEL, arrows, paste
+wrappers and post-paste typing. Each fixture was destroyed. The live lifecycle
+and canonical-ownership/reconnect typing fixture also passes on both servers.
+
+56 non-live Rust workspace tests pass. Added checks cover response ID
+demultiplexing, out-of-order replies, retained event sequences/RPC error codes,
+timeouts without retransmission, bounded queues, text batching boundaries,
+stale pane/connection bindings, rendering before acknowledgment, ownership
+rejection, paste barriers and reconnect without replay. Clippy with warnings
+denied and the JNI smoke check pass. All 77 JVM tests, debug/release builds and
+release lint pass.
+
+In the controlled loopback actor benchmark, 24 ordered inputs with 100 ms
+held replies drain in 322 ms with eight in flight versus 2,505 ms with one.
+Batching is disabled for that comparison. This measures acknowledgment backlog
+under synthetic delay, not first-key latency or physical-phone pixel timing.
+
+The emulator’s two-host Android test passes with the production JNI/connection
+code: hidden-view input rejection, independent sessions, selection, automatic
+ownership and foreground recovery. Ten local-route input-dispatch-to-terminal-
+state samples measured median 33.44 ms and maximum/p95 49.92 ms. This excludes
+final pixel presentation and is not a physical-phone or cellular measurement.
+
+The release was installed on S22+ RFCT21390SD with ADB Success immediately after
+building and required checks. Its installed base APK hash matches the shareable
+`dist/Rexlink-0.1.0-arm64-release.apk`:
+`caafc78d6ef0756844e971b35054a32e1719a9ace19e96eff3a8ab4fb701e806`.
+Static checks pass the release signature, non-debuggable setting, JNI exports,
+ART profiles and 16 KiB library/ZIP alignment. This release also delivers the
+previously prepared fixed-width header icon slot. The header fix and latency
+implementation were recorded as separate signed commits on main after the
+user restored 1Password signing; signing was not disabled.

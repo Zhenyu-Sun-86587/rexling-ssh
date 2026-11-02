@@ -42,6 +42,9 @@ signing separately before publishing. SDK paths and caches remain ignored.
 - The terminal streams snapshot plus incremental VT, with real Ghostty
   scrollback, copy selection, OSC 8/printed links, Nerd Fonts and mouse-aware
   full-screen scrolling. Shared PTY dimensions affect other attached clients.
+- Typing uses Rex’s ordered key-event stream with up to eight requests in flight.
+  Delayed acknowledgments no longer stop terminal output or rendering. Adjacent
+  queued plain text can be combined without delaying the first keystroke.
 - The one-row keyboard dock offers modifiers, a scrollable arrow group,
   hold/repeat, Ctrl shortcuts and an expandable panel with F1–F12.
 - **⋮ → Appearance** saves independent light/dark presets, including the
@@ -59,4 +62,6 @@ Project code: [Apache 2.0](../LICENSE). Bundled third-party notices are retained
 
 Multi-pane program icons fan out sideways with a subtle counterclockwise front
 tile and opposing back tilts. The active program stays in front; single-pane
-icons remain upright. Both header and tab icons use the same treatment.
+icons remain upright. Both header and tab icons use the same treatment. The
+header reserves the same width for one, two or three tiles and centers the
+visible stack, keeping the title and directory aligned when pane counts change.
