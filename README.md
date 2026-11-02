@@ -5,7 +5,9 @@ Connect directly to your authenticated Rex server over your private Tailscale ne
 Kotlin/Compose supplies the UI; Rust handles the Rex protocol and JNI; libghostty-vt
 maintains terminal state. No custom bridge, proxy or Rex subprocess is required.
 
-<img src="docs/images/rexlink-android.png" alt="Rexlink on Android showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="360">
+| Light theme | Dark theme |
+| :---: | :---: |
+| <img src="docs/images/rexlink-android.png" alt="Rexlink light theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> | <img src="docs/images/rexlink-android-dark.png" alt="Rexlink dark theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> |
 
 ```text
 rexlink/
@@ -100,6 +102,14 @@ uncertain input is never replayed.
 See [Android usage](rexlink-android/README.md),
 [protocol findings](rexlink-android/PROTOCOL.md), and
 [validation history](rexlink-android/VALIDATION.md).
+
+## Project status
+
+Rexlink is maintained on a **best-effort basis**. Support, updates, bug fixes and
+compatibility with future Rex versions are not guaranteed. Use it at your own
+risk: it is provided **AS IS, without warranties or conditions of any kind**.
+The warranty disclaimer and limitations of liability are set out in the
+[Apache 2.0 license](LICENSE).
 
 ## History and license
 
