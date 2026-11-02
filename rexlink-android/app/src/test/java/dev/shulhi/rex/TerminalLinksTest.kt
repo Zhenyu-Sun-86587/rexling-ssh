@@ -69,6 +69,27 @@ class TerminalLinksTest {
         val rows=TerminalLinks.Index().update(TerminalScreen(first.length,2,null,null,-1,0,cells))
         assertEquals(first,rows[0].single().url);assertTrue(rows[1].isEmpty())
     }
+    @Test fun prefixPrecheckKeepsUppercaseAndPrefixesSplitAcrossWrappedRows() {
+        for(url in listOf("HTTP://EXAMPLE.COM/a","HTTPS://example.com/path","www.example.com/docs")) {
+            for(columns in 1..9) {
+                val found=TerminalLinks.Index().update(wrapped(url,columns)).flatten().map {it.url}.distinct()
+                assertEquals("$url wrapped at $columns",listOf(if(url.startsWith("www.")) "https://$url" else url),found)
+            }
+        }
+    }
+    @Test fun prefixPrecheckDoesNotBridgeHiddenCellsOrSparseGaps() {
+        val row=cells("https://example.com")
+        assertTrue(TerminalLinks.row(row.mapIndexed {i,c->if(i==2)c.copy(attributes=16)else c},0,100).isEmpty())
+        assertTrue(TerminalLinks.row(row.mapIndexed {i,c->if(i>=2)c.copy(x=c.x+1)else c},0,100).isEmpty())
+        val plain=cells("compiler ready www elsewhere http status ok")
+        assertTrue(TerminalLinks.row(plain,0,100).isEmpty())
+    }
+    @Test fun plainOsc8LabelsStayClickableWithoutAnyVisibleWebPrefix() {
+        val row=cells("Docs").map {it.copy(hyperlink="https://example.com/docs")}
+        val result=TerminalLinks.row(row,0,100).single()
+        assertEquals("https://example.com/docs",result.url);assertTrue(result.explicit)
+    }
+
     @Test fun changingWrappedTailUpdatesUnchangedPrefixLinks() {
         val first=wrapped("https://example.com/aaaa",12);val next=wrapped("https://example.com/bbbb",12)
         val lines=next.lines.toMutableList();lines[0]=first.lines[0]

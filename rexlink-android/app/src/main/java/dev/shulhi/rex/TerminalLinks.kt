@@ -18,8 +18,30 @@ internal object TerminalLinks {
         return normalized.takeIf {(uri.scheme.equals("https",true) || uri.scheme.equals("http",true)) && !uri.host.isNullOrBlank()}
     }
     private data class Position(val row: Int,val start: Int,val end: Int)
+    /** Conservative allocation-free scan of the same logical text used below.
+     * Keep state across wrapped rows/cells, but break it at gaps, hidden or OSC 8 cells.
+     */
+    private fun hasWebPrefix(source: List<List<TerminalCell>>,columns: Int): Boolean {
+        var tail=0L
+        for(cells in source) {
+            var column=0
+            for(cell in cells) {
+                if(cell.width<=0 || cell.x<column || cell.x>=columns) continue
+                if(cell.x>column) tail=0L
+                if(cell.attributes and 16!=0 || cell.hyperlink!=null || cell.text.isEmpty()) tail=0L
+                else for(char in cell.text) {
+                    val code=when(char) {in 'A'..'Z'->char.code+32;in '\u0000'..'\u007f'->char.code;else->0}
+                    tail=(tail shl 8) or code.toLong()
+                    if(tail==0x68747470733a2f2fL || tail and 0x00ffffffffffffffL==0x687474703a2f2fL ||
+                        tail and 0xffffffffL==0x7777772eL) return true
+                }
+                column=cell.x+cell.width
+            }
+        }
+        return false
+    }
     private fun detect(source: List<List<TerminalCell>>,firstRow: Int,columns: Int,partialStart: Boolean,partialEnd: Boolean): List<TerminalLink> {
-        val explicit=ArrayList<TerminalLink>();val text=StringBuilder();val positions=ArrayList<Position>()
+        val explicit=ArrayList<TerminalLink>()
         source.forEachIndexed {offset,cells->
             val row=firstRow+offset
             for(cell in cells) {
@@ -30,6 +52,11 @@ internal object TerminalLinks {
                     explicit[explicit.lastIndex]=previous.copy(end=(cell.x+cell.width).coerceAtMost(columns))
                 else explicit.add(TerminalLink(row,cell.x,(cell.x+cell.width).coerceAtMost(columns),uri,true))
             }
+        }
+        if(!hasWebPrefix(source,columns)) return if(explicit.isEmpty()) emptyList() else explicit.sortedWith(compareBy({it.row},{it.start}))
+        val text=StringBuilder();val positions=ArrayList<Position>()
+        source.forEachIndexed {offset,cells->
+            val row=firstRow+offset
             var column=0
             fun append(value: String,start: Int,end: Int) {
                 text.append(value);repeat(value.length) {positions.add(Position(row,start,end))}
