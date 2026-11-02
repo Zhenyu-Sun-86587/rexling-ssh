@@ -99,8 +99,15 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun activity(open: Boolean) = command("activity","open" to open)
     private var seen=runCatching {JSONObject(preferences.getString("activity_seen:$savedEndpoint","{}").orEmpty())}.getOrDefault(JSONObject())
     fun isActivitySeen(record: ActivityRecord)=record.attentionKey.isNotBlank() && seen.optString(record.attentionKey)==record.attentionVersion
+    fun markAttentionSeen(key: String,version: String) {
+        if(key.isBlank() || version.isBlank()) return
+        seen.put(key,version);saveAttentionSeen()
+    }
     fun markActivitySeen(records: List<ActivityRecord>) {
         for(record in records) if(record.attentionKey.isNotBlank() && record.attentionVersion.isNotBlank()) seen.put(record.attentionKey,record.attentionVersion)
+        saveAttentionSeen()
+    }
+    private fun saveAttentionSeen() {
         if(seen.length()>2048) {val keys=seen.keys().asSequence().toList();keys.take(keys.size-2048).forEach {seen.remove(it)}}
         preferences.edit {putString("activity_seen:$savedEndpoint",seen.toString())};command("activity_seen","items" to seen)
     }

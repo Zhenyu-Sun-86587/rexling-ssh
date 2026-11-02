@@ -132,6 +132,7 @@ struct Actor {
     preview_task: Option<PreviewTask>,
     summary_task: Option<SummaryTask>,
     activity_open: bool,
+    monitoring: bool,
     activity_task: Option<ProgramTask>,
     activity_refresh: tokio::time::Instant,
     activity: Value,
@@ -190,7 +191,7 @@ impl Actor {
             dirty: false,
             preview_task: None,
             summary_task: None,
-            activity_open:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
+            activity_open:false,monitoring:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
             activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
             program_task: None,
             programs: json!({}),
@@ -206,9 +207,9 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
-        if self.activity_open && self.activity_dirty {self.activity_snapshot=Arc::new(self.activity.clone());self.activity_dirty=false;}
+        if (self.activity_open || self.monitoring) && self.activity_dirty {self.activity_snapshot=Arc::new(self.activity.clone());self.activity_dirty=false;}
         if let Ok(mut shared) = self.shared.lock() {
-            if self.activity_open {shared.activity=self.activity_snapshot.clone();}
+            if self.activity_open || self.monitoring {shared.activity=self.activity_snapshot.clone();}
             else if !shared.activity.is_null() {shared.activity=Arc::default();}
             shared.revision += 1;
             shared.frame=self.screen.clone();
@@ -216,7 +217,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_open && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -256,13 +257,13 @@ impl Actor {
                     let Some(value)=value else{break;};
                     if value["type"]=="shutdown"{break;}
                     if value["type"]=="visibility" {
-                        self.visible=value["visible"].as_bool().unwrap_or(true);
+                        self.visible=!self.monitoring && value["visible"].as_bool().unwrap_or(true);
                         if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
                         else {self.commands.clear();if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
                         continue;
                     }
                     if matches!(value["type"].as_str(),Some("connect"|"retry"|"network"|"resume"|"activity")) {maintenance_at=tokio::time::Instant::now();}
-                    if matches!(value["type"].as_str(),Some("connect"|"disconnect"|"pause"|"network"|"retry")) {
+                    if matches!(value["type"].as_str(),Some("monitor"|"connect"|"disconnect"|"pause"|"network"|"retry")) {
                         self.commands.clear();self.execute_command(value).await;
                     } else if let Err(error)=self.commands.push(value,&self.input_target()) {self.error=error.to_string();self.publish();}
 
@@ -362,7 +363,7 @@ impl Actor {
                                 self.activity_inflight.contains(&crate::activity::pane_key(p["session"]["session_id"].as_str().unwrap_or(""),p["block"]["block_id"].as_str().unwrap_or("")))).cloned().collect();
                             Some(Box::pin(crate::activity::refresh(self.endpoint.clone().unwrap(),panes)))
                         };
-                        if self.activity_open {self.publish();}
+                        if self.activity_open || self.monitoring {self.publish();}
                     }
                     if self.phase=="connected" && self.program_task.is_none() && !self.selected_session.is_empty()
                         && self.program_refresh<=tokio::time::Instant::now()
@@ -705,6 +706,7 @@ impl Actor {
         if let Err(error)=self.command(value).await {self.command_error(error,navigation,false);}
     }
     async fn send_input(&mut self,value:Value)->Result<()> {
+        ensure!(!self.monitoring,"Background monitor is read-only");
         let target=self.input_target();
         if !target.matches(&value) {return Ok(());}
         if value["type"]=="click" && (!self.visible || self.paused || self.phase!="connected" || !self.controlled) {return Ok(());}
@@ -730,7 +732,15 @@ impl Actor {
         self.input_acks.push_back(InputAck {target,paste:value["type"]=="paste",reply:Box::pin(reply.receive())});Ok(())
     }
     async fn command(&mut self, value: Value) -> Result<()> {
-        match value["type"].as_str().context("command type missing")? {
+        let kind=value["type"].as_str().context("command type missing")?;
+        ensure!(!self.monitoring || matches!(kind,"monitor"|"connect"|"disconnect"|"network"|"retry"|"activity_seen"),"Background monitor is read-only");
+        match kind {
+            "monitor" => {
+                // Irreversible for this handle. Must be enabled before connecting or selecting a pane.
+                ensure!(self.endpoint.is_none() && self.selected_session.is_empty() && self.data.is_none(),"Enable monitoring before connecting");
+                self.monitoring=true;self.visible=false;self.activity_open=false;
+                self.publish();
+            }
             "connect" => {
                 let server = value["server"]
                     .as_str()
@@ -2474,6 +2484,11 @@ while True:
                 loop {let raw=app.poll(0).unwrap();if !raw.is_empty() {let value:Value=serde_json::from_str(&raw).unwrap();if predicate(&value){return value;}}
                     assert!(std::time::Instant::now()<deadline,"Activity fixture timed out");std::thread::sleep(Duration::from_millis(25));}
             }
+            let monitor=Session::spawn().unwrap();monitor.command(json!({"type":"monitor"})).unwrap();
+            monitor.command(json!({"type":"connect","server":server})).unwrap();
+            let monitored=until(&monitor,|v|v["phase"]=="connected" && v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["session"]==ids[0] && a["state"]=="blocked")));
+            assert_eq!(monitored["selectedSession"],"");assert_eq!(monitored["selectedBlock"],"");
+            assert_eq!(monitored["controlled"],false);assert!(monitored["screen"].is_null());
             let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();until(&app,|v|v["phase"]=="connected");
             app.command(json!({"type":"session","id":ids[0],"block":blocks[0],"navigationId":7})).unwrap();
             let initial=until(&app,|v|v["selectedBlock"]==blocks[0] && text(v).contains("ACTIVITY_READY"));
@@ -2496,6 +2511,8 @@ while True:
             app.command(json!({"type":"activity","open":false})).unwrap();
             runtime.block_on(writer.attach(&ids[1])).unwrap();
             runtime.block_on(writer.terminal(&ids[1],&blocks[1],"write",json!({"data":"alert\n"}))).unwrap();
+            let background=until(&monitor,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[1] && a["id"]=="" && a["state"]=="blocked")));
+            assert!(background["screen"].is_null());assert_eq!(background["controlled"],false);
             let alerted=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>0) && v["activity"].is_null());
             assert_eq!(alerted["controlled"],false);
             app.command(json!({"type":"activity","open":true})).unwrap();
@@ -2523,6 +2540,23 @@ while True:
             for i in 0..200 {actor.titles=json!({"pane":format!("Frame {i}")});let start=std::time::Instant::now();actor.publish();let mut state=shared.lock().unwrap();let after=state.revision-1;bytes=crate::updates::encode(&mut state,after).len();samples.push(start.elapsed().as_micros());}
             samples.sort();println!("activity_open={open} records=256 bytes={bytes} median_us={} p95_us={}",samples[100],samples[190]);
         }
+    }
+
+    #[test] fn background_monitor_is_read_only_and_publishes_activity_without_a_terminal() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(actor.command(json!({"type":"monitor"}))).unwrap();
+        assert!(actor.monitoring);assert!(!actor.visible);
+        for kind in ["session","block","take","resize","theme","create","close","activity","resume","peek"] {
+            assert!(runtime.block_on(actor.command(json!({"type":kind}))).is_err(),"{kind}");
+        }
+        assert!(runtime.block_on(actor.send_input(json!({"type":"input","text":"secret"}))).is_err());
+        actor.activity=json!([{"state":"blocked","title":"Needs approval"}]);actor.activity_dirty=true;actor.publish();
+        let state=shared.lock().unwrap();
+        assert_eq!(state.activity[0]["state"],"blocked");assert!(state.frame.is_none());
+        assert!(actor.selected_session.is_empty());assert!(actor.selected_block.is_empty());
+        assert!(!actor.controlled && actor.data.is_none() && actor.replica.is_none());
     }
 
     #[test] fn hidden_activity_is_cached_without_copying_it_into_terminal_updates() {

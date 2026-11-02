@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-02",
+  "feature": "opt-in background attention alerts",
+  "default_enabled": false,
+  "architecture": {
+    "transport": "existing Rex WebSocket status events with read-only metadata refresh",
+    "server_push_infrastructure": false,
+    "terminal_data_stream_in_monitor": false,
+    "monitor_takes_control": false,
+    "boot_start": false,
+    "restart_mode": "START_NOT_STICKY",
+    "foreground_service_type": "connectedDevice"
+  },
+  "checks": {
+    "jvm_passed": 93,
+    "jvm_optional_skipped": 1,
+    "native_non_live_passed": 59,
+    "live_native_activity_monitor_passed": true,
+    "jni_smoke_passed": true,
+    "emulator_existing_ui_passed": 82,
+    "emulator_notification_tests_passed": 2,
+    "release_lint_passed": true,
+    "final_notification_workspace_reuse_passed": true,
+    "wireframe_launcher_draw_passed": true
+  },
+  "emulator_doze": {
+    "forced_idle_result": "Now forced in to deep idle mode",
+    "deep_state": "IDLE",
+    "delivered_during_4s_forced_idle": true,
+    "delivered_after_unforce": true
+  },
+  "phone": {
+    "background_delivery_seconds": 0.8,
+    "tap_opened_exact_fixture_session": true,
+    "foreground_cleared_alert": true,
+    "original_session_restored": true,
+    "screen_lock_test": "passed on S22+; deviceLocked=1",
+    "locked": true,
+    "locked_delivery_seconds": 2.15,
+    "fixture_alert_resolved": true,
+    "attention_delivery_tested_sha256": "7ed446c8fd312c00bf24d670cf7d228de4e899cfec470aacfd556de72711a968",
+    "final_monitor_running": true
+  },
+  "release": {
+    "sha256": "73b683749608660cdc6cb10b585aff104b8f68a1778f6f67b63a5c57fe42ba4b",
+    "installed_on_s22_plus": true,
+    "installed_base_hash_matches": true
+  },
+  "limitations": [
+    "A short emulator forced-idle check is not evidence of reliable prolonged Doze delivery.",
+    "Android Doze, battery restrictions and network loss can delay alerts.",
+    "Only statuses Rex reports as blocked or error can alert."
+  ],
+  "icons": {
+    "launcher": "Exact user-supplied white wireframe dinosaur PNG on blue",
+    "notification": "Simplified white vector dinosaur head with prompt eye",
+    "themed_launcher_monochrome": true
+  },
+  "fixtures_removed": true
+}

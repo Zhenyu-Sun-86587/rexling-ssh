@@ -1,6 +1,7 @@
 package dev.shulhi.rex
 
 import android.app.Application
+import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,32 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         markActivitySeen(target);rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
     }
     private val preferences=application.getSharedPreferences(preferenceName,0)
+    internal var backgroundAlerts by mutableStateOf(preferences.getBoolean(BackgroundAlerts.ENABLED,false))
+        private set
+    internal var notificationNotice by mutableStateOf("")
+    private var pendingAlert: AlertDestination?=null
+    private val alertsListener=SharedPreferences.OnSharedPreferenceChangeListener {_,key->if(key==BackgroundAlerts.ENABLED) {
+        viewModelScope.launch {backgroundAlerts=preferences.getBoolean(BackgroundAlerts.ENABLED,false)}
+    }}
+    internal fun setBackgroundAlerts(enabled: Boolean) {
+        backgroundAlerts=enabled;preferences.edit {putBoolean(BackgroundAlerts.ENABLED,enabled)}
+        BackgroundAlerts.reconcile(getApplication())
+    }
+    internal fun openAlert(target: AlertDestination) {
+        val profile=servers.firstOrNull {it.id==target.serverId && it.endpoint==target.endpoint}
+        if(profile==null) {notificationNotice="That server is no longer saved.";return}
+        pendingAlert=target;connectServer(profile.id);tryOpenAlert()
+    }
+    private fun tryOpenAlert() {
+        val target=pendingAlert ?: return
+        val client=connections[target.serverId] ?: return
+        val state=client.state.value
+        if(!state.connected || !foreground) return
+        pendingAlert=null
+        if(state.sessions.none {it.id==target.session}) {notificationNotice="That session is no longer available.";return}
+        client.markAttentionSeen(target.attentionKey,target.attentionVersion)
+        client.openActivity(target.session,target.block);showActivity(false)
+    }
     internal val themes by lazy {ThemeCatalog.load(application)}
     private var darkTheme by mutableStateOf(preferences.getString("dark_theme","rexlink-default-dark").orEmpty())
     private var lightTheme by mutableStateOf(preferences.getString("light_theme","rexlink-default-light").orEmpty())
@@ -107,7 +134,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
     val connectedCount: Int get()=serverStatuses.values.count {it.connected}
 
-    init {desired.toList().forEach {id->connectServer(id,select=false)}}
+    init {preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
 
     private fun connection(profile: ServerProfile): RexConnection = connections.getOrPut(profile.id) {
         RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences).also {client->
@@ -121,6 +148,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
                     attentionCount=connections.values.sumOf {if(it.state.value.connected) it.state.value.attentionCount else 0}
                     updateSessionTargets()
+                    if(profile.id==pendingAlert?.serverId) tryOpenAlert()
                     if(activityVisible) updateActivity()
                     if(renamingSessionKey.isNotBlank() && profile.id==renameServerId) {
                         if(!state.creating && state.sessions.any {it.id==renameSessionId && it.label==renameLabel}) renamingSessionKey=""
@@ -190,7 +218,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private fun persist() {updateSessionTargets();preferences.edit {
         putString("servers",SavedServers.encode(servers));putString("active_server",activeServerId)
         putStringSet("connected_servers",desired)
-    }}
+    };if(foreground && BackgroundAlerts.foreground.value) BackgroundAlerts.reconcile(getApplication())}
     fun connectServer(id: String,select: Boolean=true) {
         val profile=servers.firstOrNull {it.id==id} ?: return
         val client=connection(profile)
@@ -247,6 +275,6 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     fun updateTerminalTheme(value: TerminalPalette) {palette=value;connections.values.forEach {it.updateTerminalTheme(value)}}
     fun changeAppearance(value: Appearance) {appearance=value;preferences.edit {putString("appearance",value.name)}}
     fun pause() {foreground=false;networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
-    fun resume() {foreground=true;networkMonitor.start();connections.values.forEach {it.resume()}}
-    override fun onCleared() {networkJob?.cancel();networkMonitor.stop();observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
+    fun resume() {foreground=true;networkMonitor.start();connections.values.forEach {it.resume()};tryOpenAlert();BackgroundAlerts.reconcile(getApplication())}
+    override fun onCleared() {preferences.unregisterOnSharedPreferenceChangeListener(alertsListener);networkJob?.cancel();networkMonitor.stop();observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
 }

@@ -1,24 +1,28 @@
 {
   "apk": "dist/Rexlink-0.1.0-arm64-release.apk",
   "application_label": "Rexlink",
-  "sha256": "c96de12d3c3fc843ed5a4cbf72db5b38ae35546b80864eee8a585898ba6d225c",
-  "bytes": 18117746,
+  "sha256": "73b683749608660cdc6cb10b585aff104b8f68a1778f6f67b63a5c57fe42ba4b",
+  "bytes": 17252562,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [
     {
       "name": "assets/dexopt/baseline.prof",
-      "bytes": 6396
+      "bytes": 6480
     },
     {
       "name": "assets/dexopt/baseline.profm",
-      "bytes": 679
+      "bytes": 703
     }
   ],
   "zip_alignment_16k": true,
   "permissions": [
     "android.permission.INTERNET",
     "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+    "android.permission.CHANGE_NETWORK_STATE",
     "dev.shulhi.rex.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
   ],
   "native_libraries": [
@@ -34,7 +38,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 5289656,
+      "bytes": 5289552,
       "load_alignment": 16384
     }
   ],

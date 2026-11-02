@@ -1217,3 +1217,64 @@ session destroyed, and temporary phone traces removed. Private raw traces and
 variant artifacts remain in ignored `.build/render-pass/`.
 
 Full results: [s22plus-render-first-pass-2026-11-02.json](validation/s22plus-render-first-pass-2026-11-02.json).
+
+
+## Background attention notifications — 2026-11-02
+
+Added opt-in **⋮ → Background alerts**, off by default, with Android notification
+permission requested on enable. A low-importance ongoing foreground-service
+notification reports connected-server count and has a Stop action. Attention
+alerts use a separate high-importance channel, a private lock-screen presentation,
+and one-use private notification destinations bound to the saved server endpoint,
+session and pane. Foreground requests, title animation, reconnecting snapshots
+and already-seen report versions do not generate repeated alerts. Resolving a
+request removes its notification. No completion/running alerts or server push
+infrastructure were added.
+
+The service uses one independent native monitor per explicitly connected saved
+server. Monitor mode is irreversible for that handle and rejects terminal
+selection, ownership, resizing, input, theme changes and terminal preview commands.
+It publishes Activity metadata without a PTY data connection or terminal replica.
+Existing UI pause/release behavior is retained. Stop, disabling alerts, removing
+all connected servers, or removing the app task ends monitoring. There is no boot
+receiver or sticky service restart. Observer cleanup destroys its JNI handle;
+network recovery uses the native reconnection path.
+
+93 JVM tests pass (one optional benchmark skipped), as do 59 non-live native tests,
+Clippy with warnings denied, JVM/JNI smoke, release lint and release APK checks.
+The extended live native Activity fixture verifies initial and subsequent attention
+reports with no selected pane, frame or control in the monitor. All 82 existing
+emulator UI checks pass. Two new emulator checks cover private/replayed destination
+tokens and a real owned task through foreground suppression, background delivery,
+title-only deduplication, resolution, screen-off delivery, notification navigation,
+repeat suppression and Stop. Only disposable fixture terminals received test input.
+
+On S22+ RFCT21390SD, the installed release matches the verified shareable APK.
+The normal notification-permission flow was exercised. A disposable approval
+request arrived while backgrounded in one observed 0.80-second sample (including
+host CLI submission and detection); tapping its notification opened that exact
+fixture session and foreground entry cleared its alert. The original phone session
+was restored. A fresh request also arrived with `deviceLocked=1` in one 2.15-second sample, and
+resolving the fixture cleared it. These are individual observations, not latency
+guarantees. The final build additionally reuses the existing workspace when the
+ongoing notification is tapped; the emulator integration test covers this.
+The JSON report distinguishes the phone delivery-test artifact from that final
+installed artifact.
+
+A separate emulator check forced deep IDLE with no outstanding fixture alert;
+a new request appeared within the four-second observation and remained present
+after leaving idle. Battery/idle overrides were restored. This short test does
+**not** establish delivery reliability during prolonged Doze or OEM power saving.
+The app does not change battery exemptions or hold a permanent wake lock. Android
+and connectivity can delay alerts; the setting and README state this limitation.
+See `validation/background-alerts.json` for the exact checks and release hash.
+
+
+Launcher follow-up: replaced the artwork with the exact user-supplied white
+wireframe dinosaur on blue, retaining its source hash and provenance. Android
+centers the unmodified PNG over a matching blue adaptive background. Notifications
+use a simplified transparent white vector head with the prompt eye; Android 13+
+themed launchers use the same monochrome mark. The root README icon follows the
+same source asset. The ongoing-notification PendingIntent now has a distinct
+action so an older installed build's cached intent cannot retain obsolete launch
+flags; both notification paths return to the existing workspace.

@@ -1,8 +1,9 @@
 {
-  "source": "User-selected transparent paper-style blue dinosaur",
-  "preparation": "Exact supplied transparent PNG, copied without alteration; Android supplies the white adaptive launcher background.",
-  "source_sha256": "80d43a902797e97454540a72b38784140cc1e49b0efbbc0823cff00db69b2f7a",
-  "foreground_sha256": "80d43a902797e97454540a72b38784140cc1e49b0efbbc0823cff00db69b2f7a",
+  "source": "User-selected white wireframe dinosaur on blue background",
+  "preparation": "Exact supplied PNG, copied without alteration. Android centers the image over a matching blue adaptive background. The notification/themed icon is a simplified transparent white vector head with the terminal prompt eye.",
+  "source_sha256": "b95d9f70dca538222361ffb8620e5676e08e21968cb6f3e9fb5a035a1175ac9b",
+  "foreground_sha256": "b95d9f70dca538222361ffb8620e5676e08e21968cb6f3e9fb5a035a1175ac9b",
   "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
+  "notification": "app/src/main/res/drawable/ic_notification.xml",
   "prompt": null
 }

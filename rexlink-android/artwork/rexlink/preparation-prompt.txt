@@ -1,1 +1,1 @@
-No image generation or editing: use the exact user-supplied transparent paper-style icon PNG, preserving its alpha. Android supplies the white adaptive launcher background.
+Use the exact user-supplied wireframe dinosaur PNG without raster editing. Center it over a matching blue adaptive launcher background. Derive a simple white vector dinosaur head with prompt eye for Android monochrome notifications and themed launchers.

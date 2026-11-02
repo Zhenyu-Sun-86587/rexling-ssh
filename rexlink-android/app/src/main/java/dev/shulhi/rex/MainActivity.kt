@@ -3,6 +3,13 @@ package dev.shulhi.rex
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.Manifest
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -38,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private val model: RexModel by viewModels()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeAlert(intent)
         enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         setContent {
             val dark=when(model.appearance) {Appearance.SYSTEM->isSystemInDarkTheme();Appearance.DARK->true;Appearance.LIGHT->false}
@@ -47,8 +55,13 @@ class MainActivity : ComponentActivity() {
             RexTheme(dark,model.theme(dark)) {RexApp(model)}
         }
     }
-    override fun onStart(){super.onStart();model.resume()}
-    override fun onStop(){model.pause();super.onStop()}
+    private fun consumeAlert(intent: Intent?) {
+        AlertDestinations(BackgroundAlerts.preferences(this)).consume(intent?.data)?.let(model::openAlert)
+        intent?.data=null
+    }
+    override fun onNewIntent(intent: Intent) {super.onNewIntent(intent);consumeAlert(intent)}
+    override fun onStart(){super.onStart();BackgroundAlerts.foreground.value=true;model.resume()}
+    override fun onStop(){if(!isChangingConfigurations) BackgroundAlerts.foreground.value=false;model.pause();super.onStop()}
 }
 
 @Composable private fun RexTheme(dark: Boolean,theme: AppTheme,content: @Composable ()->Unit) {
@@ -77,6 +90,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun RexApp(model: RexModel) {
     val client=model.activeClient
     key(model.activeServerId) {RexWorkspace(model,client)}
+    if(model.notificationNotice.isNotBlank()) AlertDialog(onDismissRequest={model.notificationNotice=""},title={Text("Notification")},text={Text(model.notificationNotice)},confirmButton={TextButton(onClick={model.notificationNotice=""}) {Text("OK")}})
 }
 
 private data class TerminalCloseTarget(val session: String,val id: String,val label: String,val tab: Boolean,val blocks: List<String>)
@@ -106,6 +120,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var newName by rememberSaveable {mutableStateOf("")}
     var menu by remember {mutableStateOf(false)}
     var appearance by remember {mutableStateOf(false)}
+    var alerts by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
     val fontSize=model.fontSize
     var fontPicker by remember {mutableStateOf(false)}
@@ -154,6 +169,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
                             OwnershipMenuItem(controlled,ready&&client.hasScreen) {menu=false;if(controlled) client.releaseControl() else client.takeControl()}
+                            DropdownMenuItem(text={Text("Background alerts" + if(model.backgroundAlerts) " · On" else "")},onClick={menu=false;alerts=true})
                             DropdownMenuItem(text={Text("Appearance")},onClick={menu=false;appearance=true})
                             DropdownMenuItem(text={Text("Font size · $fontSize sp")},onClick={menu=false;fontPicker=true})
                             DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
@@ -226,6 +242,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         }
     }
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
+    if(alerts) BackgroundAlertsDialog(model) {alerts=false}
     if(servers) ServersSheet(model){servers=false}
     if(picker=="panes") ModalBottomSheet(onDismissRequest={picker=""}) {
         Column(Modifier.fillMaxWidth().heightIn(max=450.dp).verticalScroll(rememberScrollState()).padding(bottom=20.dp)) {
@@ -330,4 +347,32 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
         onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget)
+}
+
+@Composable private fun BackgroundAlertsDialog(model: RexModel,onClose: ()->Unit) {
+    val context=LocalContext.current
+    var denied by remember {mutableStateOf(false)}
+    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted->
+        if(granted) {model.setBackgroundAlerts(true);denied=false} else denied=true
+    }
+    AlertDialog(onDismissRequest=onClose,title={Text("Background alerts")},text={
+        Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Text("Get notified when a task needs input, approval, sign-in, or fails while Rexlink is in the background or your phone is locked.")
+            Text("A quiet monitoring notification stays visible. Stop it there, or turn this off. Closing Rexlink stops monitoring.")
+            Text("Your phone may delay alerts while sleeping.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text("Notify when I’m needed",Modifier.weight(1f))
+                Switch(checked=model.backgroundAlerts,onCheckedChange={enabled->
+                    if(!enabled) model.setBackgroundAlerts(false)
+                    else if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    else if(BackgroundAlerts.allowed(context)) {model.setBackgroundAlerts(true);denied=false} else denied=true
+                },enabled=model.servers.any {model.serverStatuses[it.id]?.maintained==true})
+            }
+            if(model.servers.none {model.serverStatuses[it.id]?.maintained==true}) Text("Connect a server to enable alerts.")
+            if(denied || (model.backgroundAlerts && !BackgroundAlerts.allowed(context))) {
+                Text("Allow notifications in Android settings to receive alerts.")
+                TextButton(onClick={context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))}) {Text("Notification settings")}
+            }
+        }
+    },confirmButton={TextButton(onClick=onClose) {Text("Done")}})
 }

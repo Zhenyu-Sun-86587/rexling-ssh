@@ -102,6 +102,17 @@ ready; viewing another client's pane shows a contextual takeover notice. Manual
 Take/Release remain in the overflow menu. Input is paused during reconnection and
 uncertain input is never replayed.
 
+Enable **⋮ → Background alerts** to receive attention notifications while the app
+is backgrounded or the phone is locked. Allow notifications when Android asks.
+A quiet ongoing notification shows monitoring status and a **Stop** action.
+Only input/approval/sign-in requests and errors alert; running and finished tasks
+do not. Tapping an alert opens its server, session and pane. Terminal control is
+released and rendering pauses in the background; monitoring is read-only.
+
+Monitoring stops when you remove Rexlink from Recents, force-stop it, or tap Stop.
+It does not start at boot or require server-side push. Network loss, Android Doze
+and device battery management can delay alerts; instant delivery is not guaranteed.
+
 See [Android usage](rexlink-android/README.md),
 [protocol findings](rexlink-android/PROTOCOL.md), and
 [validation history](rexlink-android/VALIDATION.md).
