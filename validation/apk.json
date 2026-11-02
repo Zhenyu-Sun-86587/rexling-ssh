@@ -1,8 +1,8 @@
 {
   "apk": "app/build/outputs/apk/release/app-release.apk",
   "application_label": "Rexlink",
-  "sha256": "d3d35b6f3ff2cb34569cf3e93c928c5db347d07029e0b03b67a4919ce76062a8",
-  "bytes": 17317662,
+  "sha256": "9cd369e300abb5e3dac4079d67272a843cd46fd6cc8eacd173634f7129d2085d",
+  "bytes": 17320830,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [
@@ -33,7 +33,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 5138200,
+      "bytes": 5141368,
       "load_alignment": 16384
     }
   ],

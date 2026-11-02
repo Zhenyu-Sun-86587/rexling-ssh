@@ -626,3 +626,10 @@ All 44 emulator checks pass, including held-arrow repeat/release, scroll cancell
 The disposable-session live activity test passes on both owned Linux and Mac servers. It verifies root/child reports from multiple sessions, exact-pane navigation, no ownership or dimension changes, and stale-pane handling. Fixture sessions were removed. No user sessions or server settings were changed.
 
 Signature, non-debuggable release, ART profiles and 16KiB native alignment are verified. Installed on S22+ RFCT21390SD; installed base APK matches shareable release `dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `d3d35b6f3ff2cb34569cf3e93c928c5db347d07029e0b03b67a4919ce76062a8`. Existing application data was preserved. Performance review follows this delivery.
+
+
+## Activity title and eye-button correction — 2026-11-02
+
+The rounded background is on the rightmost Activity eye, with a plain pane-options button beside it. All three Activity emulator checks pass. Native title coverage verifies live OSC precedence, exact owner/session binding, child-task independence and completed reports from exited processes. The live activity fixture changes its terminal title while its status title remains static and passes on both owned servers. All 25 non-live native tests, 59 JVM tests, Clippy and release lint pass; debug/release APKs build.
+
+Activity titles in the attached session consume existing title events; other sessions refresh on the four-second activity scan. Signature, non-debuggable release, ART-profile and 16KiB checks pass. Installed on S22+ RFCT21390SD and verified by installed base APK hash `9cd369e300abb5e3dac4079d67272a843cd46fd6cc8eacd173634f7129d2085d`. The shareable APK and checksum were updated. This correction was shipped before resuming performance optimization.
