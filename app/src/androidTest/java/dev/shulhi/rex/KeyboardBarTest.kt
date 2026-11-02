@@ -28,7 +28,7 @@ class KeyboardBarTest {
                     KeyboardBar(controlled(),ready,false,false,shift.active,true,{},{},
                         {shift=ShiftKeyState(latched=!shift.active)},
                         {shift=shift.press()},{shift=shift.release(it)},
-                        {sent+=TerminalInput.key(it,shift=shift.active);shift=shift.consume()},{})
+                        {sent+=TerminalInput.key(it,shift=shift.active);shift=shift.consume()},onKeyboard={})
                 }
             }
         }
@@ -99,6 +99,24 @@ class KeyboardBarTest {
         for(label in listOf("Escape","Control","Alt","Shift","Tab key","Left arrow"))
             ui.onNodeWithContentDescription(label).assertIsNotEnabled().performTouchInput {click()}
         ui.runOnIdle {assertTrue("Readable icons must not enable terminal input",sent.isEmpty())}
+    }
+
+    @Test fun navigationPendingKeepsTheEntireKeyRowCrispWhileInputIsDisabled() {
+        val ready=mutableStateOf(true)
+        ui.setContent {MaterialTheme {Box(Modifier.width(360.dp)) {
+            KeyboardBar(ready.value,ready.value,false,false,false,true,{},{},{},{},{},
+                {sent+=it},readable=true,onKeyboard={})
+        }}}
+        val before=ui.onRoot().captureToImage().toPixelMap()
+        ui.runOnIdle {ready.value=false}
+        val pending=ui.onRoot().captureToImage().toPixelMap()
+        for(y in 0 until before.height) for(x in 0 until before.width)
+            assertEquals("Navigation must not fade the row at $x,$y",before[x,y],pending[x,y])
+        ui.onNodeWithContentDescription("Escape").assertIsNotEnabled().performTouchInput {click()}
+        ui.onNodeWithContentDescription("Shift").assertIsNotEnabled()
+        ui.runOnIdle {assertTrue(sent.isEmpty())}
+        ui.runOnIdle {ready.value=true}
+        ui.onNodeWithContentDescription("Escape").assertIsEnabled()
     }
 
 }

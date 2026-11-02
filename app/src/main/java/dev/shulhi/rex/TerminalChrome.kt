@@ -94,11 +94,11 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
 }
 
 @Composable internal fun ChromeButton(icon: ChromeIcon, description: String, enabled: Boolean = true,
-    modifier: Modifier = Modifier, onClick: () -> Unit) {
+    modifier: Modifier = Modifier, readable: Boolean = enabled, onClick: () -> Unit) {
     Box(modifier.size(36.dp).clip(RoundedCornerShape(12.dp))
         .clickable(enabled=enabled, role=Role.Button, onClick=onClick)
         .semantics { contentDescription=description }, contentAlignment=Alignment.Center) {
-        ChromeSymbol(icon, color=MaterialTheme.colorScheme.onSurface.copy(alpha=if(enabled) .85f else .3f))
+        ChromeSymbol(icon, color=MaterialTheme.colorScheme.onSurface.copy(alpha=if(readable) .85f else .3f))
     }
 }
 
@@ -187,12 +187,12 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         positionProvider=androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip={PlainTooltip {Text(if(controlled) "Release control" else "Take control")}},
         state=androidx.compose.material3.rememberTooltipState()) {
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(17.dp))
-            .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(enabled) .45f else .15f),RoundedCornerShape(17.dp))
+        Box(Modifier.size(32.dp).clip(RoundedCornerShape(16.dp))
+            .border(1.dp,MaterialTheme.colorScheme.primary.copy(alpha=if(enabled) .45f else .15f),RoundedCornerShape(16.dp))
             .background(if(controlled) MaterialTheme.colorScheme.primary else Color.Transparent)
             .semantics {contentDescription=label;selected=controlled}
             .clickable(enabled=enabled,role=Role.Button,onClick=onClick),contentAlignment=Alignment.Center) {
-            ChromeSymbol(ChromeIcon.POINTER,Modifier.size(18.dp),
+            ChromeSymbol(ChromeIcon.POINTER,Modifier.size(16.dp),
                 (if(controlled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary).copy(alpha=if(enabled) 1f else .4f))
         }
     }
@@ -270,7 +270,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
-    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,onKeyboard: ()->Unit) {
+    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onKeyboard: ()->Unit) {
     var expanded by remember {mutableStateOf(false)}
     val hiddenStart=with(androidx.compose.ui.platform.LocalDensity.current) {26.dp.roundToPx()}
     val keyScroll=rememberScrollState(hiddenStart)
@@ -289,23 +289,23 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(14.dp).graphicsLayer {rotationZ=if(expanded) 180f else 0f})
                     }
                     Row(Modifier.width(196.dp).fillMaxHeight(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                        DockKey("esc",controlled,description="Escape",modifier=Modifier.weight(1f),icon=ChromeIcon.ESCAPE,readable=enabled) {onKey("esc")}
-                        DockKey("ctrl",controlled,control,description="Control",modifier=Modifier.weight(1f),icon=ChromeIcon.CONTROL,readable=enabled,onClick=onControl)
-                        DockKey("alt",controlled,alt,description="Alt",modifier=Modifier.weight(1f),icon=ChromeIcon.ALT,readable=enabled,onClick=onAlt)
-                        ShiftDockKey(controlled,shift,Modifier.weight(1f),onShift,onShiftPress,onShiftRelease,readable=enabled)
-                        DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f),icon=ChromeIcon.TAB,readable=enabled) {onKey("tab")}
+                        DockKey("esc",controlled,description="Escape",modifier=Modifier.weight(1f),icon=ChromeIcon.ESCAPE,readable=readable) {onKey("esc")}
+                        DockKey("ctrl",controlled,control,description="Control",modifier=Modifier.weight(1f),icon=ChromeIcon.CONTROL,readable=readable,onClick=onControl)
+                        DockKey("alt",controlled,alt,description="Alt",modifier=Modifier.weight(1f),icon=ChromeIcon.ALT,readable=readable,onClick=onAlt)
+                        ShiftDockKey(controlled,shift,Modifier.weight(1f),onShift,onShiftPress,onShiftRelease,readable=readable)
+                        DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f),icon=ChromeIcon.TAB,readable=readable) {onKey("tab")}
                     }
                 }
             }
-            ArrowKeyGroup(controlled,Modifier.weight(1f).fillMaxHeight(),onKey,readable=enabled)
+            ArrowKeyGroup(controlled,Modifier.weight(1f).fillMaxHeight(),onKey,readable=readable)
             ChromeButton(if(keyboardVisible) ChromeIcon.HIDE_KEYBOARD else ChromeIcon.KEYBOARD,
-                if(!controlled) "Take control and show keyboard" else if(keyboardVisible) "Hide keyboard" else "Show keyboard",enabled,onClick=onKeyboard)
+                if(!controlled) "Take control and show keyboard" else if(keyboardVisible) "Hide keyboard" else "Show keyboard",enabled,readable=readable,onClick=onKeyboard)
         }
         if(expanded) {
             val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"},
                 listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete"))
             for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
-                for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f),readable=enabled) {onKey(key)}
+                for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f),readable=readable) {onKey(key)}
             }
         }
     }
