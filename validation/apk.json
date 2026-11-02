@@ -1,7 +1,7 @@
 {
   "apk": "app/build/outputs/apk/release/app-release.apk",
   "application_label": "Rexlink",
-  "sha256": "9cd369e300abb5e3dac4079d67272a843cd46fd6cc8eacd173634f7129d2085d",
+  "sha256": "1f9e92d5f13a637d77aed027858f54e6b6ee32c52247b2908ae0b3a035f9eaf6",
   "bytes": 17320830,
   "signature_verified": true,
   "debuggable": false,

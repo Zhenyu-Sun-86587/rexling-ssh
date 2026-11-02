@@ -1,0 +1,81 @@
+{
+  "date": "2026-11-02",
+  "device": {
+    "model": "Samsung Galaxy S22+ SM-S906E",
+    "android": 16,
+    "api": 36,
+    "physical": true
+  },
+  "measurement_releases": {
+    "startup_sha256": "d3d35b6f3ff2cb34569cf3e93c928c5db347d07029e0b03b67a4919ce76062a8",
+    "frames_sha256": "9cd369e300abb5e3dac4079d67272a843cd46fd6cc8eacd173634f7129d2085d",
+    "delivered_optimization_sha256": "1f9e92d5f13a637d77aed027858f54e6b6ee32c52247b2908ae0b3a035f9eaf6"
+  },
+  "cold_start": {
+    "tool": "adb shell am force-stop then am start -W",
+    "samples_ms": [
+      435,
+      438,
+      363,
+      446
+    ],
+    "median_ms": 436.5,
+    "scope": "Initial activity display, not restored terminal readiness; page cache was not dropped."
+  },
+  "frame_samples": {
+    "tool": "dumpsys gfxinfo framestats, global modern jank counters after reset",
+    "no_touch_animated_terminal": {
+      "frames": 1203,
+      "janky_frames": 4,
+      "janky_percent": 0.33,
+      "p95_ms": 13,
+      "p99_ms": 15
+    },
+    "activity_open_and_scroll": {
+      "frames": 1425,
+      "janky_frames": 47,
+      "janky_percent": 3.3,
+      "p95_ms": 17,
+      "p99_ms": 19
+    },
+    "scope": "Live connected terminal; animated working indicator/title. Activity includes sheet opening, scrolling, background window and refreshes; uncontrolled server workload."
+  },
+  "metadata_microbenchmark": {
+    "environment": "Optimized Rust release build on development Mac, not S22+",
+    "samples": 200,
+    "workload": "Publish and encode one changed title with 256 cached activity records; no terminal frame",
+    "previous_closed_path_equivalent": {
+      "packet_bytes": 54950,
+      "median_us": 470,
+      "p95_us": 1197
+    },
+    "optimized_closed_path": {
+      "packet_bytes": 389,
+      "median_us": 10,
+      "p95_us": 19
+    },
+    "command": "GHOSTTY_PREFIX=\"$PWD/.build/ghostty-host\" CARGO_TARGET_DIR=\"$PWD/.build/rust\" cargo test --release --locked --manifest-path native/Cargo.toml --workspace activity_metadata_publish_benchmark -- --ignored --nocapture",
+    "scope": "Opening Activity still sends cached reports immediately; background scans remain disabled when closed. No whole-app speedup claim."
+  },
+  "review_findings": [
+    {
+      "priority": "fixed",
+      "finding": "Cached activity was cloned/serialized on every changing-title metadata publication even while hidden. Omit the hidden catalog from JNI metadata while retaining it natively for instant reopening."
+    },
+    {
+      "priority": "next",
+      "finding": "Activity has higher observed jank than the no-touch terminal sample. Trace sheet transitions, list layout and concurrent title/working-indicator rendering before choosing the next change."
+    },
+    {
+      "priority": "investigate",
+      "finding": "Visible live-terminal top samples reached roughly 92\u201396% of one CPU core. Subsequent thread samples were taken after the device stopped drawing and cannot establish attribution. A controlled foreground trace is required; no battery-life claim."
+    }
+  ],
+  "limits": [
+    "Four cold launches are a small sample and do not measure network restoration.",
+    "Frame samples are observations, not controlled before/after optimization comparisons.",
+    "Metadata timings are a host microbenchmark, not phone CPU timings.",
+    "No physical key-to-pixel latency or battery-drain measurement was performed.",
+    "No user terminal input, ownership changes or server configuration changes were made during phone profiling."
+  ]
+}
