@@ -4,7 +4,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 
 enum class Appearance { SYSTEM, DARK, LIGHT }
 
-data class TerminalPalette(val dark: Boolean, val background: Int, val foreground: Int, val accent: Int, val ansi: List<Int>) {
+data class TerminalPalette(val dark: Boolean, val background: Int, val foreground: Int, val accent: Int, val ansi: List<Int>, val cursorText: Int = 0xffffffff.toInt()) {
     fun foreground(cell: TerminalCell): Int = when {
         cell.attributes and 128 != 0 -> foreground
         cell.attributes and 512 != 0 -> ansi.getOrNull((cell.attributes ushr 11) and 255) ?: cell.foreground

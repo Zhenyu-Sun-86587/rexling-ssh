@@ -186,7 +186,7 @@ class TerminalView(context: Context) : View(context) {
             backgroundPaint.color=palette.accent
             canvas.drawRect(x,y,x+cursorWidth,y+cellHeight,backgroundPaint)
             if(cell!=null && cell.text.isNotEmpty() && cell.attributes and 16==0) {
-                paint.color=android.graphics.Color.WHITE;paint.alpha=255
+                paint.color=palette.cursorText;paint.alpha=255
                 paint.typeface=when(cell.attributes and 3) {1->fonts.bold;2->fonts.italic;3->fonts.boldItalic;else->fonts.regular}
                 val advance=advance(cell.text,cell.attributes and 3)
                 canvas.save();canvas.clipRect(x,y,x+cursorWidth,y+cellHeight)
