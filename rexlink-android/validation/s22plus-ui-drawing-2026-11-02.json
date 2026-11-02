@@ -1,0 +1,102 @@
+{
+  "date": "2026-11-02",
+  "device": "Samsung Galaxy S22+ SM-S906E, Android 16",
+  "source_commit": "f4e121edd0627c2b01e8bbefb8ef729316c8ec91",
+  "release_sha256": "caafc78d6ef0756844e971b35054a32e1719a9ace19e96eff3a8ab4fb701e806",
+  "methodology": {
+    "app": "Existing installed non-debuggable release; no replacement or code changes",
+    "workload": "Temporary two-pane Python PTY. Twenty-three rows of colored changing text at up to 30 Hz for 10 seconds after input; four horizontal pane swipes, output restart and vertical scroll",
+    "capture_duration_ms": 22000,
+    "foreground": "Rexlink visible, unlocked, 1080x2340 display; observed active display mode 120 Hz",
+    "thermal_status_after": 0,
+    "markers": "Existing Rexlet.decodeUpdate and Rexlet.drawTerminal trace sections",
+    "buffers_kib": [
+      16384,
+      65536
+    ],
+    "sources": [
+      "android.surfaceflinger.frametimeline",
+      "linux.ftrace gfx/view/input atrace for dev.shulhi.rex",
+      "linux.process_stats"
+    ],
+    "controls": "No UI hierarchy inspection inside final recording window; no app build/install during measurement",
+    "scope": "Heavy repaint/navigation stress sample, not a distribution of ordinary Codex typing"
+  },
+  "timings": [
+    {
+      "metric": "decode_update",
+      "samples": 597,
+      "mean_ms": 1.90167,
+      "median_ms": 1.556093,
+      "p95_ms": 4.769407,
+      "max_ms": 25.3775
+    },
+    {
+      "metric": "terminal_draw",
+      "samples": 482,
+      "mean_ms": 3.473734,
+      "median_ms": 4.124245,
+      "p95_ms": 4.935453,
+      "max_ms": 9.299271
+    },
+    {
+      "metric": "app_frame_timeline_work",
+      "samples": 725,
+      "mean_ms": 15.829114,
+      "median_ms": 15.77698,
+      "p95_ms": 22.788031,
+      "max_ms": 30.979479
+    }
+  ],
+  "render_thread_drawframe": {
+    "samples": 662,
+    "mean_ms": 9.388,
+    "p95_ms": 14.511,
+    "max_ms": 18.359,
+    "definition": "HWUI RenderThread DrawFrame slice wall duration, not GPU-only or CPU-only time"
+  },
+  "frame_timeline_flags": {
+    "frames": 725,
+    "app_deadline_missed": 404,
+    "compositor_cpu_missed": 347,
+    "buffer_stuffed": 324,
+    "dropped": 1
+  },
+  "gfxinfo": {
+    "total_frames": 741,
+    "janky_frames": 420,
+    "janky_percent": 56.68,
+    "frame_duration_p50_bucket_ms": 17,
+    "frame_duration_p95_bucket_ms": 23,
+    "definition": "Independent Android gfxinfo counters; interval extends slightly beyond Perfetto bounds, therefore counts differ"
+  },
+  "trace_health": {
+    "final_flush_succeeded": true,
+    "reported_data_loss_errors_or_buffer_overwrites": [],
+    "informational_traced_chunks_discarded": 16,
+    "note": "Informational chunk counter alone is not evidence of loss; final capture reports no error/data_loss/overrun/overwrite counters"
+  },
+  "interpretation": [
+    "Decode and Canvas recording are only part of UI cost. RenderThread frame work and queued presentation also matter.",
+    "App and compositor deadline-miss flags overlap; attribution is mixed rather than exclusively Canvas or exclusively the app.",
+    "FrameTimeline reports 324 buffer-stuffed frames; late presentation is far more common than dropped frames in this stress test.",
+    "Next optimization target is RenderThread command cost and update/frame pacing, followed by an equivalent before/after trace."
+  ],
+  "limitations": [
+    "No exact native-publication-to-pixel or key-to-pixel latency: current markers do not correlate native revisions to presented display frames.",
+    "Decode and draw percentiles are separate populations and must not be added together.",
+    "FrameTimeline app duration starts at Choreographer callback and ends at max(GPU completion, buffer post); it is not directly the extra delay added to network echo.",
+    "Do not generalize stress-test deadline-miss percentage to ordinary typing.",
+    "Earlier broader captures had smaller buffers; final trace is the reported source of metrics."
+  ],
+  "cleanup": {
+    "original_session_restored": true,
+    "original_control_mode_restored": true,
+    "temporary_session_destroyed": true,
+    "phone_trace_files_removed": true,
+    "app_installation_unchanged": true,
+    "test_input_in_user_sessions": false
+  },
+  "trace_file_local": "rexlink-android/.build/ui-diagnostic/release-clean.pftrace",
+  "trace_sha256": "dd328c749a8891e45f0a1fcb888afc0f34652dd47f54c3f5a59eb5a8a3197fd9"
+}

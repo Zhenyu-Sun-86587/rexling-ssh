@@ -905,3 +905,49 @@ removed. No network/server settings or application code were changed.
 
 Full results, executable hash and comparison:
 [s22plus-wifi-2026-11-02.json](validation/s22plus-wifi-2026-11-02.json).
+
+
+## Physical S22+ release drawing trace (2026-11-02)
+
+The installed, non-debuggable release was traced directly on the unlocked,
+foreground S22+. No APK or application code was replaced. A disposable
+two-pane Python PTY repainted 23 rows of colored changing text at up to 30 Hz;
+the UI workload included four pane swipes, a second output burst and vertical
+scrolling. This is a heavy repaint/navigation stress test, not ordinary Codex
+typing. The observed display mode was 120 Hz; thermal status after testing was 0.
+
+The final 22-second Perfetto capture used separate 16 MiB frame-timeline and
+64 MiB graphics buffers, existing decode/draw markers, and no UI hierarchy
+inspection inside the recording window. Smaller earlier captures were
+superseded. The final trace reports no data-loss/error/overrun/buffer-overwrite
+counters and its final flush succeeded. An informational discarded-chunk count
+alone does not establish lost trace data.
+
+| Measured section | Samples | Mean | p95 |
+| --- | ---: | ---: | ---: |
+| Native update read/packet decode (`Rexlet.decodeUpdate`) | 597 | 1.90 ms | 4.77 ms |
+| Terminal Canvas recording (`Rexlet.drawTerminal`) | 482 | 3.47 ms | 4.94 ms |
+| HWUI RenderThread `DrawFrame` wall duration | 662 | 9.39 ms | 14.51 ms |
+| FrameTimeline app work, including GPU/buffer post | 725 | 15.83 ms | 22.79 ms |
+
+The frame timeline records 404 app deadline-miss flags, 347 compositor CPU
+deadline-miss flags, 324 buffer-stuffed frames and one dropped frame. Flags
+overlap; this is mixed attribution. Android gfxinfo separately reports 741
+frames and 420 janky frames (56.68%), with duration buckets p50 17 ms and p95
+23 ms. Its collection window extends slightly beyond Perfetto, so counts are
+not identical. Most problematic frames were late rather than dropped.
+
+The trace shows measurable UI work beyond decoding and Canvas recording.
+RenderThread command work and update/presentation pacing are useful next
+optimization targets. It does not establish that the app adds exactly 23 ms to
+each key: FrameTimeline app work starts at Choreographer callback and ends at
+max(GPU completion, buffer post). There are no revision-linked markers to pair
+native publication with the final display frame, so exact native-to-pixel and
+key-to-pixel delays remain unmeasured. Decode/draw percentiles are separate
+populations and must not be summed.
+
+The original selected session and its ownership mode were restored; only the
+temporary test session was destroyed. No test input was sent to user terminals.
+Phone trace/config files were removed. The final raw trace is retained locally
+in ignored `.build/ui-diagnostic/release-clean.pftrace`, not committed.
+Aggregate results: [s22plus-ui-drawing-2026-11-02.json](validation/s22plus-ui-drawing-2026-11-02.json).
