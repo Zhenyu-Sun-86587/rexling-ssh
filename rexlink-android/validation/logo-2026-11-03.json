@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-03",
+  "change": "User-selected close-up wireframe dinosaur on light blue",
+  "source_sha256": "b5451e3d554e023dba90a21670934eb5c314f45578d91e6d7c189e09b8e1ba9f",
+  "source_copied_without_raster_changes": true,
+  "adaptive_background": "#9BCBFB",
+  "checks": {
+    "android_launcher_draw_passed": true,
+    "launcher_render_visually_reviewed": true,
+    "release_lint_passed": true,
+    "release_packaging_verified": true
+  },
+  "release_sha256": "4e9931be058a908985152e779ae896071e6358cae779f88fa77ac4486a9ee302",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true,
+  "reopened_after_update": true,
+  "notification_vector_unchanged": true
+}

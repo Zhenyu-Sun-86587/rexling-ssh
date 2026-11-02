@@ -1,8 +1,8 @@
 {
-  "source": "User-selected white wireframe dinosaur on blue background",
+  "source": "User-selected close-up white wireframe dinosaur on light blue background",
   "preparation": "Exact supplied PNG, copied without alteration. Android centers the image over a matching blue adaptive background. The notification/themed icon is a simplified transparent white vector head with the terminal prompt eye.",
-  "source_sha256": "b95d9f70dca538222361ffb8620e5676e08e21968cb6f3e9fb5a035a1175ac9b",
-  "foreground_sha256": "b95d9f70dca538222361ffb8620e5676e08e21968cb6f3e9fb5a035a1175ac9b",
+  "source_sha256": "b5451e3d554e023dba90a21670934eb5c314f45578d91e6d7c189e09b8e1ba9f",
+  "foreground_sha256": "b5451e3d554e023dba90a21670934eb5c314f45578d91e6d7c189e09b8e1ba9f",
   "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
   "notification": "app/src/main/res/drawable/ic_notification.xml",
   "prompt": null

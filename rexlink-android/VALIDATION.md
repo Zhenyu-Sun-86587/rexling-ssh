@@ -1278,3 +1278,18 @@ themed launchers use the same monochrome mark. The root README icon follows the
 same source asset. The ongoing-notification PendingIntent now has a distinct
 action so an older installed build's cached intent cannot retain obsolete launch
 flags; both notification paths return to the existing workspace.
+
+
+## Light blue logo — 2026-11-03
+
+Replaced the launcher/README logo with the exact user-supplied close-up wireframe
+dinosaur PNG on light blue. The adaptive surround uses the sampled background
+color `#9BCBFB`; source/packaged checksums and preparation provenance are recorded
+in `artwork/rexlink/metadata.json`. The existing matching monochrome notification
+and themed-launcher mark is retained.
+
+The focused Android adaptive-launcher draw check passes, and its actual 192-pixel
+render was visually reviewed. Release lint and signature, ART-profile and 16KiB
+packaging checks pass. Installed on S22+ RFCT21390SD with its data preserved; the
+installed base APK hash matches the shareable release. No terminal or notification
+behavior changed. See `validation/logo-2026-11-03.json`.
