@@ -34,3 +34,16 @@ Open **⋮ → Font size** for a preview, slider and −/+ controls from 8 to 20
 
 
 Activity/reconnect follow-up (2026-11-02): run the standard JVM/native/Clippy/lint checks plus Android `ConnectionChromeTest`, `ActivitySheetTest`, and `TerminalControlButtonTest`. The live Activity fixture verifies closed-sheet attention from another session, local acknowledgment, changed-report re-alerting, live titles, exact-pane read-only navigation and unchanged PTY size. Run it on each explicitly owned server with `REX_TEST_SERVER=<server> ... cargo test --locked --manifest-path native/Cargo.toml --workspace live_activity_ -- --ignored`. The existing lifecycle fixture covers pause/resume and typed input restoration. `NetworkRouteTrackerTest` covers offline/recovery, route/VPN transport changes, duplicate callbacks and validation-only changes. The host `activity_metadata_publish_benchmark` measures changed-title publication with 256 cached reports; it does not measure S22+ UI frame times.
+
+
+Circular navigation checks (from the monorepo root):
+
+```sh
+ANDROID_SERIAL=emulator-5554 ./rexlink-android/scripts/gradle.sh :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=dev.shulhi.rex.SessionHeaderLoopTest,dev.shulhi.rex.PaneChromeTest
+```
+
+Use a dedicated emulator. The nine checks cover both wrap directions, two-item
+rings without duplicate navigation, catalog changes, single/empty lists, correct
+pane indicator identity during handoff, and cancellation at a wrap boundary.
+The header test also writes cache/loop-header.png for visual review of the stack.

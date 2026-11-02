@@ -92,7 +92,8 @@ the development signing identity; see the build guide before publishing a releas
 
 Keep Tailscale connected on the phone and enter your Rex server's private HTTPS
 address. Add hosts under **⋮ → Servers**. The header cycles through sessions
-across connected hosts; the terminal card switches panes; the bottom dock switches
+across connected hosts; the terminal card switches panes. Both loop at the ends.
+The bottom dock switches
 tabs and opens pane options or Activity. Rename a session from its row’s
 **⋮ → Rename session** in the session list; changes sync through Rex.
 The selected pane streams a Ghostty

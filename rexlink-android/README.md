@@ -28,9 +28,9 @@ signing separately before publishing. SDK paths and caches remain ignored.
   **⋮ → Servers** saves hosts and keeps several connected at once.
 - The compact header shows the task/program title, a working-directory line
   when available, then session · server. Tap the session to search, swipe to
-  cycle across hosts, or long-press to return to the last session. In the session
+  cycle across hosts, wrapping in either direction, or long-press to return to the last session. In the session
   list, open a row’s **⋮ → Rename session** to change its name on the server.
-- Swipe the content card to switch panes. The bottom tabs remember their pane;
+- Swipe the content card to switch panes, looping from last to first or first to last. The bottom tabs remember their pane;
   pane options switch, create or close panes/tabs. Destructive close actions
   require confirmation and end the programs in that resource.
 - A newly selected ready pane is automatically claimed once and resized to the
@@ -56,3 +56,7 @@ the paths from before consolidation; current commands are in the root build guid
 
 Project code: [Apache 2.0](../LICENSE). Bundled third-party notices are retained in
 `app/src/main/assets/licenses/` and listed in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
+Multi-pane program icons fan out sideways with a subtle counterclockwise front
+tile and opposing back tilts. The active program stays in front; single-pane
+icons remain upright. Both header and tab icons use the same treatment.

@@ -735,3 +735,32 @@ subsequently disconnected before installed-APK hash readback, so that optional
 comparison was not completed. The shareable APK has SHA256 `e0bf1a516d77dcf19e713c0278ef34a5e133a7e48e7d08213808435433f856f6`.
 Signature, non-debuggable packaging, JNI exports, ART profiles and 16KiB alignment
 pass. The APK/checksum are in dist/ and validation/apk.json records this release.
+
+
+## Fanned program icons and circular swiping — 2026-11-02
+
+Multi-pane stacks expose their back tiles horizontally and use stable -6° front,
++3° near-back and +6° far-back rotations; single-pane icons remain upright.
+A rendered header screenshot was inspected, then the existing header gesture
+check was rerun after rotation. The same component styles both header and tabs.
+
+Session paging uses two sentinel pages with logical-index rebasing after settling.
+Only a change of logical session emits navigation. Catalog membership changes
+recreate the pager at the current session. Pane previews wrap within their tab;
+first/last neighbors are prefetched. Two-pane rings render one neighbor on the
+gesture side, maintaining unique AndroidView keys. Animation direction follows
+the swipe rather than the numerical destination index.
+
+All 77 JVM tests and nine targeted emulator gesture tests pass. The checks
+cover bidirectional first/last wrapping, two-item rings, single/empty catalogs,
+catalog changes without unsolicited navigation, target-badge continuity and
+cancellation at the boundary. The one-test header rerun after the rotation also
+passes. Debug/release builds and release lint pass. No Rex protocol, ownership
+policy or server settings were changed.
+
+Both the initial sideways-stack release and the final rotated-stack release
+were installed on S22+ RFCT21390SD immediately after building. ADB reported
+Success. Follow-up static verification passes signature, non-debuggable APK,
+JNI exports, ART profiles and 16KiB alignment. The final shareable release is
+`dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `8b5e6689f15dc9a09436c79e41744774564cded33af7aaed33700f8593ce3158`. Icon styling, circular navigation,
+and the angle correction were recorded in separate signed commits on main.
