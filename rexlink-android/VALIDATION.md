@@ -866,3 +866,42 @@ necessary. Both disposable sessions and all temporary phone diagnostic files
 were removed. The existing app and user sessions were not driven with test input.
 
 Full results and methodology: [s22plus-cellular-2026-11-02.json](validation/s22plus-cellular-2026-11-02.json).
+
+
+## Physical S22+ Wi-Fi comparison (2026-11-02)
+
+The user switched the same S22+ to Wi-Fi. Android’s default and VPN underlying
+networks were verified as Wi-Fi both before and after testing. The exact same
+temporary ARM64 executable, unchanged production native source, servers,
+fixtures, sample counts and key-injection schedules from the cellular test were
+reused. The installed release and user session selection were left untouched.
+
+| Native input to published frame | 5G median / p95 / max | Wi-Fi median / p95 / max |
+| --- | ---: | ---: |
+| Mac server, 30 isolated keys | 97.7 / 114.4 / 240.9 ms | 23.1 / 33.2 / 37.2 ms |
+| Linux server, 30 isolated keys | 98.5 / 232.1 / 351.3 ms | 22.9 / 32.7 / 53.9 ms |
+
+Wi-Fi medians were 4.2–4.3 times faster in this sample. Neither 80-key burst
+at 25 keys/second developed a sustained queue. The final Wi-Fi keys drained in
+23.4 ms (Mac) and 22.9 ms (Linux), compared with 97.1 and 101.6 ms over 5G.
+Wi-Fi RPC median/p95 timings were 14.9/19.0 ms (Mac) and 22.4/26.1 ms (Linux).
+
+Fifteen ICMP probes per server again reported no loss. Means/maxima were
+30.3/105.9 ms for Mac and 62.4/113.1 ms for Linux. ICMP uses a different traffic
+pattern from the warmed typing samples, so these distributions are not directly
+interchangeable.
+
+The separate physical Mac-to-phone Tailscale probe established a direct LAN UDP
+path for all five Wi-Fi probes (11–85 ms), whereas the earlier cellular probe
+stayed on DERP(sin). This does not prove either embedded Rex node’s actual route
+or isolate the relay’s cost from cellular/access-network differences. The
+sequential tests do show a substantial network-path contribution to native
+echo latency and variability. A short sample cannot rule out later Wi-Fi spikes.
+
+These remain native dispatch-to-frame measurements, excluding Android input,
+JNI transfer, Kotlin, Canvas and final pixels. No rendering/CPU/battery claim
+is made. Both disposable sessions were destroyed and temporary phone binaries
+removed. No network/server settings or application code were changed.
+
+Full results, executable hash and comparison:
+[s22plus-wifi-2026-11-02.json](validation/s22plus-wifi-2026-11-02.json).

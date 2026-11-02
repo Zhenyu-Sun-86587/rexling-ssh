@@ -1,0 +1,154 @@
+{
+  "date": "2026-11-02",
+  "device": "Samsung Galaxy S22+ SM-S906E, Android 16",
+  "source_commit": "5df87deab2d446c4998f5b5f33ced47bd9a124ea",
+  "installed_release_sha256": "caafc78d6ef0756844e971b35054a32e1719a9ace19e96eff3a8ab4fb701e806",
+  "diagnostic_binary_sha256": "aef4beb6c9cd9fc5a2364764d8b3009055de0a93d367004f66cedbe567999803",
+  "same_native_source_and_executable_as_cellular_run": true,
+  "network": {
+    "transport": "WIFI through Tailscale VPN, verified before and after tests",
+    "wifi_default": true
+  },
+  "methodology": {
+    "execution": "Temporary release-mode Android ARM64 executable; imports unchanged production engine.rs, input_queue.rs, activity.rs and updates.rs plus rexlink-core",
+    "app_installation": "Existing non-debuggable release not replaced; preferences and current selection not changed",
+    "fixtures": "One disposable raw Python PTY per owned server, destroyed in finally cleanup",
+    "metric": "Native input dispatch to received/decoded/published Ghostty frame, polling every 2ms; excludes Android input dispatch, JNI packet transfer, Kotlin, Canvas and pixel presentation",
+    "rpc": "25 sequential server.whoami calls, 60ms pause",
+    "isolated": "5 warmups then 30 measured one-character inputs; 40ms pause after observed echo",
+    "burst": "80 one-character commands at 40ms intervals (25 keys/sec), production eight-request window; timing earlier keys from first observed later counter is an upper bound",
+    "comparison": "Same S22+, native sources, executable, servers, sample counts, fixture and injection schedules as earlier 5G run; sequential comparison, not a controlled isolation of radio vs relay effects"
+  },
+  "results": {
+    "mac": {
+      "burst": {
+        "interval_ms": 40,
+        "keys": 80,
+        "last_key_drain_ms": 23.381771,
+        "latency_upper_bounds": {
+          "max_ms": 38.640521,
+          "median_ms": 23.305834,
+          "min_ms": 14.673437,
+          "p95_ms": 30.935989,
+          "samples": 80
+        },
+        "note": "coalesced frames attribute earlier keys to their first observed later counter",
+        "total_ms": 3188.556405
+      },
+      "control_handshake_ms": 71.515938,
+      "fixture_activation_ms": 196.965834,
+      "isolated_echo": {
+        "max_ms": 37.193906,
+        "median_ms": 23.144583,
+        "min_ms": 19.465625,
+        "p95_ms": 33.247709,
+        "samples": 30
+      },
+      "metric": "native dispatch to received/decoded/published terminal frame; excludes Kotlin/Canvas/pixel presentation",
+      "process": "standalone Android executable using unchanged production Actor/Control/Replica source",
+      "rpc_round_trip": {
+        "max_ms": 23.040469,
+        "median_ms": 14.889009999999999,
+        "min_ms": 8.486509999999999,
+        "p95_ms": 19.046718000000002,
+        "samples": 25
+      },
+      "server": "mac"
+    },
+    "linux": {
+      "burst": {
+        "interval_ms": 40,
+        "keys": 80,
+        "last_key_drain_ms": 22.945833,
+        "latency_upper_bounds": {
+          "max_ms": 30.585417,
+          "median_ms": 20.263802000000002,
+          "min_ms": 18.603801999999998,
+          "p95_ms": 26.692552000000003,
+          "samples": 80
+        },
+        "note": "coalesced frames attribute earlier keys to their first observed later counter",
+        "total_ms": 3185.3887489999997
+      },
+      "control_handshake_ms": 85.288698,
+      "fixture_activation_ms": 341.098281,
+      "isolated_echo": {
+        "max_ms": 53.855208000000005,
+        "median_ms": 22.922552,
+        "min_ms": 18.495938,
+        "p95_ms": 32.66901,
+        "samples": 30
+      },
+      "metric": "native dispatch to received/decoded/published terminal frame; excludes Kotlin/Canvas/pixel presentation",
+      "process": "standalone Android executable using unchanged production Actor/Control/Replica source",
+      "rpc_round_trip": {
+        "max_ms": 26.284896,
+        "median_ms": 22.417969,
+        "min_ms": 9.76974,
+        "p95_ms": 26.113177,
+        "samples": 25
+      },
+      "server": "linux"
+    }
+  },
+  "comparison_with_cellular": {
+    "mac": {
+      "cellular_median_echo_ms": 97.655729,
+      "wifi_median_echo_ms": 23.144583,
+      "cellular_p95_echo_ms": 114.369271,
+      "wifi_p95_echo_ms": 33.247709,
+      "cellular_max_echo_ms": 240.881354,
+      "wifi_max_echo_ms": 37.193906,
+      "median_speed_ratio": 4.219377337669035
+    },
+    "linux": {
+      "cellular_median_echo_ms": 98.487448,
+      "wifi_median_echo_ms": 22.922552,
+      "cellular_p95_echo_ms": 232.13229099999998,
+      "wifi_p95_echo_ms": 32.66901,
+      "cellular_max_echo_ms": 351.33682300000004,
+      "wifi_max_echo_ms": 53.855208000000005,
+      "median_speed_ratio": 4.296530682971076
+    }
+  },
+  "icmp": {
+    "mac": {
+      "min_ms": 8.384,
+      "mean_ms": 30.303,
+      "max_ms": 105.919,
+      "mdev_ms": 30.23,
+      "loss_percent": 0,
+      "samples": 15,
+      "interval_ms": 300
+    },
+    "linux": {
+      "min_ms": 8.576,
+      "mean_ms": 62.41,
+      "max_ms": 113.062,
+      "mdev_ms": 31.442,
+      "loss_percent": 0,
+      "samples": 15,
+      "interval_ms": 300
+    }
+  },
+  "route_probe": {
+    "scope": "Physical Mac Tailscale client to phone, separate from embedded Rex virtual-node routes",
+    "count": 5,
+    "path": "direct LAN UDP",
+    "rtt_ms": [
+      13,
+      11,
+      57,
+      62,
+      85
+    ],
+    "direct_established": true,
+    "limitation": "Does not prove either embedded Rex node uses the same route"
+  },
+  "rendering_cpu": {
+    "status": "Not measured in this comparison",
+    "conclusion": "No key-to-pixel, foreground CPU or battery claim"
+  },
+  "interpretation": "Wi-Fi native echo was about 4.2\u20134.3 times faster at the median, with lower p95/max delays in this short sample. No sustained native typing queue at 25 keys/sec. Network-path differences are a substantial contributor; radio/access-network and route effects were not isolated.",
+  "cleanup": "Both disposable sessions destroyed; temporary executable and shared library removed from phone; installed app/preferences/current session and network/server configuration left unchanged"
+}
