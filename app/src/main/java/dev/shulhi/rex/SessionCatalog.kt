@@ -3,7 +3,7 @@ package dev.shulhi.rex
 /** IDs are local to a server. Only actual session IDs are sent over the wire. */
 internal data class SessionTarget(val server: ServerProfile,val session: SessionItem,val detail: SessionDetail?=null) {
     val key: String get()=sessionKey(server.id,session.id)
-    val stripItem: SessionItem get()=SessionItem(key,"${server.label} · ${session.label}")
+    val stripItem: SessionItem get()=SessionItem(key,"${session.label} · ${server.label}")
 }
 internal fun sessionKey(serverId: String,sessionId: String): String="${serverId.length}:$serverId$sessionId"
 

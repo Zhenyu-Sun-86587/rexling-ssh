@@ -10,7 +10,7 @@ class SessionCatalogTest {
         val targets=SessionCatalog.collect(listOf(linux,mac),mapOf(
             "a" to AppState(phase="connected",sessions=listOf(SessionItem("1","first"),SessionItem("2","second"))),
             "b" to AppState(phase="connected",sessions=listOf(SessionItem("1","other host")))))
-        assertEquals(listOf("Linux · first","Linux · second","Mac · other host"),targets.map {it.stripItem.label})
+        assertEquals(listOf("first · Linux","second · Linux","other host · Mac"),targets.map {it.stripItem.label})
         assertEquals(3,targets.map {it.key}.toSet().size)
         assertEquals("b",targets[targets.indexOfFirst {it.session.id=="2"}+1].server.id)
         assertNotEquals(sessionKey("a","bc"),sessionKey("ab","c"))

@@ -125,19 +125,19 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let { latestSelect(it.id) }
         }
     }
-    Row(Modifier.fillMaxWidth().height(50.dp).padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min=50.dp).padding(horizontal=9.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
         if(!expanded) {
             Box(Modifier.semantics(mergeDescendants=true) {stateDescription=if(working) "Working" else "Idle"}) {
                 ProgramStack(programs,paneIndex,framed=true)
             }
             Spacer(Modifier.width(7.dp))
         }
-        Column(Modifier.weight(1f).fillMaxHeight(),verticalArrangement=Arrangement.Center) {
-            if(!expanded) Row(Modifier.fillMaxWidth().height(19.dp),verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f),verticalArrangement=Arrangement.Center) {
+            if(!expanded) {
                 Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,
-                    overflow=TextOverflow.Ellipsis,modifier=Modifier.widthIn(max=if(title.isBlank()) 90.dp else 190.dp))
-                if(directory.isNotBlank()) Text(directory,Modifier.weight(1f).padding(start=6.dp,end=6.dp),
-                    fontFamily=MonoUi,fontSize=9.sp,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
+                    overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth())
+                if(directory.isNotBlank()) Text(directory,Modifier.fillMaxWidth(),
+                    fontFamily=MonoUi,fontSize=9.sp,lineHeight=12.sp,style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else 17.dp)) {
