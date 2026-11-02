@@ -275,9 +275,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     var expanded by remember {mutableStateOf(false)}
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
         Box {
-            Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
-                ChromeButton(ChromeIcon.SPLIT,"Pane options",enabled,readable=activityEnabled) {expanded=true}
-            }
+            ChromeButton(ChromeIcon.SPLIT,"Pane options",enabled,readable=activityEnabled) {expanded=true}
             androidx.compose.material3.DropdownMenu(expanded,{expanded=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
                 androidx.compose.material3.DropdownMenuItem(text={Text("Switch pane")},enabled=canSwitch,onClick={expanded=false;onPanes()})
                 androidx.compose.material3.HorizontalDivider()
@@ -285,7 +283,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 androidx.compose.material3.DropdownMenuItem(text={Text("New tab")},onClick={expanded=false;onNewTab()})
             }
         }
-        ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,onClick=onActivity)
+        Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
+            ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,onClick=onActivity)
+        }
     }
 }
 
