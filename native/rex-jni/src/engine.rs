@@ -113,6 +113,12 @@ struct Actor {
     dirty: bool,
     preview_task: Option<PreviewTask>,
     summary_task: Option<SummaryTask>,
+    activity_open: bool,
+    activity_task: Option<ProgramTask>,
+    activity_refresh: tokio::time::Instant,
+    activity: Value,
+    activity_error: String,
+    activity_partial: bool,
     program_task: Option<ProgramTask>,
     programs: Value,
     directories: Value,
@@ -157,6 +163,8 @@ impl Actor {
             dirty: false,
             preview_task: None,
             summary_task: None,
+            activity_open:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
+            activity:json!([]),activity_error:String::new(),activity_partial:false,
             program_task: None,
             programs: json!({}),
             directories: json!({}),
@@ -178,7 +186,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activity":self.activity,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_task.is_some()}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -253,6 +261,11 @@ impl Actor {
                     self.summary_task=None;
                     if let Ok(details)=result {self.session_details=details;self.publish();}
                 },
+                result=async {match &mut self.activity_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
+                    match result {Ok(value)=>{self.activity=value["items"].clone();self.activity_partial=value["partial"]==true;self.activity_error.clear();},Err(e)=>self.activity_error=e.to_string()}
+                    self.publish();
+                },
                 result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.program_task=None;
                     if let Ok(details)=result {self.apply_program_details(details);self.publish();}
@@ -264,6 +277,10 @@ impl Actor {
                     if self.retry.is_some_and(|at|at<=tokio::time::Instant::now())&&!self.paused {
                         self.retry=None;
                         if let Err(e)=self.reconnect().await{self.recover(e);}
+                    }
+                    if self.phase=="connected" && self.activity_open && self.activity_task.is_none() && self.activity_refresh<=now {
+                        self.activity_task=Some(Box::pin(crate::activity::scan(self.endpoint.clone().unwrap())));
+                        self.activity_refresh=now+Duration::from_secs(4);self.publish();
                     }
                     if self.phase=="connected" && self.program_task.is_none() && !self.selected_session.is_empty()
                         && self.program_refresh<=tokio::time::Instant::now()
@@ -298,9 +315,10 @@ impl Actor {
     async fn disconnect(&mut self) {
         self.preview_task = None;
         self.summary_task = None;
+        self.activity_task=None;
         self.program_task = None;
         self.preview_updates.clear();
-        self.session_details = json!({});
+        self.session_details = json!({});self.activity=json!([]);self.activity_error.clear();self.activity_partial=false;
         self.programs = json!({});
         self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
         self.retry = None;
@@ -317,6 +335,7 @@ impl Actor {
     fn lose_connections(&mut self) {
         self.preview_task = None;
         self.summary_task = None;
+        self.activity_task=None;
         self.program_task = None;
         if let Some(c) = self.control.take() {
             self.control_token = c.token().map(str::to_owned);
@@ -615,6 +634,17 @@ impl Actor {
                 self.sessions = json!([]);
                 self.publish();
             }
+            "activity" => {
+                self.activity_open=value["open"].as_bool().unwrap_or(false);
+                if !self.activity_open {self.activity_task=None;} else {
+                    self.activity_refresh=tokio::time::Instant::now();
+                    if self.phase=="connected" && !self.paused && self.activity_task.is_none() {
+                        self.activity_task=Some(Box::pin(crate::activity::scan(self.endpoint.clone().context("no server")?)));
+                        self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
+                    }
+                }
+                self.publish();
+            }
             "peek" => {
                 if self.phase != "connected"
                     || self.paused
@@ -781,6 +811,10 @@ impl Actor {
                 self.navigation_id = value["navigationId"].as_u64().unwrap_or(0);
                 self.set_view(&attached["view"]);
                 self.error.clear();
+                if let Some(block)=value["block"].as_str() {
+                    ensure!(self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==block)),"This pane is no longer available. Refresh activity.");
+                    self.open_block(block.to_owned()).await?;
+                }
                 self.publish();
             }
             "block" => {
@@ -1187,7 +1221,7 @@ fn program_working(process: &Value, status: &Value) -> bool {
         status["records"].as_array().into_iter().flatten().any(|record|
             record["owner"]["pid"]==foreground["pid"] && record["owner"]["name"]==foreground["name"] && record["state"]=="working")
 }
-fn program_title(process: &Value, status: &Value, terminal: &Value) -> String {
+pub(crate) fn program_title(process: &Value, status: &Value, terminal: &Value) -> String {
     let foreground=&process["foreground"];
     let owned=|record: &Value| foreground["pid"].is_number() && foreground["name"].is_string()
         && record["owner"]["pid"]==foreground["pid"] && record["owner"]["name"]==foreground["name"];
@@ -1279,6 +1313,7 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
                             || s.starts_with("rex-android-preview")
                             || s.starts_with("rex-android-summary")
                             || s.starts_with("rex-android-programs")
+                            || s.starts_with("rex-android-activity")
                     }) {
                         continue;
                     }
@@ -2173,6 +2208,44 @@ while True:
             app.command(json!({"type":"input","text":"clear\n"})).unwrap();wait(&app,|v|text(v).contains("LINKS_CLEARED") && !has(v,"https://example.com/live"));
         }));
         runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_activity_collects_sessions_and_opens_the_exact_pane_read_only() {
+        let server=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let mut ids=Vec::new();let mut blocks=Vec::new();
+        for (index,state) in ["working","done"].iter().enumerate() {
+            let script=format!("stty -echo; printf '\\033]7501;state={state}:app=codex:title=Rml4dHVyZSB0YXNr\\007'; printf '\\033]7501;state=blocked:id=worker:kind=permission:msg=UmV2aWV3IHRoaXM=\\007'; printf 'ACTIVITY_READY\\n'; while IFS= read -r line; do :; done");
+            let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rex-android-activity-test-{}-{index}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}}]}))).unwrap();
+            ids.push(created["session_id"].as_str().unwrap().to_owned());blocks.push(created["initial_windows"][0]["block_ids"][0].as_str().unwrap().to_owned());
+        }
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fn until(app:&Session,predicate:impl Fn(&Value)->bool)->Value {
+                let deadline=std::time::Instant::now()+Duration::from_secs(20);
+                loop {let raw=app.poll(0).unwrap();if !raw.is_empty() {let value:Value=serde_json::from_str(&raw).unwrap();if predicate(&value){return value;}}
+                    assert!(std::time::Instant::now()<deadline,"Activity fixture timed out");std::thread::sleep(Duration::from_millis(25));}
+            }
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();until(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":ids[0],"block":blocks[0],"navigationId":7})).unwrap();
+            let initial=until(&app,|v|v["selectedBlock"]==blocks[0] && text(v).contains("ACTIVITY_READY"));
+            app.command(json!({"type":"activity","open":true})).unwrap();
+            let listed=until(&app,|v|v["activity"].as_array().is_some_and(|items|
+                items.iter().any(|a|a["session"]==ids[0] && a["state"]=="working") && items.iter().any(|a|a["session"]==ids[1] && a["state"]=="done") && items.iter().any(|a|a["id"]=="worker" && a["state"]=="blocked")));
+            assert_eq!(listed["selectedBlock"],blocks[0]);assert_eq!(listed["controlled"],false);
+            assert_eq!(listed["screen"]["columns"],initial["screen"]["columns"]);
+            app.command(json!({"type":"session","id":ids[1],"block":blocks[1],"navigationId":8})).unwrap();
+            let jumped=until(&app,|v|v["selectedBlock"]==blocks[1] && v["screen"].is_object());
+            assert_eq!(jumped["selectedSession"],ids[1]);assert_eq!(jumped["controlled"],false);
+            app.command(json!({"type":"activity","open":false})).unwrap();
+            app.command(json!({"type":"session","id":ids[1],"block":"missing-pane","navigationId":9})).unwrap();
+            let stale=until(&app,|v|v["error"].as_str().is_some_and(|e|e.contains("no longer available")));
+            assert_eq!(stale["controlled"],false);assert_eq!(stale["selectedBlock"],"");
+        }));
+        for id in &ids {runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();}
+        runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
 }

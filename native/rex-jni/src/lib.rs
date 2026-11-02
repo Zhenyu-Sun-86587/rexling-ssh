@@ -1,3 +1,4 @@
+mod activity;
 mod engine;
 mod updates;
 use engine::Session;
