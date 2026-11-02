@@ -710,3 +710,28 @@ removes its own session. The user's “Working while Codex says Action required�
 case is a missing structured blocked transition, not reproduced by the normal
 blocked-report fixture. No screen-text heuristic, Codex configuration or server
 authentication/configuration change was added.
+
+
+## Session rename and shorter overflow menu — 2026-11-02
+
+Added **session row ⋮ → Rename session** with a prefilled field, server label,
+Unicode-aware 128-character validation, Save and Cancel. The request stays bound
+to the original server/session. The live native fixture passes on both owned
+Linux and Mac servers: active/background rename, whitespace/Unicode,
+external-client label events, invalid controls and missing-session errors.
+The active block, ownership and 40×20 grid remain unchanged. Only its own two
+fixture sessions were created and removed on each server.
+
+All 76 JVM tests and three targeted emulator rename tests pass. The UI checks
+cover nested clicks without selecting/closing a session, prefill, validation,
+trimmed Save and Cancel without sending. Native unit tests, all-feature Clippy
+with warnings denied, debug/release builds and release lint pass. Redundant
+Switch pane / Close pane / Close tab entries were removed from the top ⋮; the
+pane/tab controls remain. Feature and menu changes were committed separately.
+
+ADB reported Success installing the release on S22+ RFCT21390SD immediately after
+building and before follow-up checks, using -r to retain app data. The phone
+subsequently disconnected before installed-APK hash readback, so that optional
+comparison was not completed. The shareable APK has SHA256 `e0bf1a516d77dcf19e713c0278ef34a5e133a7e48e7d08213808435433f856f6`.
+Signature, non-debuggable packaging, JNI exports, ART profiles and 16KiB alignment
+pass. The APK/checksum are in dist/ and validation/apk.json records this release.

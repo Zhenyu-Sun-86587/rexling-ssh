@@ -525,3 +525,25 @@ configuration were changed, and that integration has not been implemented or
 validated here. The Android client cannot infer the hidden approval state from
 a `working` report alone. Follow current build paths in the repository-root
 BUILDING.md; older protocol entries retain their original paths.
+
+
+## Session labels (2026-11-02)
+
+Installed discovery verifies `session.set_label` with `{session_id, label}` and
+revision-only response. The server trims names, permits at most 128 Unicode
+characters, rejects control characters, and emits `session_label_changed` then
+`session_view_changed`. Empty labels restore the generated default; Android's
+Rename dialog requires a nonempty name and does not expose reset in this release.
+
+Android's `rename_session` command binds to its connection's endpoint and exact
+session ID. A short-lived `rex-android-rename` control client attaches to that
+session, calls `session.set_label`, closes, then refreshes `session.list`. It does
+not open data, own/disown panes, or resize a terminal. Label events refresh the
+combined session strip/list, including changes from another client. Session IDs,
+server settings and authentication stay unchanged. Uncertain outcomes are not
+replayed; the user can inspect the returned session name before trying again.
+
+The user later confirmed that the Activity badge is visible. The earlier
+Working/Action-required explanation was not a reproduced causal diagnosis.
+The clipping adjustment only changed geometry; this release does not change
+badge logic.

@@ -1,18 +1,18 @@
 {
   "apk": "app/build/outputs/apk/release/app-release.apk",
   "application_label": "Rexlink",
-  "sha256": "1b60984b8306f905de25fde5465da1c5c4c6e411e6d307eaf89eecc6e3882e81",
-  "bytes": 17478362,
+  "sha256": "e0bf1a516d77dcf19e713c0278ef34a5e133a7e48e7d08213808435433f856f6",
+  "bytes": 17505162,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [
     {
       "name": "assets/dexopt/baseline.prof",
-      "bytes": 6360
+      "bytes": 6328
     },
     {
       "name": "assets/dexopt/baseline.profm",
-      "bytes": 670
+      "bytes": 671
     }
   ],
   "zip_alignment_16k": true,
@@ -34,7 +34,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 5221176,
+      "bytes": 5231592,
       "load_alignment": 16384
     }
   ],

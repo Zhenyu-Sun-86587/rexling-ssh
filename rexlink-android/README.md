@@ -28,7 +28,8 @@ signing separately before publishing. SDK paths and caches remain ignored.
   **⋮ → Servers** saves hosts and keeps several connected at once.
 - The compact header shows the task/program title, a working-directory line
   when available, then session · server. Tap the session to search, swipe to
-  cycle across hosts, or long-press to return to the last session.
+  cycle across hosts, or long-press to return to the last session. In the session
+  list, open a row’s **⋮ → Rename session** to change its name on the server.
 - Swipe the content card to switch panes. The bottom tabs remember their pane;
   pane options switch, create or close panes/tabs. Destructive close actions
   require confirmation and end the programs in that resource.
