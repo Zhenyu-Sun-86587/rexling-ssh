@@ -108,9 +108,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
-    connected: Boolean, enabled: Boolean, controlled: Boolean, canControl: Boolean,
+    connected: Boolean, enabled: Boolean,
     programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
-    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, onControl: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, menu: @Composable ()->Unit) {
+    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val pager=rememberPagerState(initialPage=selectedIndex,pageCount={sessions.size.coerceAtLeast(1)})
@@ -168,7 +168,6 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             }
         }
         if(!expanded) {
-            TerminalControlButton(controlled,canControl,onControl)
             menu()
         }
     }

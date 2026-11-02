@@ -83,6 +83,7 @@ impl Drop for Session {
 }
 
 type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Value)>>>>>;
+type ConnectTask = Pin<Box<dyn Future<Output = Result<Control>>>>;
 type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 struct Actor {
@@ -92,6 +93,10 @@ struct Actor {
     endpoint: Option<Endpoint>,
     server: String,
     control: Option<Control>,
+    connect_task: Option<ConnectTask>,
+    network_online: bool,
+    connection_epoch: u64,
+    other_owner: bool,
     data: Option<Data>,
     replica: Option<Replica>,
     control_token: Option<String>,
@@ -150,7 +155,7 @@ impl Actor {
             visible: true,
             endpoint: None,
             server: String::new(),
-            control: None,
+            control: None,connect_task:None,network_online:true,connection_epoch:0,other_owner:false,
             data: None,
             replica: None,
             control_token: None,
@@ -200,7 +205,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_open && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_open && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -237,6 +242,7 @@ impl Actor {
                         else {if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
                         continue;
                     }
+                    if matches!(value["type"].as_str(),Some("connect"|"retry"|"network"|"resume"|"activity")) {maintenance_at=tokio::time::Instant::now();}
                     let navigation_id=value["navigationId"].as_u64();
                     if let Err(e)=self.command(value).await {
                         if let Some(id)=navigation_id {self.navigation_id=id;}
@@ -246,6 +252,10 @@ impl Actor {
                             self.recover(e);
                         } else {self.error=message;self.publish();}
                     }
+                },
+                result=async {match &mut self.connect_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.connect_task=None;
+                    match result {Ok(control)=>if let Err(error)=self.connected(control).await {self.recover(error);},Err(error)=>self.recover(error)}
                 },
                 message=async {match &mut self.control{Some(c)=>c.next_message().await,None=>pending().await}}=>{
                     match message {
@@ -309,9 +319,12 @@ impl Actor {
                     let now=tokio::time::Instant::now();
                     render_at=now+Duration::from_millis(16);
                     maintenance_at=now+Duration::from_secs(1);
-                    if self.retry.is_some_and(|at|at<=tokio::time::Instant::now())&&!self.paused {
+                    if self.network_online && self.connect_task.is_none() && self.retry.is_some_and(|at|at<=now) && !self.paused {
                         self.retry=None;
-                        if let Err(e)=self.reconnect().await{self.recover(e);}
+                        if let Some(endpoint)=self.endpoint.clone() {
+                            let token=self.control_token.clone();
+                            self.connect_task=Some(Box::pin(async move {Control::connect(endpoint,token.as_deref(),Trace::default()).await}));
+                        }
                     }
                     if self.phase=="connected" && self.activity_task.is_none() && self.activity_refresh<=now && (self.activity_full || !self.activity_pending.is_empty()) {
                         self.activity_inflight_full=self.activity_full;
@@ -356,6 +369,7 @@ impl Actor {
         self.disconnect().await;
     }
     async fn disconnect(&mut self) {
+        self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
         self.activity_task=None;
@@ -376,6 +390,7 @@ impl Actor {
         self.controlled = false;
     }
     fn lose_connections(&mut self) {
+        self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
         self.activity_task=None;
@@ -394,19 +409,13 @@ impl Actor {
         self.error = error.to_string();
         if self.endpoint.is_some() && !self.paused {
             self.phase = "reconnecting".into();
-            self.retry = Some(tokio::time::Instant::now() + Duration::from_secs(self.backoff));
+            self.retry = self.network_online.then(||tokio::time::Instant::now() + Duration::from_secs(self.backoff));
             self.backoff = (self.backoff * 2).min(15);
         }
         self.publish();
     }
-    async fn reconnect(&mut self) -> Result<()> {
-        let endpoint = self.endpoint.clone().context("server missing")?;
-        let mut control = Control::connect(
-            endpoint.clone(),
-            self.control_token.as_deref(),
-            Trace::default(),
-        )
-        .await?;
+    async fn connected(&mut self,mut control: Control) -> Result<()> {
+        let endpoint=self.endpoint.clone().context("server missing")?;
         let resumed = control.welcome()["client"]["resumed"] == true;
         self.control_token = control.token().map(str::to_owned);
         self.sessions = control
@@ -419,7 +428,7 @@ impl Actor {
             .unwrap_or("Connected")
             .to_owned();
         self.control = Some(control);
-        self.phase = "connected".into();
+        self.phase = "connected".into();self.connection_epoch=self.connection_epoch.wrapping_add(1);
         self.activity_full=true;self.activity_refresh=tokio::time::Instant::now();
         self.error.clear();
         self.backoff = 1;
@@ -461,6 +470,7 @@ impl Actor {
         Ok(())
     }
     fn set_view(&mut self, view: &Value) {
+        self.other_owner=false;
         let client = self
             .control
             .as_ref()
@@ -479,6 +489,7 @@ impl Actor {
                     if id == self.selected_block {
                         selected_exists = true;
                         self.controlled = block["owner"].as_str() == Some(client);
+                        self.other_owner=block["owner"].as_str().is_some_and(|owner|!owner.is_empty() && owner!=client);
                         if self.controlled {clear_ownership_error(&mut self.error);}
                     }
                     blocks.push(
@@ -672,9 +683,7 @@ impl Actor {
                 self.error.clear();
                 self.notice.clear();
                 self.publish();
-                if let Err(e) = self.reconnect().await {
-                    self.recover(e);
-                }
+                self.retry=self.network_online.then(tokio::time::Instant::now);
             }
             "disconnect" => {
                 self.disconnect().await;
@@ -688,6 +697,17 @@ impl Actor {
                 self.selected_session.clear();
                 self.windows = json!([]);
                 self.sessions = json!([]);
+                self.publish();
+            }
+            "retry" | "network" => {
+                let network=value["type"]=="network";
+                if network {self.network_online=value["online"].as_bool().unwrap_or(true);}
+                if self.paused || self.endpoint.is_none() {return Ok(());}
+                let force=value["force"].as_bool().unwrap_or(false);
+                if network && self.network_online && self.phase=="connected" && !force {return Ok(());}
+                self.lose_connections();self.backoff=1;self.phase="reconnecting".into();
+                self.retry=self.network_online.then(tokio::time::Instant::now);self.error.clear();
+                self.notice=if self.network_online {"Reconnecting; input is paused"} else {"Waiting for network; input is paused"}.into();
                 self.publish();
             }
             "activity" => {
@@ -981,7 +1001,7 @@ impl Actor {
                 if let Some(c) = &mut self.control {
                     c.call("session.disown_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block]})).await?;
                 }
-                self.controlled = false;
+                self.controlled = false;self.other_owner=false;
                 self.notice = "Viewing terminal".into();
                 self.publish();
             }
@@ -1075,7 +1095,7 @@ impl Actor {
             "resume" => {
                 self.paused = false;
                 if self.endpoint.is_some() && self.control.is_none() {
-                    self.retry = Some(tokio::time::Instant::now());
+                    self.retry = self.network_online.then(tokio::time::Instant::now);
                     self.phase = "reconnecting".into();
                     self.publish();
                 }
@@ -2303,7 +2323,7 @@ while True:
         let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
         let mut ids=Vec::new();let mut blocks=Vec::new();
         for (index,state) in ["working","done"].iter().enumerate() {
-            let script=format!("stty -echo; printf '\\033]7501;state={state}:app=codex:title=Rml4dHVyZSB0YXNr\\007'; printf '\\033]7501;state=blocked:id=worker:kind=permission:msg=UmV2aWV3IHRoaXM=\\007'; printf '\\033]0;Initial terminal title\\007'; printf 'ACTIVITY_READY\\n'; while IFS= read -r line; do printf '\\033]0;Updated terminal title\\007'; done");
+            let script=format!("stty -echo; printf '\\033]7501;state={state}:app=codex:title=Rml4dHVyZSB0YXNr\\007'; printf '\\033]7501;state=blocked:id=worker:kind=permission:msg=UmV2aWV3IHRoaXM=\\007'; printf '\\033]0;Initial terminal title\\007'; printf 'ACTIVITY_READY\\n'; while IFS= read -r line; do if [ \"$line\" = alert ]; then printf '\\033]7501;state=blocked:msg=TmV3IGFwcHJvdmFs\\007'; fi; printf '\\033]0;Updated terminal title\\007'; done");
             let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rex-android-activity-test-{}-{index}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}}]}))).unwrap();
             ids.push(created["session_id"].as_str().unwrap().to_owned());blocks.push(created["initial_windows"][0]["block_ids"][0].as_str().unwrap().to_owned());
         }
@@ -2316,6 +2336,8 @@ while True:
             let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();until(&app,|v|v["phase"]=="connected");
             app.command(json!({"type":"session","id":ids[0],"block":blocks[0],"navigationId":7})).unwrap();
             let initial=until(&app,|v|v["selectedBlock"]==blocks[0] && text(v).contains("ACTIVITY_READY"));
+            let closed=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>=2));
+            assert!(closed["activity"].is_null(),"Closed-sheet updates must carry only the attention count");
             app.command(json!({"type":"activity","open":true})).unwrap();
             let listed=until(&app,|v|v["activity"].as_array().is_some_and(|items|
                 items.iter().any(|a|a["session"]==ids[0] && a["state"]=="working") && items.iter().any(|a|a["session"]==ids[1] && a["state"]=="done") && items.iter().any(|a|a["id"]=="worker" && a["state"]=="blocked")));
@@ -2325,6 +2347,18 @@ while True:
             runtime.block_on(writer.terminal(&ids[0],&blocks[0],"write",json!({"data":"update\n"}))).unwrap();
             until(&app,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[0] && a["id"]=="" && a["title"]=="Updated terminal title")));
             assert_eq!(listed["screen"]["columns"],initial["screen"]["columns"]);
+            let current=until(&app,|v|v["activity"].as_array().is_some_and(|items|!items.is_empty()));
+            let seen:serde_json::Map<String,Value>=current["activity"].as_array().unwrap().iter().filter_map(|item|
+                Some((item["attentionKey"].as_str()?.to_owned(),item["attentionVersion"].clone()))).collect();
+            app.command(json!({"type":"activity_seen","items":seen})).unwrap();
+            until(&app,|v|v["attentionCount"]==0);
+            app.command(json!({"type":"activity","open":false})).unwrap();
+            runtime.block_on(writer.attach(&ids[1])).unwrap();
+            runtime.block_on(writer.terminal(&ids[1],&blocks[1],"write",json!({"data":"alert\n"}))).unwrap();
+            let alerted=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>0) && v["activity"].is_null());
+            assert_eq!(alerted["controlled"],false);
+            app.command(json!({"type":"activity","open":true})).unwrap();
+            until(&app,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[1] && a["id"]=="" && a["state"]=="blocked")));
             app.command(json!({"type":"session","id":ids[1],"block":blocks[1],"navigationId":8})).unwrap();
             let jumped=until(&app,|v|v["selectedBlock"]==blocks[1] && v["screen"].is_object());
             assert_eq!(jumped["selectedSession"],ids[1]);assert_eq!(jumped["controlled"],false);
@@ -2401,6 +2435,18 @@ while True:
         }
         let mut uncertain="Request outcome is uncertain; input was not resent".to_owned();
         clear_ownership_error(&mut uncertain);assert!(!uncertain.is_empty());
+    }
+
+    #[test] fn losing_network_cancels_a_pending_handshake_and_preserves_the_target() {
+        let shared=Arc::new(Mutex::new(Shared {revision:0,json:String::new(),activity:Arc::default(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.endpoint=Some(Endpoint::new("https://example.invalid",Duration::from_secs(10)).unwrap());actor.selected_session="s".into();actor.selected_block="b".into();
+        actor.connect_task=Some(Box::pin(pending()));actor.phase="connecting".into();
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(actor.command(json!({"type":"network","online":false}))).unwrap();
+        assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");assert!(!actor.controlled);
+        runtime.block_on(actor.command(json!({"type":"network","online":true}))).unwrap();assert!(actor.retry.is_some());
+        actor.connect_task=Some(Box::pin(pending()));runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();assert!(actor.connect_task.is_none());assert!(actor.retry.is_some());
     }
 
 }

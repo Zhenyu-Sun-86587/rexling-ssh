@@ -143,8 +143,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
-                controlled,ready&&client.hasScreen,blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
-                {if(controlled) client.releaseControl() else client.takeControl()},working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Terminal).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),expanded=picker=="sessions",menu={
+                blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
+                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Terminal).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
@@ -153,6 +153,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                 Modifier.padding(horizontal=16.dp,vertical=8.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                             client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
+                            OwnershipMenuItem(controlled,ready&&client.hasScreen) {menu=false;if(controlled) client.releaseControl() else client.takeControl()}
                             DropdownMenuItem(text={Text("Appearance")},onClick={menu=false;appearance=true})
                             DropdownMenuItem(text={Text("Font size · $fontSize sp")},onClick={menu=false;fontPicker=true})
                             DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
@@ -193,12 +194,18 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     }
                     if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
                         LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
-                    if(state.error.isNotBlank()) Text(state.error,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(10.dp),
+                    if(blocks.isEmpty()) ConnectionNotice(state.phase,model.networkAvailable,client::retryNow)
+                    if(state.error.isNotBlank() && state.phase !in listOf("connecting","reconnecting")) Text(state.error,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(10.dp),
                         color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     if(blocks.isNotEmpty()) {
+                        Box(Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp)) {
                         LiveTerminal(client,blocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,client::selectBlock,{picker="panes"},{terminalView=it},
-                            Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp))
+                            Modifier.fillMaxSize())
+                        ConnectionNotice(state.phase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
+                        ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp))
+                        OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.TopEnd).padding(10.dp))
+                        }
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
                         Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
                             fontFamily=MonoUi,fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)

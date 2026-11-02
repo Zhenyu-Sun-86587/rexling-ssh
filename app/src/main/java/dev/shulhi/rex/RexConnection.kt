@@ -56,6 +56,10 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(seen.length()>2048) {val keys=seen.keys().asSequence().toList();keys.take(keys.size-2048).forEach {seen.remove(it)}}
         preferences.edit {putString("activity_seen:$savedEndpoint",seen.toString())};command("activity_seen","items" to seen)
     }
+    fun retryNow() {if(foreground && savedEndpoint.isNotBlank()) {cancelKeyRepeats();resizeJob?.cancel();activation.resume();command("retry")}}
+    fun networkChanged(change: NetworkChange) {
+        if(foreground && (!change.available || change.reroute || !state.value.connected)) {cancelKeyRepeats();resizeJob?.cancel();command("network","online" to change.available,"force" to change.reroute)}
+    }
     private var handle = 0L
     private var resizeJob: Job? = null
     private var lastSize = 0 to 0
@@ -86,6 +90,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 val frames=paneFrames.toMutableMap()
                                 frames.putAll(next.previewFrames)
                                 val old=state.value
+                                if(old.connectionEpoch!=next.connectionEpoch) {activation.resume();cancelKeyRepeats();resetModifiers()}
                                 if(old.selectedBlock!=next.selectedBlock && old.screen!=null && old.selectedBlock.isNotBlank()) frames[old.selectedBlock]=old.screen
                                 while(frames.size>16) frames.remove(frames.keys.first())
                                 paneFrames=frames

@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class RexModel @JvmOverloads constructor(application: Application, preferenceName: String="rex") : AndroidViewModel(application) {
     internal var activityVisible by mutableStateOf(false)
@@ -23,6 +24,8 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }
     internal fun refreshActivity() {connections.values.forEach {it.activity(activityVisible)}}
     internal var attentionCount by mutableIntStateOf(0)
+        private set
+    internal var networkAvailable by mutableStateOf<Boolean?>(null)
         private set
     private fun updateActivity() {
         activitySources=servers.mapNotNull {server->connections[server.id]?.state?.value?.let {state->
@@ -84,6 +87,16 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
     private var palette: TerminalPalette?=null
     private var foreground=true
+    private var networkJob: Job?=null
+    private val networkMonitor=NetworkMonitor(application) {change->viewModelScope.launch {
+        val wasOffline=networkAvailable==false;networkAvailable=change.available
+        if(!change.available || change.retry || wasOffline) {
+            networkJob?.cancel();networkJob=viewModelScope.launch {
+                if(change.available) delay(300)
+                if(foreground) connections.filterKeys {it in desired}.values.forEach {it.networkChanged(change)}
+            }
+        }
+    }}
     internal var activeClient by mutableStateOf(connection(activeServer))
         private set
     val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
@@ -210,7 +223,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }
     fun updateTerminalTheme(value: TerminalPalette) {palette=value;connections.values.forEach {it.updateTerminalTheme(value)}}
     fun changeAppearance(value: Appearance) {appearance=value;preferences.edit {putString("appearance",value.name)}}
-    fun pause() {foreground=false;connections.values.forEach {it.pause()}}
-    fun resume() {foreground=true;connections.values.forEach {it.resume()}}
-    override fun onCleared() {observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
+    fun pause() {foreground=false;networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
+    fun resume() {foreground=true;networkMonitor.start();connections.values.forEach {it.resume()}}
+    override fun onCleared() {networkJob?.cancel();networkMonitor.stop();observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
 }
