@@ -1,18 +1,18 @@
 {
   "apk": "dist/Rexlink-0.1.0-arm64-release.apk",
   "application_label": "Rexlink",
-  "sha256": "47909ac7d258b46ed14765734e622051f7c832542c0ea7894cc5bcebb9c0304c",
+  "sha256": "bc430bf37d430098295c08844e1eb5e6047c0a8a4b34735272b358d58729dee6",
   "bytes": 17579610,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [
     {
       "name": "assets/dexopt/baseline.prof",
-      "bytes": 6349
+      "bytes": 6319
     },
     {
       "name": "assets/dexopt/baseline.profm",
-      "bytes": 686
+      "bytes": 671
     }
   ],
   "zip_alignment_16k": true,

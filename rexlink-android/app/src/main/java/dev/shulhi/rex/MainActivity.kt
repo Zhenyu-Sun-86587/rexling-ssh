@@ -188,8 +188,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             }
                         }
                     }
-                    if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
-                        LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
                     if(blocks.isEmpty()) ConnectionNotice(state.phase,model.networkAvailable,client::retryNow)
                     if(state.error.isNotBlank() && state.phase !in listOf("connecting","reconnecting")) Text(state.error,Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer).padding(10.dp),
                         color=MaterialTheme.colorScheme.onErrorContainer,fontSize=11.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
@@ -219,6 +217,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         }
                     }
                 }
+                // Loading feedback must not resize the terminal grid during navigation.
+                if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
+                    LinearProgressIndicator(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp))
                 if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,model.closingSessionKey.ifBlank {model.renamingSessionKey},model.sessionActionError,model::closeSession,model::renameSession,
                     onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true})
             }

@@ -1110,3 +1110,14 @@ Implementation commit: `184042c`. Reproduce the live check on an explicitly owne
 server with `REX_TEST_SERVER=<server>` and the host Ghostty/Cargo environment
 from BUILDING.md, then `cargo test --locked --manifest-path rexlink-core/Cargo.toml
 -p rexlink-jni live_mouse_click_delivers -- --ignored`.
+
+
+## Pane navigation progress overlay (2026-11-02)
+
+Moved the conditional 2 dp loading indicator from the content Column into its
+parent Box, aligned below the header. It now overlays the existing top inset
+instead of reducing terminal height while a pane/navigation request is pending.
+The same overlay covers connection/reconnection and creation progress. Release
+build, release lint, signature/ART/16 KiB checks pass. This is a layout-only
+change; native/input and renderer logic are unchanged. The release is installed
+on S22+; its base APK matches the shareable dist APK: `bc430bf37d430098295c08844e1eb5e6047c0a8a4b34735272b358d58729dee6`.
