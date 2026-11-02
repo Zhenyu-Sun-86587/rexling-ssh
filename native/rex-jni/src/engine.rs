@@ -186,7 +186,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activity":self.activity,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_task.is_some()}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activity":if self.activity_open {&self.activity} else {&Value::Null},"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_task.is_some()}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -2254,5 +2254,27 @@ while True:
         runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
+    #[test]
+    #[ignore = "host metadata benchmark; run with --ignored --nocapture"]
+    fn activity_metadata_publish_benchmark() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
+        actor.activity=json!((0..256).map(|n|json!({"session":format!("session:{n}"),"block":format!("block:{n}"),"id":"","state":"working","app":"codex","owner":"codex","title":"A reported task title","message":"Work is continuing on this task.","updatedAt":"2026-11-02T00:00:00Z"})).collect::<Vec<_>>());
+        for open in [false,true] {
+            actor.activity_open=open;let mut samples=Vec::new();let mut bytes=0;
+            for i in 0..200 {actor.titles=json!({"pane":format!("Frame {i}")});let start=std::time::Instant::now();actor.publish();let mut state=shared.lock().unwrap();let after=state.revision-1;bytes=crate::updates::encode(&mut state,after).len();samples.push(start.elapsed().as_micros());}
+            samples.sort();println!("activity_open={open} records=256 bytes={bytes} median_us={} p95_us={}",samples[100],samples[190]);
+        }
+    }
+
+    #[test] fn hidden_activity_is_cached_without_copying_it_into_terminal_updates() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
+        actor.activity=json!([{"title":"Cached task"}]);actor.publish();
+        let published=||serde_json::from_str::<Value>(&shared.lock().unwrap().json).unwrap();
+        assert!(published()["activity"].is_null());assert_eq!(actor.activity[0]["title"],"Cached task");
+        actor.activity_open=true;actor.publish();assert_eq!(published()["activity"][0]["title"],"Cached task");
+        actor.activity_open=false;actor.publish();assert!(published()["activity"].is_null());
+    }
 
 }
