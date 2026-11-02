@@ -951,3 +951,57 @@ temporary test session was destroyed. No test input was sent to user terminals.
 Phone trace/config files were removed. The final raw trace is retained locally
 in ignored `.build/ui-diagnostic/release-clean.pftrace`, not committed.
 Aggregate results: [s22plus-ui-drawing-2026-11-02.json](validation/s22plus-ui-drawing-2026-11-02.json).
+
+
+## Retained terminal rows: measured release follow-up (2026-11-02)
+
+Hardware canvases on Android 10+ now retain one RenderNode display list per row
+instead of replaying a Picture into the parent display list each draw. Changed
+rows reuse their recording, discarded hardware lists are rebuilt, and geometry
+changes/detach release cached hardware resources. Android 9 and software
+canvases retain the Picture fallback. Background fills matching the view’s
+already-cleared background are skipped; colored application edges/padding
+remain intact.
+
+The original UI publication/invalidation pacing remains unchanged. A combined
+experiment removing waits reduced some section costs but did not clearly
+improve complete-frame timing, so those scheduling changes were backed out.
+The final change is confined to row rendering.
+
+All 77 JVM tests, debug/release builds and release lint pass. The initial 34
+targeted emulator checks include pixel/background/typography/selection/link/pane
+regressions and the two-server input/lifecycle fixture. Nine final GPU/background
+checks pass after the last renderer adjustment. The new tests compare actual
+GPU pixels against Picture replay at 0, .25, .5 and .75 pixel offsets, verify
+re-recording/discard recovery, and compare a changed cached hardware terminal
+with a freshly drawn one. Offscreen-renderer destruction can invalidate child
+lists; the test harness and real view both check validity before replay.
+
+Matched S22+ releases used the same temporary two-pane workload. Broad gfx
+traces were useful for attribution but added compositor overhead; the final
+20-second comparison uses FrameTimeline plus app-only markers:
+
+| Metric | Original release | Final renderer release |
+| --- | ---: | ---: |
+| Terminal draw mean | 3.48 ms | 3.01 ms |
+| Terminal draw p95 | 5.08 ms | 4.31 ms |
+| Whole-frame work mean | 13.73 ms | 13.11 ms |
+| Whole-frame work p95 | 19.59 ms | 18.93 ms |
+
+The sample shows 13.5% lower average Canvas recording time and 15.1% lower p95,
+with only modest complete-frame changes. It does **not** establish a substantial
+pacing/jank improvement: gfxinfo deadline-miss percentages are 56.90% before
+and 57.79% after; FrameTimeline dropped-frame counts are zero and one. This is
+one sequential stress-test run per version, not repeated randomized trials or
+ordinary typing. Exact key/native-publication-to-pixel latency and battery
+effects remain unmeasured. No trace data-loss/overwrite errors were reported.
+
+The tested final release is installed on S22+ RFCT21390SD; its installed base
+APK hash matches the shareable `dist/Rexlink-0.1.0-arm64-release.apk`:
+`32c5ab86f5746bd8dd23ad2cc93bb7f8cbc82f1f45daf4a016230a4beb0cd5d0`.
+Static release/signature/ART-profile/16 KiB alignment checks pass. The original
+selected session/control state was restored, the disposable session destroyed,
+and temporary phone traces removed. Raw traces remain local in ignored
+`.build/ui-renderer-ab/`.
+
+Full measurements: [s22plus-ui-renderer-improvement-2026-11-02.json](validation/s22plus-ui-renderer-improvement-2026-11-02.json).

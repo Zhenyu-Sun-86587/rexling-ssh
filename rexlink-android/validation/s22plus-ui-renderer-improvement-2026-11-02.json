@@ -1,0 +1,163 @@
+{
+  "date": "2026-11-02",
+  "device": "Samsung Galaxy S22+ SM-S906E, Android 16",
+  "renderer_commit": "456e81d946604f019d84c4a930f5c339fccc289b",
+  "changes": [
+    "Use retained RenderNode row display lists on Android 10+ hardware canvases; reuse recordings when a row changes",
+    "Keep Picture recording for Android 9 and software canvases",
+    "Skip cell-background fills equal to the already-cleared view background",
+    "Re-record discarded hardware lists and release caches on geometry changes/detach"
+  ],
+  "frame_pacing": "Original Choreographer publication wait and animation invalidation retained. The combined scheduling experiment was not selected because it did not improve complete-frame pacing clearly.",
+  "validation": {
+    "jvm_tests": 77,
+    "initial_targeted_emulator_tests": 34,
+    "final_hardware_background_tests": 9,
+    "checks": [
+      "Release/debug builds",
+      "release lint",
+      "GPU image equality vs Picture at integer/fractional offsets",
+      "GPU re-record/discard recovery and actual TerminalView cache vs fresh pixels",
+      "padding seams, cursor, fonts, links, selection and pane gestures",
+      "two-server lifecycle/input fixture on emulator",
+      "signed non-debuggable APK, ART profiles and 16 KiB library/ZIP alignment"
+    ]
+  },
+  "methodology": {
+    "workload": "Same two-pane 23-row colored text repaint at up to 30 Hz, four pane swipes, output restart, scroll",
+    "comparison": "Sequential paired release tests on the same physical S22+; one run per version/configuration, not randomized repeated statistical trials",
+    "reported_trace": "20-second low-overhead FrameTimeline plus app-only trace markers; broad gfx tracing omitted from reported A/B to reduce compositor instrumentation overhead",
+    "baseline_release_sha256": "caafc78d6ef0756844e971b35054a32e1719a9ace19e96eff3a8ab4fb701e806",
+    "final_release_sha256": "32c5ab86f5746bd8dd23ad2cc93bb7f8cbc82f1f45daf4a016230a4beb0cd5d0",
+    "trace_health": "No reported data loss, errors or buffer overwrites in paired traces",
+    "limitation": "Native publication-to-pixel/key-to-pixel latency and battery effects not measured; stress test is not ordinary typing"
+  },
+  "paired_results": {
+    "baseline-minimal": {
+      "pid": 30683,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 586.0,
+          "mean_ms": 1.870866,
+          "p50_ms": 1.407136,
+          "p95_ms": 5.177123,
+          "max_ms": 25.937188
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 470.0,
+          "mean_ms": 3.478846,
+          "p50_ms": 3.989505,
+          "p95_ms": 5.078724,
+          "max_ms": 7.668073
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 709.0,
+          "mean_ms": 13.729342,
+          "p50_ms": 13.50901,
+          "p95_ms": 19.588667,
+          "max_ms": 31.982448
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "max_ms": null
+        }
+      },
+      "frame_flags": {
+        "frames": 709.0,
+        "app_deadline_missed": 409.0,
+        "compositor_cpu_missed": 13.0,
+        "buffer_stuffed": 297.0,
+        "dropped": 0.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "717",
+        "jank_percent": "56.90",
+        "p95_ms": "20"
+      }
+    },
+    "final-minimal": {
+      "pid": 2124,
+      "timings": {
+        "decode": {
+          "metric": "decode",
+          "n": 580.0,
+          "mean_ms": 1.876672,
+          "p50_ms": 1.480104,
+          "p95_ms": 4.939867,
+          "max_ms": 25.763542
+        },
+        "terminal_draw": {
+          "metric": "terminal_draw",
+          "n": 468.0,
+          "mean_ms": 3.009432,
+          "p50_ms": 3.454609,
+          "p95_ms": 4.314135,
+          "max_ms": 7.844948
+        },
+        "app_frame_work": {
+          "metric": "app_frame_work",
+          "n": 698.0,
+          "mean_ms": 13.1081,
+          "p50_ms": 12.592057,
+          "p95_ms": 18.933818,
+          "max_ms": 30.148437
+        },
+        "render_thread": {
+          "metric": "render_thread",
+          "n": 0.0,
+          "mean_ms": null,
+          "p50_ms": null,
+          "p95_ms": null,
+          "max_ms": null
+        }
+      },
+      "frame_flags": {
+        "frames": 698.0,
+        "app_deadline_missed": 400.0,
+        "compositor_cpu_missed": 9.0,
+        "buffer_stuffed": 294.0,
+        "dropped": 1.0
+      },
+      "trace_loss": [],
+      "gfxinfo": {
+        "frames": "706",
+        "jank_percent": "57.79",
+        "p95_ms": "19"
+      }
+    }
+  },
+  "observed_reductions_percent": {
+    "terminal_draw_mean": 13.493382575716195,
+    "terminal_draw_p95": 15.054746034633892,
+    "whole_frame_work_mean": 4.524921878994636,
+    "whole_frame_work_p95": 3.3429992964809863
+  },
+  "interpretation": [
+    "Canvas recording is cheaper in this sample; whole-frame mean/p95 improve only modestly",
+    "Deadline-miss rate has not meaningfully improved: gfxinfo 56.90% before and 57.79% after",
+    "FrameTimeline dropped frames were zero before and one after; do not claim dropped-frame improvement",
+    "Larger whole-app smoothness and battery benefits have not been established"
+  ],
+  "delivery": {
+    "installed_on_s22plus": true,
+    "installed_apk_hash_matches": true,
+    "release_sha256": "32c5ab86f5746bd8dd23ad2cc93bb7f8cbc82f1f45daf4a016230a4beb0cd5d0",
+    "shareable_apk": "dist/Rexlink-0.1.0-arm64-release.apk",
+    "original_selected_session_and_control_restored": true,
+    "disposable_fixture_destroyed": true,
+    "temporary_phone_trace_files_removed": true
+  },
+  "raw_traces": "Ignored local .build/ui-renderer-ab/; not committed",
+  "trace_hashes": {
+    "baseline-minimal": "2d74f240a3e3f6b470a571a2208bcba23f3f8d709e8b0f735f28bf20250621a3",
+    "final-minimal": "49778c1b7d3eaf21422b2a92d595209cc3aabae2162ad47fe5426710f887ddcc"
+  }
+}
