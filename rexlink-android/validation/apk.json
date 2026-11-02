@@ -1,0 +1,42 @@
+{
+  "apk": "app/build/outputs/apk/release/app-release.apk",
+  "application_label": "Rexlink",
+  "sha256": "9d918582e01106bbd0817116c7f694905e17d1c95a3d1a58776c7c0e69a0ee19",
+  "bytes": 17480606,
+  "signature_verified": true,
+  "debuggable": false,
+  "art_profiles": [
+    {
+      "name": "assets/dexopt/baseline.prof",
+      "bytes": 6360
+    },
+    {
+      "name": "assets/dexopt/baseline.profm",
+      "bytes": 670
+    }
+  ],
+  "zip_alignment_16k": true,
+  "permissions": [
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_NETWORK_STATE",
+    "dev.shulhi.rex.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+  ],
+  "native_libraries": [
+    {
+      "name": "lib/arm64-v8a/libandroidx.graphics.path.so",
+      "bytes": 10096,
+      "load_alignment": 16384
+    },
+    {
+      "name": "lib/arm64-v8a/libc++_shared.so",
+      "bytes": 1423696,
+      "load_alignment": 16384
+    },
+    {
+      "name": "lib/arm64-v8a/librex_android.so",
+      "bytes": 5211512,
+      "load_alignment": 16384
+    }
+  ],
+  "runtime_execution": "not performed by this static APK check"
+}

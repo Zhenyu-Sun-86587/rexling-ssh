@@ -1,0 +1,32 @@
+{
+  "description": "Destroy a session and close every block in it.",
+  "input_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "session_id": {
+        "description": "The session to destroy. Every block in it closes.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "session_id"
+    ],
+    "type": "object"
+  },
+  "invoke": {
+    "method": "session.destroy"
+  },
+  "name": "session.destroy",
+  "output_schema": {
+    "additionalProperties": false,
+    "type": "object"
+  },
+  "request_example": "{\n  \"session_id\": \"session:<uuid>\"\n}",
+  "response_example": "{}",
+  "validation_notes": [
+    "The server closes every window and block in the session. Closing a terminal hangs up the program running in it, as closing a terminal window does.",
+    "The call returns once the session has closed. `session_destroyed` is the last event about the session, though a `client_script_events_dropped` event for it can still follow.",
+    "The connection must be attached to the session, with `session.attach`, `session.bootstrap`, or `session.attach_all`, or the call fails with `conflict`.",
+    "If `session_id` names no session, the call fails with `session_not_found`."
+  ]
+}

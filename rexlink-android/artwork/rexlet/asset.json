@@ -1,0 +1,12 @@
+{
+  "source": "User-selected voxel robot dinosaur artwork",
+  "preparation": "Built-in image_gen background extraction followed by transparent-edge cleanup. Android supplies the white background and adaptive mask.",
+  "source_sha256": "d06233c4508943acbb7cffa5613f625e9c16373fe553f8396d1ad48645fa455b",
+  "foreground_sha256": "809fb13c493658e37841f7f2a6f9afabd3a27e651a168c6109380ecd41a3ae90",
+  "foreground": "artwork/rexlet/foreground.png",
+  "prompts": [
+    "preparation-prompt.txt",
+    "cleanup-prompt.txt"
+  ],
+  "superseded_by": "artwork/rexlink/metadata.json"
+}

@@ -1,0 +1,126 @@
+package dev.shulhi.rex
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.*
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+
+internal val controlShortcuts=listOf("c","d","z","r","l","a","e","w","j")
+
+@Composable internal fun ControlDockKey(enabled: Boolean,active: Boolean,readable: Boolean,modifier: Modifier,
+    onToggle: ()->Unit,onShortcut: (String)->Unit) {
+    var visible by remember {mutableStateOf(false)}
+    var pressed by remember {mutableStateOf(false)}
+    var highlighted by remember {mutableIntStateOf(-1)}
+    var anchor by remember {mutableStateOf(Rect.Zero)}
+    var popup by remember {mutableStateOf(IntRect.Zero)}
+    val scope=rememberCoroutineScope()
+    val toggle by rememberUpdatedState(onToggle)
+    val send by rememberUpdatedState(onShortcut)
+    val density=LocalDensity.current
+    val padding=with(density) {8.dp.toPx()}
+    val gap=with(density) {4.dp.toPx()}
+    val configuration=LocalViewConfiguration.current
+    val haptics=LocalHapticFeedback.current
+    fun dismiss() {visible=false;highlighted=-1}
+    fun choose(index: Int) {if(enabled) send(controlShortcuts[index]);dismiss()}
+    fun hit(x: Float,y: Float): Int {
+        val px=x-popup.left-padding;val py=y-popup.top-padding
+        val w=(popup.width-2*padding-2*gap)/3;val h=(popup.height-2*padding-2*gap)/3
+        if(w<=0 || h<=0 || px<0 || py<0) return -1
+        val col=(px/(w+gap)).toInt();val row=(py/(h+gap)).toInt()
+        return if(col in 0..2 && row in 0..2 && px-col*(w+gap)<w && py-row*(h+gap)<h) row*3+col else -1
+    }
+    BackHandler(visible) {dismiss()}
+    val provider=remember(padding) {object: PopupPositionProvider {
+        override fun calculatePosition(anchorBounds: IntRect,windowSize: IntSize,layoutDirection: LayoutDirection,popupContentSize: IntSize): IntOffset {
+            val edge=padding.toInt()
+            val x=(anchorBounds.center.x-popupContentSize.width/2).coerceIn(edge,maxOf(edge,windowSize.width-popupContentSize.width-edge))
+            val above=anchorBounds.top-popupContentSize.height-edge
+            val y=(if(above>=edge) above else anchorBounds.bottom+edge).coerceIn(edge,maxOf(edge,windowSize.height-popupContentSize.height-edge))
+            val position=IntOffset(x,y);popup=IntRect(position,popupContentSize);return position
+        }
+    }}
+    val selected=active || pressed || visible
+    Box(modifier.fillMaxHeight().onGloballyPositioned {anchor=it.boundsInWindow()}
+        .clip(RoundedCornerShape(11.dp)).background(if(selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+        .semantics {
+            contentDescription="Control";this.selected=active;role=Role.Button
+            if(enabled) {onClick {toggle();true};onLongClick(label="Control shortcuts") {visible=true;true}} else disabled()
+        }.pointerInput(enabled) {
+            if(!enabled) return@pointerInput
+            awaitEachGesture {
+                val down=awaitFirstDown();down.consume();pressed=true
+                var opened=false;var released=false;var moved=false
+                val timer=scope.launch {delay(configuration.longPressTimeoutMillis);opened=true;visible=true;haptics.performHapticFeedback(HapticFeedbackType.LongPress)}
+                try {
+                    while(true) {
+                        val change=awaitPointerEvent().changes.firstOrNull {it.id==down.id} ?: break
+                        if(change.isConsumed) break
+                        change.consume()
+                        if(abs(change.position.x-down.position.x)>configuration.touchSlop || abs(change.position.y-down.position.y)>configuration.touchSlop) {moved=true;if(!opened) timer.cancel()}
+                        if(opened && visible) highlighted=hit(change.position.x+anchor.left,change.position.y+anchor.top)
+                        if(!change.pressed) {
+                            released=true;timer.cancel()
+                            if(opened) {if(visible && highlighted>=0) choose(highlighted)}
+                            else if(!moved && change.position.x in 0f..size.width.toFloat() && change.position.y in 0f..size.height.toFloat()) toggle()
+                            break
+                        }
+                    }
+                } finally {timer.cancel();pressed=false;if(!released || opened) dismiss()}
+            }
+        },contentAlignment=Alignment.Center) {
+        ChromeSymbol(ChromeIcon.CONTROL,Modifier.size(20.dp),
+            (if(selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(readable) 1f else .38f))
+        if(visible) Popup(popupPositionProvider=provider,onDismissRequest={dismiss()},
+            properties=PopupProperties(focusable=false,dismissOnClickOutside=true)) {
+            Column(Modifier.width(244.dp).shadow(10.dp,RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp,MaterialTheme.colorScheme.outline,RoundedCornerShape(18.dp)).padding(8.dp)
+                .semantics {contentDescription="Control shortcuts"},verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                repeat(3) {row->
+                    Row(Modifier.fillMaxWidth().height(44.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                        repeat(3) {col->
+                            val index=row*3+col;val letter=controlShortcuts[index];val current=highlighted==index
+                            Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(11.dp))
+                                .background(if(current) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
+                                .semantics {contentDescription="Control ${letter.uppercase()}";this.selected=current}
+                                .clickable(enabled=enabled,role=Role.Button) {choose(index)},contentAlignment=Alignment.Center) {
+                                Text("^${letter.uppercase()}",fontFamily=MonoUi,fontSize=13.sp,fontWeight=FontWeight.Bold,
+                                    color=if(current) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

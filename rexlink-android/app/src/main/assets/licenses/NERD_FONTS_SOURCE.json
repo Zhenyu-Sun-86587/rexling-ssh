@@ -1,0 +1,31 @@
+{
+  "upstream": "https://github.com/ryanoasis/nerd-fonts",
+  "version": "v3.5.1",
+  "base_family": "JetBrains Mono NL 2.304",
+  "family": "JetBrainsMonoNL Nerd Font Mono",
+  "release_asset": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/JetBrainsMono.tar.xz",
+  "release_asset_sha256": "04d5e8f903693f9dd13e16f867e994834e681eb3c72c0d337a770dcda09010cf",
+  "release_asset_id": 523475208,
+  "files": {
+    "jetbrains_nerd_regular.ttf": {
+      "archive_path": "JetBrainsMonoNLNerdFontMono-Regular.ttf",
+      "sha256": "d9a80146bbf2ff23b187316a3e82ee2a2ceab8220267fe09ac150ca46ab2c3bd",
+      "bytes": 2491088
+    },
+    "jetbrains_nerd_bold.ttf": {
+      "archive_path": "JetBrainsMonoNLNerdFontMono-Bold.ttf",
+      "sha256": "f799fc4b215c7b7254bf6cee51c0bce122ac684b53b46fd3cb83d408a0ccf385",
+      "bytes": 2493472
+    },
+    "jetbrains_nerd_italic.ttf": {
+      "archive_path": "JetBrainsMonoNLNerdFontMono-Italic.ttf",
+      "sha256": "336a3cef8770dab01c0fc9c6bb0c0473bfa82f90a4033fde2cc52d8aa410528c",
+      "bytes": 2494072
+    },
+    "jetbrains_nerd_bold_italic.ttf": {
+      "archive_path": "JetBrainsMonoNLNerdFontMono-BoldItalic.ttf",
+      "sha256": "28ce03bcaf808f7fa64dcce6facb00319083bdb04cc4f61d41b9f6ad8f20c3e8",
+      "bytes": 2496612
+    }
+  }
+}

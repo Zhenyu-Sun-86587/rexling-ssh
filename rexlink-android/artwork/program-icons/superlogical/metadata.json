@@ -1,0 +1,19 @@
+{
+  "source": "https://icons.superlogical.com/",
+  "catalog_version": "1.8.30",
+  "provided_by": "User download from the signed-in catalog",
+  "rendering": "Local WebKit SVG renderer; Android packages pre-rendered transparent tiles. SVG sources are retained here.",
+  "notice": "All trademarks and logos are the property of their respective owners. Their use does not imply affiliation or endorsement.",
+  "sha256": {
+    "codex": "527936ebb208640f9b95dbf75c8088657fd53a926ac6780b0e339c99329f82cc",
+    "claude-code": "268805f765bce15e87f4a1ac6fa39542da42510e9d595422635f20a3fa32bda3",
+    "neovim": "fd95582b666fc435fc3635efc6899c2b9168a727495b08061b99c38dd8ac5e0e",
+    "vim": "5e18e56e5560cd809c7e5959f785e90ada6ef3533ec2ebf444fa6c3a6c118515",
+    "git": "1bfd5ddc540aa32dc469dad1d234cd4a816e68f2d2e4cad9b5ffb9f9acfb5c96",
+    "python": "94a8ae712152f07bbfbb8b6fc01aefd5834ea9f40a6e1a623fd1896063769992",
+    "node": "0e1647f1ee9258dffedc3009b37671c21b06dccddf69be3800e5f430517ca735",
+    "shell": "60b56767373c1e5b43869aa88c80545aef898991e3bd22adb8da607492b6bc92",
+    "htop": "81465bd2580e4853e86cd3c29467ed40368d6e2e6c6dfb0e7c1b79af7e9a31e0",
+    "btop": "87179932ff8a218b55e453f079726eca47152ef83c7fbf2466511cbd5d9857f2"
+  }
+}

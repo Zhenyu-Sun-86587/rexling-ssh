@@ -1,0 +1,8 @@
+{
+  "source": "User-selected transparent paper-style blue dinosaur",
+  "preparation": "Exact supplied transparent PNG, copied without alteration; Android supplies the white adaptive launcher background.",
+  "source_sha256": "80d43a902797e97454540a72b38784140cc1e49b0efbbc0823cff00db69b2f7a",
+  "foreground_sha256": "80d43a902797e97454540a72b38784140cc1e49b0efbbc0823cff00db69b2f7a",
+  "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
+  "prompt": null
+}
