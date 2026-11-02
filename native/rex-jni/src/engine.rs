@@ -437,6 +437,7 @@ impl Actor {
                     if id == self.selected_block {
                         selected_exists = true;
                         self.controlled = block["owner"].as_str() == Some(client);
+                        if self.controlled {clear_ownership_error(&mut self.error);}
                     }
                     blocks.push(
                         json!({"id":id,"label":block["label"].as_str().unwrap_or("Terminal")}),
@@ -580,9 +581,8 @@ impl Actor {
         let events: Vec<_>=replica.events.drain(..).collect();
         let changed=!events.is_empty();
         for event in events {
-            if event["type"] == "resize" && let Some(owner) = event.get("owner") {
-                self.controlled=owner.as_str().zip(self.control.as_ref().and_then(|c|c.client_id())).is_some_and(|(owner,client)|owner==client);
-            }
+            // Data and control streams have independent delivery order. Resize APCs
+            // still update the grid in Replica, but cannot override canonical ownership.
             let id=self.selected_block.clone();
             if let Some(name)=event["type"].as_str() {self.program_event(&id,name,&event);}
             if event["type"] == "child_exited" {self.notice=format!("Program exited ({})",event["exit_code"]);}
@@ -979,7 +979,10 @@ impl Actor {
                 if value["type"]=="resize" && value["session"].is_string() && (!self.visible || self.paused
                     || value["session"]!=self.selected_session || value["block"]!=self.selected_block
                     || value["navigationId"].as_u64()!=Some(self.navigation_id)) {return Ok(());}
-                ensure!(self.controlled, "Take control before typing or resizing");
+                // A deferred layout resize can arrive after a legitimate ownership
+                // change. It is safe to drop; typing must still be explicitly rejected.
+                if value["type"]=="resize" && !self.controlled {return Ok(());}
+                ensure!(self.controlled, "Take control before typing");
                 let kind = value["type"].as_str().unwrap();
                 if kind != "resize"
                     && let Some(replica) = self.replica.as_mut().filter(|r| r.ready())
@@ -1223,6 +1226,9 @@ fn program_candidates(process: &Value, status: &Value) -> Value {
 }
 fn missing_terminal(error: &anyhow::Error) -> bool {
     error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|matches!(e.code.as_str(),"not_found"|"session_not_found"))
+}
+fn clear_ownership_error(error: &mut String) {
+    if matches!(error.as_str(),"Take control before typing"|"Take control before typing or resizing") {error.clear();}
 }
 fn same_process(a: &Value,b: &Value) -> bool {a["pid"].is_number() && a["name"].is_string() && a["pid"]==b["pid"] && a["name"]==b["name"]}
 fn display_title(event: &Value) -> String {event["title"].as_str().unwrap_or("").chars().filter(|c|!c.is_control()).take(256).collect()}
@@ -1631,6 +1637,20 @@ mod tests {
             wait(&app, |v| {
                 v["phase"] == "connected" && text(v).contains("ACTOR_REPLY:during-app-pause")
             });
+            for index in 0..4 {
+                // Canonical control events must also notice a different client's takeover.
+                runtime.block_on(writer.call("session.own_block",json!({"session_id":id,"block_ids":[block],"mode":"take"}))).unwrap();
+                wait(&app,|v|v["controlled"]==false);
+                app.command(json!({"type":"pause"})).unwrap();wait(&app,|v|v["phase"]=="paused");
+                app.command(json!({"type":"resume"})).unwrap();
+                wait(&app,|v|v["phase"]=="connected" && v["screen"].is_object());
+                app.command(json!({"type":"resize","session":id,"block":block,"navigationId":17,"columns":60,"rows":26})).unwrap();
+                app.command(json!({"type":"take","session":id,"block":block,"navigationId":17,"columns":60,"rows":26})).unwrap();
+                wait(&app,|v|v["controlled"]==true && v["screen"]["columns"]==60);
+                app.command(json!({"type":"input","text":format!("RECONNECTED_{index}\n")})).unwrap();
+                let typed=wait(&app,|v|text(v).contains(&format!("ACTOR_REPLY:RECONNECTED_{index}")));
+                assert_eq!(typed["controlled"],true);assert_eq!(typed["error"],"");
+            }
             app.command(json!({"type":"release"})).unwrap();
             wait(&app, |v| v["controlled"] == false);
             app.command(json!({"type":"disconnect"})).unwrap();
@@ -2303,6 +2323,31 @@ while True:
             runtime.block_on(actor.command(json!({"type":kind,"session":"s","block":"b","navigationId":2,"columns":40,"rows":30}))).unwrap();
             actor.paused=false;
         }
+    }
+
+    #[test] fn delayed_resize_apcs_cannot_revoke_canonical_ownership() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.controlled=true;actor.replica=Some(Replica::new(1));
+        actor.replica.as_mut().unwrap().events.push(json!({"type":"resize","owner":"previous-client"}));
+        actor.update_apcs();assert!(actor.controlled);
+        actor.controlled=false;actor.replica.as_mut().unwrap().events.push(json!({"type":"resize","owner":"late-own-claim"}));
+        actor.update_apcs();assert!(!actor.controlled);
+    }
+    #[test] fn unowned_layout_resize_is_quiet_but_unowned_typing_is_rejected() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(actor.command(json!({"type":"resize","columns":40,"rows":30}))).unwrap();
+        assert_eq!(runtime.block_on(actor.command(json!({"type":"input","text":"x"}))).unwrap_err().to_string(),"Take control before typing");
+    }
+
+    #[test] fn confirmed_ownership_clears_only_the_stale_ownership_error() {
+        for text in ["Take control before typing","Take control before typing or resizing"] {
+            let mut error=text.to_owned();clear_ownership_error(&mut error);assert!(error.is_empty());
+        }
+        let mut uncertain="Request outcome is uncertain; input was not resent".to_owned();
+        clear_ownership_error(&mut uncertain);assert!(!uncertain.is_empty());
     }
 
 }
