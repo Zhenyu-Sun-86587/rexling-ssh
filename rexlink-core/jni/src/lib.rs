@@ -136,3 +136,5 @@ pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_readUpdate(
     match result {Ok(Ok(bytes))=>env.byte_array_from_slice(&bytes).map(|a|a.into_raw()).unwrap_or(std::ptr::null_mut()),
         _=>{let _=env.throw_new("java/lang/IllegalStateException","Native update failed");std::ptr::null_mut()}}
 }
+
+mod input_queue;

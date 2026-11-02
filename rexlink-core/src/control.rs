@@ -3,12 +3,13 @@ use anyhow::{Context, Result, bail, ensure};
 use futures_util::SinkExt;
 use serde_json::{Value, json};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, VecDeque},
     fs::{File, OpenOptions},
     io::Write,
     path::Path,
     sync::{Arc, Mutex},
 };
+use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
 
 pub fn redact(value: &mut Value) {
@@ -67,16 +68,47 @@ pub struct RpcError {
 }
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f,"{}: {} (code={}, status={})",self.method,self.message,self.code,self.status)
+        write!(
+            f,
+            "{}: {} (code={}, status={})",
+            self.method, self.message, self.code, self.status
+        )
     }
 }
 impl std::error::Error for RpcError {}
+
+/// A request already sent on the control stream. Reading the stream dispatches
+/// its reply; awaiting this alone deliberately does not read from the socket.
+pub struct PendingCall {
+    id: String,
+    method: String,
+    deadline: tokio::time::Instant,
+    receiver: oneshot::Receiver<Result<Value>>,
+}
+impl PendingCall {
+    pub async fn receive(self) -> Result<Value> {
+        tokio::time::timeout_at(self.deadline, self.receiver)
+            .await
+            .with_context(|| {
+                format!(
+                    "{} timed out; its outcome is unknown, inspect state before retrying",
+                    self.method
+                )
+            })?
+            .context("control connection closed; request outcome is unknown")?
+    }
+}
+struct WaitingCall {
+    method: String,
+    sender: oneshot::Sender<Result<Value>>,
+}
 
 pub struct Control {
     ws: Ws,
     endpoint: Endpoint,
     welcome: Value,
     next_id: u64,
+    pending: BTreeMap<String, WaitingCall>,
     pub events: VecDeque<Value>,
     last_seq: u64,
     trace: Trace,
@@ -127,6 +159,7 @@ impl Control {
             endpoint,
             welcome,
             next_id: 1,
+            pending: BTreeMap::new(),
             events: VecDeque::new(),
             last_seq: 0,
             trace,
@@ -167,12 +200,40 @@ impl Control {
                 );
                 self.last_seq = seq;
             }
+            if message["type"] == "response" {
+                let id = message["id"]
+                    .as_str()
+                    .context("response has no request ID")?;
+                let waiting = self.pending.remove(id).context("unexpected response ID")?;
+                let result = if let Some(error) = message.get("error").filter(|e| !e.is_null()) {
+                    Err(RpcError {
+                        method: waiting.method,
+                        code: error["code"].as_str().unwrap_or("").into(),
+                        message: error["message"]
+                            .as_str()
+                            .unwrap_or("Server request failed")
+                            .into(),
+                        status: error["status"].clone(),
+                    }
+                    .into())
+                } else {
+                    Ok(message.get("payload").cloned().unwrap_or(Value::Null))
+                };
+                // Dropping a waiter does not make a late wire reply invalid.
+                let _ = waiting.sender.send(result);
+            }
             if matches!(message["type"].as_str(), Some("event" | "response")) {
                 return Ok(message);
             }
         }
     }
-    pub async fn call(&mut self, method: &str, payload: Value) -> Result<Value> {
+    /// Send without waiting for the reply. The owner must continue calling
+    /// next_message (or call) while awaiting the returned ticket.
+    pub async fn start_call(&mut self, method: &str, payload: Value) -> Result<PendingCall> {
+        ensure!(
+            self.pending.len() < 32,
+            "too many outstanding control requests"
+        );
         let id = self.next_id.to_string();
         self.next_id += 1;
         let request = json!({"type":"request","id":id,"method":method,"payload":payload});
@@ -185,33 +246,54 @@ impl Control {
             "request exceeds message limit"
         );
         self.trace.record("control.send", request)?;
-        let timeout = self.endpoint.timeout;
-        tokio::time::timeout(timeout, async {
-            self.ws.send(Message::Text(text.into())).await?;
-            loop {
-                let reply = self.next_message().await?;
-                if reply["type"] == "event" {
-                    ensure!(
-                        self.events.len() < 4096,
-                        "too many queued events; reload state"
-                    );
-                    self.events.push_back(reply);
-                    continue;
-                }
-                ensure!(reply["id"] == id, "unexpected response ID");
-                if let Some(error) = reply.get("error").filter(|e| !e.is_null()) {
-                    return Err(RpcError {
-                        method: method.into(), code:error["code"].as_str().unwrap_or("").into(),
-                        message:error["message"].as_str().unwrap_or("Server request failed").into(),status:error["status"].clone()
-                    }.into());
-                }
-                return Ok(reply.get("payload").cloned().unwrap_or(Value::Null));
-            }
+        let deadline = tokio::time::Instant::now() + self.endpoint.timeout;
+        let (sender, receiver) = oneshot::channel();
+        self.pending.insert(
+            id.clone(),
+            WaitingCall {
+                method: method.into(),
+                sender,
+            },
+        );
+        if let Err(error) =
+            tokio::time::timeout_at(deadline, self.ws.send(Message::Text(text.into())))
+                .await
+                .context("WebSocket request send timed out; outcome is unknown")
+                .and_then(|result| {
+                    result.context("WebSocket request send failed; outcome is unknown")
+                })
+        {
+            self.pending.remove(&id);
+            return Err(error);
+        }
+        Ok(PendingCall {
+            id,
+            method: method.into(),
+            deadline,
+            receiver,
         })
-        .await
-        .with_context(|| {
-            format!("{method} timed out; its outcome is unknown, inspect state before retrying")
-        })?
+    }
+    pub async fn call(&mut self, method: &str, payload: Value) -> Result<Value> {
+        let pending = self.start_call(method, payload).await?;
+        let id = pending.id.clone();
+        let reply = pending.receive();
+        tokio::pin!(reply);
+        let result = loop {
+            tokio::select! {
+                biased;
+                result=&mut reply=>break result,
+                message=self.next_message()=>match message {
+                    Ok(message) if message["type"]=="event"=>{
+                        if self.events.len()>=4096 {break Err(anyhow::anyhow!("too many queued events; reload state"));}
+                        self.events.push_back(message);
+                    },
+                    Ok(_)=>{},
+                    Err(error)=>break Err(error),
+                }
+            }
+        };
+        self.pending.remove(&id);
+        result
     }
     pub async fn attach(&mut self, session: &str) -> Result<Value> {
         self.call("session.attach", json!({"session_id":session}))
@@ -235,6 +317,7 @@ impl Control {
         Ok(())
     }
     pub async fn close(&mut self) -> Result<()> {
+        self.pending.clear();
         self.ws.close().await?;
         Ok(())
     }

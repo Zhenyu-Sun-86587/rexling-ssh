@@ -782,10 +782,12 @@ name = "rexlink-jni"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures-util",
  "jni",
  "rexlink-core",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

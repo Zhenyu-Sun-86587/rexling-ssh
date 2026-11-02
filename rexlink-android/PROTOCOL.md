@@ -547,3 +547,66 @@ The user later confirmed that the Activity badge is visible. The earlier
 Working/Action-required explanation was not a reproduced causal diagnosis.
 The clipping adjustment only changed geometry; this release does not change
 badge logic.
+
+
+## Ordered input without blocking streamed output (2026-11-02)
+
+The actor previously awaited each input RPC inside its command handler. During
+that wait, it could not process data-stream VT or render deadlines. Control now
+tracks requests by ID and dispatches replies to individual waiters. Input sends
+return after the WebSocket send, leaving the actor free to receive VT, render,
+process control events and accept more input. Ordinary dependent RPCs retain
+the existing awaitable `call` interface. Event sequence checks, timeouts and
+typed RPC errors remain intact.
+
+**Do not pipeline `com.superlogical.terminal.write`.** Rex documents general
+block methods as concurrent. A disposable raw-PTY test on Linux demonstrated
+reordered bytes when eight such writes overlapped. The Mac run happened to
+preserve them; that does not establish an ordering guarantee.
+
+Production typing instead uses `block.event`, which Rex explicitly serializes
+on each control connection. Its event is:
+
+```json
+{"type":"key","payload":{"key":"unidentified","mods":"","consumed_mods":"","text":"<already encoded input>","unshifted_codepoint":0,"composing":false,"action":"press"}}
+```
+
+The surrounding RPC payload identifies the session and block. This sends the
+existing Android-encoded text/control/escape bytes directly to the block and
+bypasses Lua key bindings, matching the previous raw-write behavior. Paste
+continues to use the distinct `paste` event and Rex’s bracketed-paste handling.
+Raw PTY capture on both owned servers verifies byte-for-byte ordering of eight
+outstanding key events, long UTF-8 text, emoji, every C0 control byte, DEL, arrow
+sequences, bracketed paste and subsequent typing.
+
+The input window is bounded to eight requests. The local work queue is bounded
+to 128 commands and 1 MiB of text, in addition to the existing bounded JNI
+channel. Already queued adjacent plain text for the same activation can combine
+up to 4 KiB, with no timer or deliberate delay. Control characters, pastes,
+navigation and other commands remain boundaries. Paste waits for preceding
+acknowledgments and blocks subsequent typing until its reply. Other commands
+also wait for outstanding input; lifecycle/network cancellation can interrupt.
+
+Android stamps input with session, block, navigation ID and connection epoch.
+The actor rejects stale bindings before sending. Disconnect and ownership
+rejection clear unsent typing, and a transport failure drops pending requests.
+Uncertain input is never retried, including after reconnection. An error does
+not automatically fight another client's ownership.
+
+The screen still streams over `/api/data`; no screen polling, speculative local
+echo, server configuration, or authentication changes were introduced. Network
+round-trip time and Tailscale direct/relay routing still affect the earliest
+possible remote echo. These changes remove client-side serialization and
+render starvation; they do not remove cellular network delay.
+
+Reproduce the live byte-order check from the monorepo root:
+
+```sh
+REX_TEST_SERVER=https://<owned-server> \
+GHOSTTY_PREFIX="$PWD/rexlink-core/.build/ghostty-host" \
+CARGO_TARGET_DIR="$PWD/rexlink-core/.build/rust" \
+cargo test --locked --manifest-path rexlink-core/Cargo.toml \
+  --test control_pipeline live_ordered -- --ignored --nocapture
+```
+
+Only disposable fixture sessions are created and destroyed.

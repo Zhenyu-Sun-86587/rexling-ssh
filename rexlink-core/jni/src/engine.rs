@@ -8,13 +8,14 @@ use rex_core::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap,BTreeSet},
+    collections::{BTreeMap,BTreeSet,VecDeque},
     future::{Future, pending},
     pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::sync::mpsc;
+use crate::input_queue::{Commands,Target,is_input};
 
 pub struct Shared {
     pub revision: u64,
@@ -82,6 +83,12 @@ impl Drop for Session {
     }
 }
 
+type InputReply = Pin<Box<dyn Future<Output = Result<Value>>>>;
+struct InputAck {target:Target,paste:bool,reply:InputReply}
+fn input_event(paste:bool,text:&str)->Value {
+    if paste {json!({"type":"paste","payload":{"text":text}})}
+    else {json!({"type":"key","payload":{"key":"unidentified","mods":"","consumed_mods":"","text":text,"unshifted_codepoint":0,"composing":false,"action":"press"}})}
+}
 type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Value)>>>>>;
 type ConnectTask = Pin<Box<dyn Future<Output = Result<Control>>>>;
 type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
@@ -93,6 +100,10 @@ struct Actor {
     endpoint: Option<Endpoint>,
     server: String,
     control: Option<Control>,
+    commands: Commands,
+    input_acks: VecDeque<InputAck>,
+    input_limit: usize,
+    batch_text: bool,
     connect_task: Option<ConnectTask>,
     network_online: bool,
     connection_epoch: u64,
@@ -155,7 +166,7 @@ impl Actor {
             visible: true,
             endpoint: None,
             server: String::new(),
-            control: None,connect_task:None,network_online:true,connection_epoch:0,other_owner:false,
+            control: None,commands:Commands::default(),input_acks:VecDeque::new(),input_limit:8,batch_text:true,connect_task:None,network_online:true,connection_epoch:0,other_owner:false,
             data: None,
             replica: None,
             control_token: None,
@@ -231,6 +242,14 @@ impl Actor {
                 if let Err(error)=self.event(event).await {self.recover(error);}
                 continue;
             }
+            if !self.input_acks.iter().any(|ack|ack.paste) && self.commands.ready(self.input_acks.len(),self.input_limit) {
+                if let Some(value)=self.commands.pop(self.batch_text) {
+                    if is_input(&value) {
+                        if let Err(error)=self.send_input(value).await {self.command_error(error,None,true);}
+                    } else {self.execute_command(value).await;}
+                }
+                continue;
+            }
             let active = !self.paused;
             tokio::select! {
                 value=rx.recv()=>{
@@ -239,18 +258,25 @@ impl Actor {
                     if value["type"]=="visibility" {
                         self.visible=value["visible"].as_bool().unwrap_or(true);
                         if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
-                        else {if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
+                        else {self.commands.clear();if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
                         continue;
                     }
                     if matches!(value["type"].as_str(),Some("connect"|"retry"|"network"|"resume"|"activity")) {maintenance_at=tokio::time::Instant::now();}
-                    let navigation_id=value["navigationId"].as_u64();
-                    if let Err(e)=self.command(value).await {
-                        if let Some(id)=navigation_id {self.navigation_id=id;}
-                        self.creating=false;
-                        let message=e.to_string();
-                        if message.contains("timed out")||message.contains("WebSocket") {
-                            self.recover(e);
-                        } else {self.error=message;self.publish();}
+                    if matches!(value["type"].as_str(),Some("connect"|"disconnect"|"pause"|"network"|"retry")) {
+                        self.commands.clear();self.execute_command(value).await;
+                    } else if let Err(error)=self.commands.push(value,&self.input_target()) {self.error=error.to_string();self.publish();}
+
+                },
+                result=async {match self.input_acks.front_mut() {Some(ack)=>(&mut ack.reply).await,None=>pending().await}}=>{
+                    let ack=self.input_acks.pop_front().unwrap();
+                    if let Err(error)=result {
+                        if error.downcast_ref::<rex_core::control::RpcError>().is_some() {
+                            if ack.target==self.input_target() && self.controlled {
+                                self.commands.discard_input();self.controlled=false;self.error=error.to_string();
+                                self.notice="Input rejected; queued input was not resent".into();
+                                let _=self.commands.push(json!({"type":"refresh"}),&self.input_target());self.publish();
+                            }
+                        } else if ack.target.connection==self.connection_epoch {self.recover(error);self.notice="Request outcome is uncertain; input was not resent".into();self.publish();}
                     }
                 },
                 result=async {match &mut self.connect_task {Some(task)=>task.await,None=>pending().await}}=>{
@@ -259,7 +285,7 @@ impl Actor {
                 },
                 message=async {match &mut self.control{Some(c)=>c.next_message().await,None=>pending().await}}=>{
                     match message {
-                        Ok(message)=>if let Err(e)=self.event(message).await{self.recover(e);},
+                        Ok(message)=>if message["type"]=="event" && let Err(e)=self.event(message).await {self.recover(e);},
                         Err(e)=>self.recover(e),
                     }
                 },
@@ -369,6 +395,7 @@ impl Actor {
         self.disconnect().await;
     }
     async fn disconnect(&mut self) {
+        self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
@@ -390,6 +417,7 @@ impl Actor {
         self.controlled = false;
     }
     fn lose_connections(&mut self) {
+        self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
@@ -405,7 +433,9 @@ impl Actor {
         self.controlled = false;
     }
     fn recover(&mut self, error: anyhow::Error) {
+        let input_pending=!self.input_acks.is_empty();
         self.lose_connections();
+        if input_pending {self.notice="Request outcome is uncertain; input was not resent".into();}
         self.error = error.to_string();
         if self.endpoint.is_some() && !self.paused {
             self.phase = "reconnecting".into();
@@ -658,6 +688,35 @@ impl Actor {
         if changed {self.publish();}
     }
 
+    fn input_target(&self)->Target {
+        Target {session:self.selected_session.clone(),block:self.selected_block.clone(),navigation:self.navigation_id,connection:self.connection_epoch}
+    }
+    fn command_error(&mut self,error:anyhow::Error,navigation:Option<u64>,input:bool) {
+        if let Some(id)=navigation {self.navigation_id=id;}
+        self.creating=false;
+        let message=error.to_string();
+        if message.contains("timed out") || message.contains("WebSocket") {
+            self.recover(error);
+            if input {self.notice="Request outcome is uncertain; input was not resent".into();self.publish();}
+        } else {self.error=message;self.publish();}
+    }
+    async fn execute_command(&mut self,value:Value) {
+        let navigation=value["navigationId"].as_u64();
+        if let Err(error)=self.command(value).await {self.command_error(error,navigation,false);}
+    }
+    async fn send_input(&mut self,value:Value)->Result<()> {
+        let target=self.input_target();
+        if !target.matches(&value) {return Ok(());}
+        ensure!(self.visible && !self.paused && self.phase=="connected" && self.controlled,"Take control before typing");
+        let text=value["text"].as_str().context("text required")?;
+        if let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();self.dirty=true;}
+        // Unlike terminal.write, block.event is serialized by Rex on this connection.
+        // An unidentified key with text preserves our already-encoded input bytes;
+        // it bypasses Lua bindings, matching the previous raw-write behavior.
+        let payload=json!({"session_id":target.session,"block_id":target.block,"event":input_event(value["type"]=="paste",text)});
+        let reply=self.control.as_mut().context("not connected")?.start_call("block.event",payload).await?;
+        self.input_acks.push_back(InputAck {target,paste:value["type"]=="paste",reply:Box::pin(reply.receive())});Ok(())
+    }
     async fn command(&mut self, value: Value) -> Result<()> {
         match value["type"].as_str().context("command type missing")? {
             "connect" => {
@@ -1090,8 +1149,7 @@ impl Actor {
                 }
                 let c = self.control.as_mut().context("not connected")?;
                 let result=match kind {
-                    "input"=>c.terminal(&self.selected_session,&self.selected_block,"write",json!({"data":value["text"].as_str().context("text required")?})).await,
-                    "paste"=>c.call("block.event",json!({"session_id":self.selected_session,"block_id":self.selected_block,"event":{"type":"paste","payload":{"text":value["text"].as_str().context("text required")?}}})).await,
+                    "input"|"paste"=>c.call("block.event",json!({"session_id":self.selected_session,"block_id":self.selected_block,"event":input_event(kind=="paste",value["text"].as_str().context("text required")?)})).await,
                     _=>{
                         let cols=value["columns"].as_u64().context("columns required")?.clamp(1,512);
                         let rows=value["rows"].as_u64().context("rows required")?.clamp(1,256);
@@ -2515,3 +2573,7 @@ while True:
     }
 
 }
+
+#[cfg(test)]
+#[path="latency_tests.rs"]
+mod latency_tests;

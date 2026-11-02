@@ -1,0 +1,186 @@
+//! Bounded, ordered local work; accepted input is bound to one activation.
+use anyhow::{Result, ensure};
+use serde_json::{Value, json};
+use std::collections::VecDeque;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Target {
+    pub session: String,
+    pub block: String,
+    pub navigation: u64,
+    pub connection: u64,
+}
+impl Target {
+    pub fn bind(&self, value: &mut Value) {
+        for (key, field) in [
+            ("session", json!(self.session)),
+            ("block", json!(self.block)),
+            ("navigationId", json!(self.navigation)),
+            ("connectionEpoch", json!(self.connection)),
+        ] {
+            if value.get(key).is_none() {
+                value[key] = field;
+            }
+        }
+    }
+    pub fn matches(&self, value: &Value) -> bool {
+        value["session"] == self.session
+            && value["block"] == self.block
+            && value["navigationId"] == self.navigation
+            && value["connectionEpoch"] == self.connection
+    }
+}
+pub(crate) fn is_input(value: &Value) -> bool {
+    matches!(value["type"].as_str(), Some("input" | "paste"))
+}
+fn plain(value: &Value) -> bool {
+    value["type"] == "input"
+        && value["text"]
+            .as_str()
+            .is_some_and(|s| !s.chars().any(char::is_control))
+}
+#[derive(Default)]
+pub(crate) struct Commands {
+    items: VecDeque<Value>,
+    bytes: usize,
+}
+impl Commands {
+    pub fn push(&mut self, mut value: Value, target: &Target) -> Result<()> {
+        let bytes = value["text"].as_str().map_or(0, str::len);
+        ensure!(
+            self.items.len() < 128 && self.bytes.saturating_add(bytes) <= 1_048_576,
+            "Input queue is full; queued input was not resent"
+        );
+        if is_input(&value) {
+            target.bind(&mut value);
+        }
+        self.bytes += bytes;
+        self.items.push_back(value);
+        Ok(())
+    }
+    pub fn ready(&self, pending: usize, limit: usize) -> bool {
+        self.items.front().is_some_and(|v| {
+            if v["type"] == "input" {
+                pending < limit
+            } else {
+                pending == 0
+            }
+        })
+    }
+    pub fn pop(&mut self, batch: bool) -> Option<Value> {
+        let mut value = self.items.pop_front()?;
+        self.bytes -= value["text"].as_str().map_or(0, str::len);
+        if batch && plain(&value) {
+            let mut text = value["text"].as_str().unwrap().to_owned();
+            while let Some(next) = self.items.front() {
+                if !plain(next)
+                    || text.len() + next["text"].as_str().unwrap().len() > 4096
+                    || ["session", "block", "navigationId", "connectionEpoch"]
+                        .iter()
+                        .any(|key| value[key] != next[key])
+                {
+                    break;
+                }
+                let next = self.items.pop_front().unwrap();
+                let part = next["text"].as_str().unwrap();
+                self.bytes -= part.len();
+                text.push_str(part);
+            }
+            value["text"] = json!(text);
+        }
+        Some(value)
+    }
+    pub fn clear(&mut self) {
+        self.items.clear();
+        self.bytes = 0;
+    }
+    pub fn discard_input(&mut self) {
+        self.items.retain(|v| !is_input(v));
+        self.bytes = self
+            .items
+            .iter()
+            .map(|v| v["text"].as_str().map_or(0, str::len))
+            .sum();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn target(block: &str) -> Target {
+        Target {
+            session: "s".into(),
+            block: block.into(),
+            navigation: 2,
+            connection: 3,
+        }
+    }
+    #[test]
+    fn batches_only_adjacent_text_and_keeps_keys_pastes_and_control_barriers() {
+        let mut queue = Commands::default();
+        let t = target("a");
+        for v in [
+            json!({"type":"input","text":"λ"}),
+            json!({"type":"input","text":"🦀"}),
+            json!({"type":"input","text":"\r"}),
+            json!({"type":"paste","text":"pasted"}),
+            json!({"type":"release"}),
+        ] {
+            queue.push(v, &t).unwrap();
+        }
+        assert_eq!(queue.pop(true).unwrap()["text"], "λ🦀");
+        assert_eq!(queue.pop(true).unwrap()["text"], "\r");
+        assert_eq!(queue.pop(true).unwrap()["type"], "paste");
+        assert!(!queue.ready(1, 8));
+        assert!(queue.ready(0, 8));
+        assert_eq!(queue.pop(true).unwrap()["type"], "release");
+    }
+    #[test]
+    fn bindings_do_not_cross_panes_reconnects_or_navigation() {
+        let mut queue = Commands::default();
+        let t = target("a");
+        let mut other = t.clone();
+        other.block = "b".into();
+        queue.push(json!({"type":"input","text":"a"}), &t).unwrap();
+        queue
+            .push(json!({"type":"input","text":"b"}), &other)
+            .unwrap();
+        let first = queue.pop(true).unwrap();
+        assert!(t.matches(&first));
+        assert!(!other.matches(&first));
+        assert_eq!(first["text"], "a");
+        let mut resumed = t.clone();
+        resumed.connection += 1;
+        assert!(!resumed.matches(&first));
+        resumed = t.clone();
+        resumed.navigation += 1;
+        assert!(!resumed.matches(&first));
+        assert_eq!(queue.pop(true).unwrap()["text"], "b");
+    }
+    #[test]
+    fn queues_are_bounded_and_input_can_be_discarded_without_replaying() {
+        let mut queue = Commands::default();
+        let t = target("a");
+        for _ in 0..128 {
+            queue.push(json!({"type":"input","text":"x"}), &t).unwrap();
+        }
+        assert!(
+            queue
+                .push(json!({"type":"input","text":"overflow"}), &t)
+                .is_err()
+        );
+        assert!(!queue.ready(8, 8));
+        queue.discard_input();
+        queue
+            .push(json!({"type":"input","text":"new"}), &t)
+            .unwrap();
+        assert_eq!(queue.pop(false).unwrap()["text"], "new");
+        assert!(
+            queue
+                .push(json!({"type":"paste","text":"x".repeat(1_048_577)}), &t)
+                .is_err()
+        );
+        queue.clear();
+        assert!(!queue.ready(0, 8));
+    }
+}
