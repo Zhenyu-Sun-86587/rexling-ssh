@@ -764,3 +764,6 @@ Success. Follow-up static verification passes signature, non-debuggable APK,
 JNI exports, ART profiles and 16KiB alignment. The final shareable release is
 `dist/Rexlink-0.1.0-arm64-release.apk`, SHA256 `8b5e6689f15dc9a09436c79e41744774564cded33af7aaed33700f8593ce3158`. Icon styling, circular navigation,
 and the angle correction were recorded in separate signed commits on main.
+
+
+Tab spacing follow-up: the explicit icon/title gap is reduced from 5 dp to 2 dp. The release builds and passes static APK verification. It was installed on S22+ RFCT21390SD with ADB Success before follow-up checks. Release SHA256: `9655d431561287dbb5398dcf938817988685ec2a86626a9007fedc3fd0914976`.
