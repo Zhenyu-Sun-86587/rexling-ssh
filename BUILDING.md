@@ -1,8 +1,8 @@
 # Building Rexlink
 
 Run commands below from the `rexlink/` repository root unless noted otherwise.
-Builds are supported by the native helper on macOS and Linux. The verified local
-environment is Apple Silicon macOS with Android Studio's JDK 25. The APK targets
+Android builds use macOS or x86_64 Linux (the Linux NDK toolchain is x86_64).
+The verified local environment is Apple Silicon macOS with Android Studio's JDK 25. The APK targets
 arm64-v8a Android 9/API 28 or newer; other Android ABIs are not built yet.
 
 ## Prerequisites
@@ -119,3 +119,20 @@ REX_TEST_SERVER=https://your-owned-rex-host \
 Historical validation documents retain commands and paths as they were when
 recorded. Use this guide for the current monorepo paths. No server configuration
 or authentication change is required by the migration.
+
+
+## Reproduce the Activity attention badge check
+
+Build the probe and debug/test APKs, then explicitly select a server you own:
+
+```sh
+cargo build --locked --manifest-path rexlink-core/Cargo.toml -p rex-probe
+./rexlink-android/scripts/gradle.sh :app:assembleDebug :app:assembleDebugAndroidTest
+python3 rexlink-android/scripts/test_activity_badge.py \
+  --server https://your-owned-rex-host --serial emulator-5554
+```
+
+The runner creates/removes one disposable session and rejects non-emulator
+serials. It verifies an actual blocked report travels through native decoding,
+RexModel and the eye's visible blue pixels, then disappears after Mark seen.
+The screenshot is written to ignored `rexlink-android/.build/activity-attention.png`.

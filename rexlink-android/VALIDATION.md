@@ -679,3 +679,34 @@ An initial feature release was installed on S22+ before follow-up checks, per re
 Activity visual follow-up: the six-dp eye attention dot is inset seven dp so it remains entirely inside the circular button. Per-row acknowledgment uses a compact “Mark seen” text action instead of the tick glyph, and “Seen” status uses the muted foreground. The updated release builds and passes static APK verification. Installation was attempted before follow-up checks; S22+ remains disconnected.
 
 Three-line header: title now uses the available width, the working directory has its own smaller muted line when nonempty, and the session strip shows session · server. The icon remains vertically centered against the stack. Normal text measures approximately 53 dp tall with a directory and retains the 50-dp minimum without one. Release build and APK verification pass; the five existing SessionCatalog tests pass with the new label order. Installation was attempted immediately after building; S22+ was disconnected.
+
+
+## Monorepo, Apache 2.0 and Activity badge diagnosis — 2026-11-02
+
+Both source histories were merged without rewriting IDs: 6 probe commits and
+138 Android commits are reachable, including separately signed commits for the
+previously pending Activity, reconnect and three-line header changes. Original
+checkouts remain intact; their ignored caches were cloned only as local build
+accelerators. The old Android daemon-JVM settings were not imported. There are
+no nested Git repositories or source/build dependencies on the old checkouts.
+Signed migration commits were cryptographically verified with the configured
+public key. The original signatures and commit objects remain unchanged.
+
+The source-build command in the root README succeeds from the monorepo root.
+Release build, 74 JVM tests, release lint, all-feature Rust workspace tests
+(45 passed; live tests remain opt-in), Clippy with warnings denied, and the actual
+host JVM/JNI smoke check pass. The smoke assertion was corrected from RXT2 to the
+already existing RXT3 format; the protocol format was not changed by migration.
+The standalone probe build also succeeds. APK signature, stable Android package,
+JNI exports, ART profile and 16KiB alignment checks pass. The built APK contains
+byte-identical copies of the root Apache 2.0 LICENSE and NOTICE. The artifact
+hash and history audit are recorded in validation/apk.json and validation/monorepo.json.
+
+The six targeted emulator Activity checks pass against an owned disposable
+Linux-server fixture, including actual blue-pixel rendering for a blocked report,
+local acknowledgment without opening a terminal, and the hidden-sheet path.
+The committed runner reproduces the check without an old repo dependency and
+removes its own session. The user's “Working while Codex says Action required”
+case is a missing structured blocked transition, not reproduced by the normal
+blocked-report fixture. No screen-text heuristic, Codex configuration or server
+authentication/configuration change was added.

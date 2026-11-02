@@ -504,3 +504,24 @@ Blocked/error reports produce a scalar attention count even with the sheet close
 The initial control handshake is a cancellable actor task. Retry now and foreground Android default-network callbacks cancel stale connections and reset retry delay. Wi-Fi/cellular/VPN transport changes are tracked without requiring public-internet validation for a private Tailscale connection. `ACCESS_NETWORK_STATE` is a normal Android permission. Disconnection pauses input; uncertain input is never queued or replayed. A connection epoch re-arms the existing active-pane policy after real reconnection while preserving explicit viewing mode. Reconnect and brief Ready-to-type feedback overlay an existing terminal so they do not change PTY dimensions.
 
 The permanent header Take/Release icon is removed. Both actions remain in the overflow menu. If canonical session views show another owner, a delayed contextual pill shows `Sized by another client · columns×rows · Take over`. Automatic navigation still claims a pane only once; this notice does not start an ownership fight. It disappears immediately when the owner/readiness changes, including cancelled activation.
+
+
+## Codex Action required versus Rex program status (2026-11-02)
+
+The user reported Codex showing “Action required” while the Activity row says
+Working. Read-only inspection of current owned-server `program_status` and title
+metadata returned Codex root states working/done without a blocked kind; no
+structured approval signal was captured for that reported case. The attention
+badge deliberately follows unseen blocked/error reports, rather than guessing
+from terminal text. A live disposable blocked-report UI test verifies the full
+native-to-RexModel pipeline, actual visible badge pixels, and acknowledgment.
+This confirms normal blocked reports render; it does not resolve a missing
+upstream working-to-blocked transition from Codex integration.
+
+Codex documents a PermissionRequest lifecycle hook for approval requests at
+https://learn.chatgpt.com/docs/hooks#permissionrequest . A supported integration
+could publish the corresponding Rex blocked status, but no Codex hooks or server
+configuration were changed, and that integration has not been implemented or
+validated here. The Android client cannot infer the hidden approval state from
+a `working` report alone. Follow current build paths in the repository-root
+BUILDING.md; older protocol entries retain their original paths.

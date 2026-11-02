@@ -1,0 +1,24 @@
+{
+  "probe": {
+    "commits_preserved": 6,
+    "missing_commits": 0,
+    "head": "c816b81cff09c9a8da3c199329a93bcd10cd8480"
+  },
+  "android": {
+    "commits_preserved": 138,
+    "missing_commits": 0,
+    "head": "382215e3015476464520c4bed100233beb6bb981"
+  },
+  "new_signed_commits_verified": 7,
+  "apache_and_notice_packaged": true,
+  "apk_sha256": "1b60984b8306f905de25fde5465da1c5c4c6e411e6d307eaf89eecc6e3882e81",
+  "original_checkouts_retained": true,
+  "signature_audit_through": "311d6a4f1cf12898ee46ab2f408f64764e9e0575",
+  "jvm_tests_passed": 74,
+  "rust_tests_passed": 45,
+  "emulator_activity_tests_passed": 6,
+  "jni_smoke_passed": true,
+  "release_build_passed": true,
+  "release_lint_passed": true,
+  "codex_action_required_mapping": "Upstream reports working; blocked transition integration remains unimplemented."
+}
