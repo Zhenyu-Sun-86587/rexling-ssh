@@ -439,4 +439,13 @@ Web URL detection is local presentation logic; no new Rex method or server confi
 
 A deliberate tap opens an HTTP(S) ACTION_VIEW/BROWSABLE intent; pointer-down and pointer-up must still identify the same link. Scrolling, swipes, cancellation and selection never launch it. Browser launch does not acquire terminal ownership or write input, and missing handlers are handled locally. [Android intent reference](https://developer.android.com/training/basics/intents/sending).
 
-The Android cell snapshot currently has no soft-wrap flags or OSC 8 destinations. This implementation detects visible URLs within one physical row and conservatively rejects possible wrapped prefixes at full-row boundaries. It does not guess adjacent-row concatenation, rewrite localhost or extract hidden hyperlink destinations.
+The Android cell snapshot has no soft-wrap flags. Printed-URL detection remains limited to one physical row and conservatively rejects possible wrapped prefixes. OSC 8 destinations are now exported explicitly as described below; their labels can span rows. Localhost is not rewritten.
+
+
+## OSC 8 metadata and RXT3
+
+The pinned public Ghostty C API exposes GHOSTTY_CELL_DATA_HAS_HYPERLINK and ghostty_grid_ref_hyperlink_uri. Only linked leading cells perform viewport grid-reference lookup; copied destinations are bounded to 64KiB. No extra server methods or configuration are required. Native cells carry an optional URI, so changing only the destination invalidates the row.
+
+Local JNI packets now use RXT3. Its header, input flags and cell records match RXT2. Each changed row appends u16 link-range count followed by sorted, non-overlapping ranges: u16 start column, u16 exclusive end, u32 UTF-8 length and URI bytes. Adjacent cells sharing one URI coalesce. Plain rows cost two extra bytes. Android still accepts RXT1/RXT2. Full frames and row deltas both carry ranges; zero ranges removes old links. JSON preview cells append an optional eighth URI element.
+
+Explicit OSC 8 destinations take precedence over visible URL-shaped labels; automatic matching is masked inside explicit links. Only HTTP(S) targets are opened. Known OSC 8 targets remain usable when labels wrap across rows, unlike guessed printed-URL continuations. Long-press continues selecting the label text. Snapshot, streaming, destination-only replacement/removal and resume were verified on both owned servers.

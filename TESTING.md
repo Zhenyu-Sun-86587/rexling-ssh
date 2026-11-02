@@ -14,4 +14,6 @@ The default keyboard accessory is one row. Esc/Ctrl/Alt/Shift/Tab are separate s
 
 The header's pointer button takes or releases terminal control. Its outlined state means viewing; its blue-filled state means control. Long-press it for the action label. The eye icon is reserved for future activity viewing.
 
-Visible `http://`, `https://` and `www.` URLs are underlined. Tap one to open Android's link handler without taking terminal control; long-press still selects text. Links must be visible within one terminal row. Wrapped destinations and hidden OSC 8 links are not exported by the current Android cell snapshot and are not reconstructed. Localhost links open as written on the phone; addresses are not rewritten.
+Visible `http://`, `https://` and `www.` URLs are underlined. Tap one to open Android's link handler without taking terminal control; long-press still selects text. Printed URLs must be visible within one terminal row. OSC 8 labeled web links use their stored destination and work across wrapped rows. Non-web destinations are not opened. Localhost links open as written on the phone; addresses are not rewritten.
+
+The key row keeps its contrast while pane navigation temporarily disables input. The header control circle is 32dp with a 16dp pointer.

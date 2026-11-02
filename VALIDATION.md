@@ -597,3 +597,14 @@ All 44 JVM tests, debug/release builds and release lint pass; APK checks pass. U
 URL taps send ACTION_VIEW with BROWSABLE and the exact detected URL, with no activation/input. Tests cover swiping, cancellation, long-press copy, output changing between down/up, padding, ordinary taps, and rejecting possible wrapped prefixes while adjacent-row state changes. Debug/release builds, release lint and static APK checks pass.
 
 Shareable release SHA256: `63a0d0bc907ef78d41c7902e109ed8d9c065c033cf4d5b1b31ffb6ec86bba61c`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; settings preserved.
+
+
+## OSC 8, stable navigation keys and compact control — 2026-11-02
+
+52 JVM tests pass, including RXT1/RXT2 compatibility, RXT3 sparse ranges, destination-only changes/removal, untouched-row reuse, invalid ranges, explicit-link precedence and non-web/hidden-text rejection. Native workspace tests pass (22 non-live tests); Clippy with warnings denied passes. New native tests verify Ghostty OSC 8 parsing, wrapped cells, snapshot preservation and sparse metadata-only deltas.
+
+The targeted owned-server OSC 8 test passes on Linux and Mac: create a disposable session, restore the initial link from a snapshot, replace the target through live output, pause/resume, remove the link without replacing its label, then destroy the fixture. An initial fixture test omitted explicit pane selection; the harness was corrected before these successful runs. No user sessions or server settings were modified.
+
+All 28 emulator checks pass. These cover OSC 8 target precedence at a row boundary; existing URL, copy, scroll, render-cache and pane tests; and pixel-identical keyboard appearance through navigation's disabled state while input remains blocked. The smaller pointer keeps its accessible take/release action and tooltip. Debug/release builds, release lint, signature, non-debuggable setting, native alignment and ART-profile checks pass.
+
+Shareable release SHA256: `fd7fb1a89fef60f55caa75daf3eca5421b41b631d42dee9c748919302ec8f62e`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; settings preserved.
