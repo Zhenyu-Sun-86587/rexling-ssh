@@ -1,0 +1,7 @@
+{
+  "probe_head": "c816b81cff09c9a8da3c199329a93bcd10cd8480",
+  "android_head": "382215e3015476464520c4bed100233beb6bb981",
+  "strategy": "Merge both original histories without rewriting commit IDs. Completed Android changes were recorded in separate signed commits before importing.",
+  "original_directories_retained": true,
+  "android_local_daemon_settings_copied": false
+}
