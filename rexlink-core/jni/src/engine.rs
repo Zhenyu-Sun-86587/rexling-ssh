@@ -707,9 +707,21 @@ impl Actor {
     async fn send_input(&mut self,value:Value)->Result<()> {
         let target=self.input_target();
         if !target.matches(&value) {return Ok(());}
+        if value["type"]=="click" && (!self.visible || self.paused || self.phase!="connected" || !self.controlled) {return Ok(());}
         ensure!(self.visible && !self.paused && self.phase=="connected" && self.controlled,"Take control before typing");
-        let text=value["text"].as_str().context("text required")?;
-        if let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();self.dirty=true;}
+        let click=value["type"]=="click";
+        let encoded;
+        let text=if click {
+            let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
+            encoded=String::from_utf8(replica.terminal()?.click(
+                value["col"].as_i64().unwrap_or(0).clamp(0,65534) as i32,
+                value["row"].as_i64().unwrap_or(0).clamp(0,65534) as i32,
+                value["cw"].as_u64().unwrap_or(1).clamp(1,1024) as u32,
+                value["ch"].as_u64().unwrap_or(1).clamp(1,1024) as u32)?).context("Legacy mouse coordinates cannot be sent as UTF-8 terminal input")?;
+            if encoded.is_empty() {return Ok(());}
+            encoded.as_str()
+        } else {value["text"].as_str().context("text required")?};
+        if !click && let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();self.dirty=true;}
         // Unlike terminal.write, block.event is serialized by Rex on this connection.
         // An unidentified key with text preserves our already-encoded input bytes;
         // it bypasses Lua bindings, matching the previous raw-write behavior.
@@ -2324,6 +2336,52 @@ mod tests {
             }
         }
         runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned server with python3"]
+    fn live_mouse_click_delivers_one_press_release_pair_and_drops_stale_or_disabled_taps() {
+        let endpoint=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&endpoint,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let script=r#"import os,tty,re
+tty.setraw(0)
+os.write(1,b'\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2JCLICK_READY')
+count=0
+buffer=b''
+while True:
+ data=os.read(0,4096)
+ if not data:break
+ if b'OFF' in data:
+  os.write(1,b'\x1b[?1000l\r\nMOUSE_DISABLED')
+ buffer+=data
+ while True:
+  match=re.search(rb'\x1b\[<0;([0-9]+);([0-9]+)M\x1b\[<0;\1;\2m',buffer)
+  if not match:break
+  count+=1
+  os.write(1,('\r\nTAP_COUNT:'+str(count)+' CELL:'+match[1].decode()+','+match[2].decode()+' RELEASED').encode())
+  buffer=buffer[match.end():]
+ if len(buffer)>4096:buffer=buffer[-128:]
+"#;
+        let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rexlink-click-test-{}",std::process::id()),
+            "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["python3","-u","-c",script]}}}}]}))).unwrap();
+        let id=created["session_id"].as_str().unwrap();let block=created["initial_windows"][0]["block_ids"][0].as_str().unwrap();
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":endpoint})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":id})).unwrap();wait(&app,|v|v["selectedSession"]==id);
+            app.command(json!({"type":"block","id":block})).unwrap();wait(&app,|v|text(v).contains("CLICK_READY"));
+            app.command(json!({"type":"take"})).unwrap();wait(&app,|v|v["controlled"]==true);
+            app.command(json!({"type":"click","col":4,"row":5,"cw":10,"ch":20})).unwrap();
+            wait(&app,|v|text(v).contains("TAP_COUNT:1 CELL:5,6 RELEASED"));
+            app.command(json!({"type":"click","block":"stale-pane","col":7,"row":8})).unwrap();
+            app.command(json!({"type":"input","text":"OFF"})).unwrap();
+            wait(&app,|v|text(v).contains("MOUSE_DISABLED") && v["screen"]["input_flags"].as_u64().unwrap()&1==0);
+            app.command(json!({"type":"click","col":7,"row":8})).unwrap();
+            std::thread::sleep(Duration::from_millis(100));
+            let state:Value=serde_json::from_str(&app.poll(0).unwrap()).unwrap();
+            assert!(!text(&state).contains("TAP_COUNT:2"));assert_eq!(state["error"],"");
+        }));
+        runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
     #[test]

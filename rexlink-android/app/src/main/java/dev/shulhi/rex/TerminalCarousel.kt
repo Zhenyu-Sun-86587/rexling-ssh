@@ -34,7 +34,8 @@ import kotlin.math.roundToInt
 @Composable internal fun TerminalCarousel(blocks: List<BlockItem>,selectedBlock: String,liveBlock: String,
     liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
-    onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null) {
+    onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
+    onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""}) {
     val palette=LocalTerminalPalette.current
     val scope=rememberCoroutineScope()
     var visualId by remember(blocks.map {it.id}) {mutableStateOf(selectedBlock)}
@@ -110,6 +111,8 @@ import kotlin.math.roundToInt
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
                                 view.onInput=onInput
+                                view.onMouseClick=if(center && block.id==liveBlock) onMouseClick else ({_,_,_,_->})
+                                view.mouseTarget=mouseTarget
                                 view.onActivate=if(center && block.id==liveBlock) onActivate else ({})
                                 view.onWheel=if(center && block.id==liveBlock) onWheel else ({_,_,_,_,_->})
                                 view.onScroll=if(center && block.id==liveBlock) onScroll else {_->}

@@ -62,6 +62,12 @@ class TerminalView(context: Context) : View(context) {
     var onScroll: (Int) -> Unit = {}
     var onWheel: (Int,Int,Int,Int,Int) -> Unit = {lines,_,_,_,_->onScroll(lines)}
     var onActivate: () -> Unit = {}
+    var onMouseClick: (Int,Int,Int,Int) -> Unit = {_,_,_,_->}
+    var mouseTarget: ()->String={""}
+    private var pressedMouseTarget=""
+    private var pressedMouseGrid: Pair<Int,Int>?=null
+    private var pressedMouse=false
+    private var pressedControlled=false
     private var wheelCol=0
     private var wheelRow=0
     var onPaneSwipe: (Int) -> Unit = {}
@@ -128,7 +134,7 @@ class TerminalView(context: Context) : View(context) {
 
     init {
         isFocusable = true; isFocusableInTouchMode = true;isLongClickable=true
-        contentDescription = "Terminal output. Tap web links to open them. Tap elsewhere to take control and type. Long press to select and copy text."
+        contentDescription = "Terminal output. Tap web links to open them. Tap mouse-enabled applications to click. Tap elsewhere to take control and type. Long press to select and copy text."
         metrics()
     }
     private fun metrics() {
@@ -353,7 +359,7 @@ class TerminalView(context: Context) : View(context) {
         sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
         touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {pressedLink=linkAt(event.x,event.y);pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
+            MotionEvent.ACTION_DOWN -> {pressedMouseTarget=mouseTarget();pressedMouseGrid=screen?.let {it.columns to it.rows};pressedMouse=screen?.mouseTracking==true;pressedControlled=controlled;pressedLink=linkAt(event.x,event.y);pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount != 1) { removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
                 else {
@@ -382,7 +388,7 @@ class TerminalView(context: Context) : View(context) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
             } else when (paneGesture.finish(event.x, event.y)) {
-                PaneGesture.Result.TAP -> {val link=pressedLink;if(link==null) performClick() else if(link==linkAt(event.x,event.y)) onOpenLink(link.url)}
+                PaneGesture.Result.TAP -> {val link=pressedLink;if(link==null) terminalTap(event.x,event.y) else if(link==linkAt(event.x,event.y)) onOpenLink(link.url)}
                 PaneGesture.Result.NEXT -> onPaneSwipe(1)
                 PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
                 PaneGesture.Result.NONE -> Unit
@@ -390,6 +396,20 @@ class TerminalView(context: Context) : View(context) {
         }
         if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {pressedLink=null;removeCallbacks(longPress);touchVelocity?.recycle();touchVelocity=null}
         return true
+    }
+    private fun terminalTap(x: Float,y: Float) {
+        val frame=screen
+        if(pressedMouse && pressedControlled && !controlled) return
+        if(controlled && (pressedMouse || frame?.mouseTracking==true)) {
+            if(frame?.mouseTracking!=true || !pressedMouse || !pressedControlled || frame.scroll.below>0 ||
+                pressedMouseTarget!=mouseTarget() || pressedMouseGrid!=(frame.columns to frame.rows)) return
+            val col=floor((x-insetHorizontal)/cellWidth).toInt()
+            val row=floor((y-insetTop)/cellHeight).toInt()
+            if(x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom ||
+                col !in 0 until frame.columns || row !in 0 until frame.rows) return
+            super.performClick()
+            onMouseClick(col,row,cellWidth.roundToInt().coerceAtLeast(1),cellHeight.roundToInt().coerceAtLeast(1))
+        } else performClick()
     }
     private fun clearSelection() {
         removeCallbacks(longPress)

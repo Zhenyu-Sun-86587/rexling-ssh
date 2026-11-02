@@ -31,7 +31,7 @@ impl Target {
     }
 }
 pub(crate) fn is_input(value: &Value) -> bool {
-    matches!(value["type"].as_str(), Some("input" | "paste"))
+    matches!(value["type"].as_str(), Some("input" | "paste" | "click"))
 }
 fn plain(value: &Value) -> bool {
     value["type"] == "input"
@@ -157,6 +157,20 @@ mod tests {
         assert!(!resumed.matches(&first));
         assert_eq!(queue.pop(true).unwrap()["text"], "b");
     }
+    #[test]
+    fn clicks_are_bound_ordered_barriers_and_discarded_with_stale_input() {
+        let mut queue=Commands::default();let t=target("a");
+        queue.push(json!({"type":"input","text":"before"}),&t).unwrap();
+        queue.push(json!({"type":"click","col":4,"row":5}),&t).unwrap();
+        queue.push(json!({"type":"input","text":"after"}),&t).unwrap();
+        assert_eq!(queue.pop(true).unwrap()["text"],"before");
+        assert!(!queue.ready(1,8));assert!(queue.ready(0,8));
+        let click=queue.pop(true).unwrap();assert_eq!(click["type"],"click");assert!(t.matches(&click));
+        let mut reconnected=t.clone();reconnected.connection+=1;assert!(!reconnected.matches(&click));
+        assert_eq!(queue.pop(true).unwrap()["text"],"after");
+        queue.push(click,&t).unwrap();queue.discard_input();assert!(queue.pop(false).is_none());
+    }
+
     #[test]
     fn queues_are_bounded_and_input_can_be_discarded_without_replaying() {
         let mut queue = Commands::default();

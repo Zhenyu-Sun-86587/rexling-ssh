@@ -322,6 +322,12 @@ internal class RexConnection(application: Application, private val scope: Corout
         }
     }
     fun keyboardShown() {keyboardRequest=""}
+    fun click(col: Int,row: Int,cw: Int,ch: Int) {
+        val current=state.value
+        if(visible && foreground && current.connected && current.controlled && !current.creating && !navigationRequest.pending && current.screen?.mouseTracking==true)
+            command("click","session" to current.selectedSession,"block" to current.selectedBlock,"navigationId" to current.navigationId,
+                "connectionEpoch" to current.connectionEpoch,"col" to col,"row" to row,"cw" to cw,"ch" to ch)
+    }
     fun wheel(lines: Int,col: Int,row: Int,cw: Int,ch: Int) {
         val current=state.value
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)

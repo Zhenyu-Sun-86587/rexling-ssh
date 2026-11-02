@@ -16,6 +16,8 @@ The header's pointer button takes or releases terminal control. Its outlined sta
 
 Visible `http://`, `https://` and `www.` URLs are underlined. Tap one to open Android's link handler without taking terminal control; long-press still selects text. Printed URLs can span rows that Ghostty marks as genuine soft wraps; fragments outside the available snapshot are not guessed. OSC 8 labeled web links use their stored destination and work across wrapped rows. Non-web destinations are not opened. Localhost links open as written on the phone; addresses are not rewritten.
 
+While controlling a mouse-enabled terminal application (such as Neovim or Lazygit), tap its content to send a left-button press/release pair at that cell. Taps do not open the soft keyboard in mouse mode; use the keyboard button. Viewing-mode taps keep their existing take-control behavior. Long-press selects text, web links open normally, and drags keep scrolling/switching panes. Taps started before a navigation, reconnect, grid resize, mouse-mode change or loss of control are canceled. The application must enable terminal mouse reporting.
+
 The key row keeps its contrast while pane navigation temporarily disables input. The header control circle is 32dp with a 16dp pointer.
 
 Long-press a web link for Open link, Copy link address and Share link (some actions may be in the floating toolbar overflow). Copy and Select all still operate on terminal text. Link actions use the frozen destination even if live output changes. Share opens Android's chooser; you select the recipient/app.

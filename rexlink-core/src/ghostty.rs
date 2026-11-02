@@ -48,6 +48,7 @@ unsafe extern "C" {
     fn rp_scroll(term: *mut c_void, lines: i32, bottom: i32);
     fn rp_input_flags(term: *mut c_void, flags: *mut u8) -> i32;
     fn rp_wheel(term: *mut c_void, down: i32, col: i32, row: i32, cw: u32, ch: u32, out: *mut u8, capacity: usize, len: *mut usize) -> i32;
+    fn rp_click(term: *mut c_void, col: i32, row: i32, cw: u32, ch: u32, out: *mut u8, capacity: usize, len: *mut usize) -> i32;
     fn rp_frame(
         term: *mut c_void,
         frame: *mut RawFrame,
@@ -263,6 +264,13 @@ impl Terminal {
     pub fn wheel(&mut self,down: bool,col: i32,row: i32,cw: u32,ch: u32) -> Result<Vec<u8>> {
         let mut bytes=[0u8;64];let mut len=0;
         check(unsafe {rp_wheel(self.handle.as_ptr(),i32::from(down),col,row,cw,ch,bytes.as_mut_ptr(),bytes.len(),&mut len)},"wheel encoding")?;
+        ensure!(len<=bytes.len(),"mouse encoder exceeded buffer");Ok(bytes[..len].to_vec())
+    }
+    /// Encode a whole tap atomically using the application's negotiated mouse mode.
+    pub fn click(&mut self,col: i32,row: i32,cw: u32,ch: u32) -> Result<Vec<u8>> {
+        if self.input_flags()?&1==0 {return Ok(Vec::new());}
+        let mut bytes=[0u8;128];let mut len=0;
+        check(unsafe {rp_click(self.handle.as_ptr(),col,row,cw,ch,bytes.as_mut_ptr(),bytes.len(),&mut len)},"click encoding")?;
         ensure!(len<=bytes.len(),"mouse encoder exceeded buffer");Ok(bytes[..len].to_vec())
     }
     pub fn scroll_viewport(&mut self, lines: i32) {
@@ -593,6 +601,19 @@ mod tests {
         assert_ne!(bg.attributes & 1024, 0);
         assert_eq!((bg.attributes >> 19) & 255, 2);
     }
+    #[test] fn clicks_obey_mouse_modes_and_pair_press_with_release() {
+        let mut terminal=Terminal::new(80,24).unwrap();
+        assert!(terminal.click(4,5,10,20).unwrap().is_empty());
+        terminal.write(b"\x1b[?1000h\x1b[?1006h").unwrap();
+        assert_eq!(terminal.click(4,5,10,20).unwrap(),b"\x1b[<0;5;6M\x1b[<0;5;6m");
+        assert_eq!(terminal.click(-20,999,0,0).unwrap(),b"\x1b[<0;1;24M\x1b[<0;1;24m");
+        let snapshot=terminal.encode().unwrap();let (mut restored,_)=Terminal::decode(&snapshot).unwrap();
+        assert_eq!(restored.click(79,23,10,20).unwrap(),b"\x1b[<0;80;24M\x1b[<0;80;24m");
+        restored.write(b"\x1b[?1006l").unwrap();
+        assert_eq!(restored.click(4,5,10,20).unwrap(),b"\x1b[M %&\x1b[M#%&");
+        restored.write(b"\x1b[?1000l").unwrap();assert!(restored.click(4,5,10,20).unwrap().is_empty());
+    }
+
     #[test] fn mouse_modes_survive_snapshots_and_encode_wheel_direction() {
         let mut terminal=Terminal::new(80,24).unwrap();
         terminal.write(b"\x1b[?1049h\x1b[?1007l\x1b[?1000h\x1b[?1006h").unwrap();

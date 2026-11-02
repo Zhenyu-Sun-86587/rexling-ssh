@@ -161,7 +161,7 @@ int rp_input_flags(RpTerminal *t, uint8_t *flags) {
   *flags=(mouse?1:0)|(screen==GHOSTTY_TERMINAL_SCREEN_ALTERNATE?2:0)|(alt.value?4:0)|(cursor.value?8:0);
   return r;
 }
-int rp_wheel(RpTerminal *t,int down,int col,int row,uint32_t cw,uint32_t ch,char *out,size_t capacity,size_t *len) {
+static int rp_mouse(RpTerminal *t,GhosttyMouseButton button,int release,int col,int row,uint32_t cw,uint32_t ch,char *out,size_t capacity,size_t *len) {
   GhosttyMouseEncoder encoder=NULL;GhosttyMouseEvent event=NULL;
   uint16_t cols=0,rows=0;*len=0;
   int r=ghostty_terminal_get(t->terminal,GHOSTTY_TERMINAL_DATA_COLS,&cols);
@@ -176,11 +176,23 @@ int rp_wheel(RpTerminal *t,int down,int col,int row,uint32_t cw,uint32_t ch,char
     ghostty_mouse_encoder_setopt_from_terminal(encoder,t->terminal);
     ghostty_mouse_encoder_setopt(encoder,GHOSTTY_MOUSE_ENCODER_OPT_SIZE,&geometry);
     ghostty_mouse_event_set_action(event,GHOSTTY_MOUSE_ACTION_PRESS);
-    ghostty_mouse_event_set_button(event,down?GHOSTTY_MOUSE_BUTTON_FIVE:GHOSTTY_MOUSE_BUTTON_FOUR);
+    ghostty_mouse_event_set_button(event,button);
     ghostty_mouse_event_set_position(event,(GhosttyMousePosition){(col+.5f)*cw,(row+.5f)*ch});
     r=ghostty_mouse_encoder_encode(encoder,event,out,capacity,len);
+    if(r==0 && release && *len<=capacity) {
+      size_t tail=0;
+      ghostty_mouse_event_set_action(event,GHOSTTY_MOUSE_ACTION_RELEASE);
+      r=ghostty_mouse_encoder_encode(encoder,event,out+*len,capacity-*len,&tail);
+      if(r==0) *len+=tail;
+    }
   }
   ghostty_mouse_event_free(event);ghostty_mouse_encoder_free(encoder);return r;
+}
+int rp_wheel(RpTerminal *t,int down,int col,int row,uint32_t cw,uint32_t ch,char *out,size_t capacity,size_t *len) {
+  return rp_mouse(t,down?GHOSTTY_MOUSE_BUTTON_FIVE:GHOSTTY_MOUSE_BUTTON_FOUR,0,col,row,cw,ch,out,capacity,len);
+}
+int rp_click(RpTerminal *t,int col,int row,uint32_t cw,uint32_t ch,char *out,size_t capacity,size_t *len) {
+  return rp_mouse(t,GHOSTTY_MOUSE_BUTTON_LEFT,1,col,row,cw,ch,out,capacity,len);
 }
 int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   int r = ghostty_render_state_update(t->render, t->terminal);
