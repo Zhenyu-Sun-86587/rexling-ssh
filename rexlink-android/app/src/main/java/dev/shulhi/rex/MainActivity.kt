@@ -223,7 +223,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         }
                     }
                 }
-                if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,model.closingSessionKey,model.sessionActionError,model::closeSession,
+                if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,model.closingSessionKey.ifBlank {model.renamingSessionKey},model.sessionActionError,model::closeSession,model::renameSession,
                     onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true})
             }
         }
@@ -272,9 +272,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
-@Composable private fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
+@Composable private fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onRenameSession: (SessionTarget,String)->Boolean,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
     var search by rememberSaveable {mutableStateOf("")}
     var closeTarget by remember {mutableStateOf<SessionTarget?>(null)}
+    var renameTarget by remember {mutableStateOf<SessionTarget?>(null)}
     BackHandler(onBack=onClose)
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.25f)).clickable(onClick=onClose))
@@ -303,13 +304,16 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
                     }
                     group.sessions.forEach {target->key(target.key) {
                         SessionRow(target,current==target.key,last==target.key,closing==target.key,
-                            onSelect={onSelect(target.key)},onClose={closeTarget=target})
+                            onSelect={onSelect(target.key)},onClose={closeTarget=target},onRename={renameTarget=target})
                     }}
                 }}
             }
             if(error.isNotBlank()) Text(error,Modifier.padding(vertical=10.dp),color=MaterialTheme.colorScheme.error,fontSize=11.sp)
             Spacer(Modifier.height(12.dp))
         }
+    }
+    renameTarget?.let {target->
+        SessionRenameDialog(target,closing.isBlank(),onSave={label->if(onRenameSession(target,label)) renameTarget=null},onDismiss={renameTarget=null})
     }
     closeTarget?.let {target->
         AlertDialog(onDismissRequest={closeTarget=null},title={Text("Close session?")},

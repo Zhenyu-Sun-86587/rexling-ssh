@@ -227,6 +227,11 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun prefetchPanes(ids: List<String>) {
         if(state.value.connected && !state.value.creating) command("peek","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
     }
+    fun renameSession(id: String,label: String): Boolean {
+        val current=state.value
+        if(!current.connected || current.creating || current.sessions.none {it.id==id} || sessionNameError(label)!=null) return false
+        command("rename_session","id" to id,"label" to label.trim());return true
+    }
     fun closeSession(id: String): Boolean {
         val current=state.value
         if(!current.connected || current.creating || navigationRequest.pending || current.sessions.none {it.id==id}) return false

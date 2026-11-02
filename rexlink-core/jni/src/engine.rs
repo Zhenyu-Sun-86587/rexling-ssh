@@ -610,6 +610,10 @@ impl Actor {
         }
         if event["type"] == "session_event" {
             let inner = &event["payload"]["event"];
+            if inner["type"]=="session_label_changed" {
+                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+                self.activity_full=true;
+            }
             if inner["type"]=="block_event" {
                 let block=&inner["payload"];let sid=event["payload"]["session_id"].as_str().unwrap_or("");
                 if block["creator_name"]=="com.superlogical.terminal" && let (Some(id),Some(name))=(block["block_id"].as_str(),block["name"].as_str()) {
@@ -768,6 +772,27 @@ impl Actor {
                         own,
                     ));
                 }
+            }
+            "rename_session" => {
+                ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before renaming a session");
+                let id=value["id"].as_str().filter(|id|!id.is_empty()).context("session ID required")?;
+                let label=value["label"].as_str().context("session name required")?.trim();
+                ensure!(!label.is_empty(),"Enter a session name");
+                ensure!(label.chars().count()<=128,"Use a session name of at most 128 characters");
+                ensure!(!label.chars().any(char::is_control),"Session names cannot contain control characters");
+                self.creating=true;self.error.clear();self.publish();
+                // Attach a separate control client; renaming another session must
+                // not move the viewed session, own a pane, or resize its PTY.
+                let mut editor=Control::connect(self.endpoint.clone().context("no server")?,None,Trace::default()).await?;
+                editor.call("client.set_label",json!({"label":"rex-android-rename"})).await?;
+                let result=async {
+                    editor.attach(id).await?;
+                    editor.call("session.set_label",json!({"session_id":id,"label":label})).await?;
+                    Ok::<(),anyhow::Error>(())
+                }.await;
+                let _=editor.close().await;result?;
+                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+                self.activity_full=true;self.creating=false;self.notice="Session renamed".into();self.publish();
             }
             "close_session" => {
                 ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before closing a session");
@@ -1399,7 +1424,7 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
                 let mut lost = false;
                 for client in clients.as_array().into_iter().flatten() {
                     if client["info"]["label"].as_str().is_some_and(|s| {
-                        s.starts_with("rex-android-close")
+                        s.starts_with("rex-android-rename") || s.starts_with("rex-android-close")
                             || s.starts_with("rex-android-preview")
                             || s.starts_with("rex-android-summary")
                             || s.starts_with("rex-android-programs")
@@ -2447,6 +2472,46 @@ while True:
         assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");assert!(!actor.controlled);
         runtime.block_on(actor.command(json!({"type":"network","online":true}))).unwrap();assert!(actor.retry.is_some());
         actor.connect_task=Some(Box::pin(pending()));runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();assert!(actor.connect_task.is_none());assert!(actor.retry.is_some());
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_rename_session_preserves_active_pane_and_syncs_external_labels() {
+        let server=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let mut created=Vec::new();
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for index in 0..2 {
+                created.push(runtime.block_on(writer.call("session.create",json!({"label":format!("rexlink-rename-test-{}-{index}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c","printf RENAME_READY; cat"]}}}}]}))).unwrap());
+            }
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            let first=&created[0]["session_id"];let second=&created[1]["session_id"];let block=&created[0]["initial_windows"][0]["block_ids"][0];
+            app.command(json!({"type":"session","id":first,"block":block})).unwrap();wait(&app,|v|v["selectedBlock"]==*block && text(v).contains("RENAME_READY"));
+            app.command(json!({"type":"take"})).unwrap();wait(&app,|v|v["controlled"]==true);
+            app.command(json!({"type":"resize","columns":40,"rows":20})).unwrap();let before=wait(&app,|v|v["screen"]["columns"]==40 && v["screen"]["rows"]==20);
+            app.command(json!({"type":"rename_session","id":second,"label":"  Renamed λ 🦀  "})).unwrap();
+            let renamed=wait(&app,|v|v["creating"]==false && v["sessions"].as_array().is_some_and(|items|items.iter().any(|s|s["session_id"]==*second && s["label"]=="Renamed λ 🦀")));
+            assert_eq!(renamed["selectedSession"],*first);assert_eq!(renamed["selectedBlock"],*block);assert_eq!(renamed["controlled"],true);
+            assert_eq!(renamed["screen"]["columns"],before["screen"]["columns"]);assert_eq!(renamed["screen"]["rows"],before["screen"]["rows"]);
+            runtime.block_on(writer.attach(second.as_str().unwrap())).unwrap();
+            runtime.block_on(writer.call("session.set_label",json!({"session_id":second,"label":"Changed in another client"}))).unwrap();
+            wait(&app,|v|v["sessions"].as_array().is_some_and(|items|items.iter().any(|s|s["session_id"]==*second && s["label"]=="Changed in another client")));
+            app.command(json!({"type":"rename_session","id":first,"label":"Active renamed"})).unwrap();
+            let active=wait(&app,|v|v["creating"]==false && v["sessions"].as_array().is_some_and(|items|items.iter().any(|s|s["session_id"]==*first && s["label"]=="Active renamed")));
+            assert_eq!(active["controlled"],true);assert_eq!(active["screen"]["columns"],40);
+            app.command(json!({"type":"rename_session","id":second,"label":"bad\nname"})).unwrap();let invalid=wait(&app,|v|v["error"].as_str().is_some_and(|e|e.contains("control characters")));assert_eq!(invalid["controlled"],true);
+            runtime.block_on(writer.call("session.destroy",json!({"session_id":second}))).unwrap();
+            app.command(json!({"type":"rename_session","id":second,"label":"Missing"})).unwrap();
+            let missing=wait(&app,|v|v["creating"]==false && v["error"].as_str().is_some_and(|e|e.contains("session_not_found")));assert_eq!(missing["controlled"],true);
+        }));
+        let sessions=runtime.block_on(writer.call("session.list",json!({}))).unwrap();
+        for value in created {
+            if sessions["sessions"].as_array().unwrap().iter().any(|s|s["session_id"]==value["session_id"]) {
+                runtime.block_on(writer.attach(value["session_id"].as_str().unwrap())).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":value["session_id"]}))).unwrap();
+            }
+        }
+        runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
 }

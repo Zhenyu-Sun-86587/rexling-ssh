@@ -27,7 +27,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable internal fun SessionRow(target: SessionTarget,active: Boolean,last: Boolean,closing: Boolean,
-    onSelect: ()->Unit,onClose: ()->Unit) {
+    onSelect: ()->Unit,onClose: ()->Unit,onRename: ()->Unit={}) {
     val distance=with(LocalDensity.current){88.dp.toPx()}
     var position by remember {mutableFloatStateOf(0f)}
     var anchor by remember {mutableFloatStateOf(0f)}
@@ -49,7 +49,7 @@ import kotlin.math.roundToInt
                     dragging=false
                 })
             .clickable(enabled=!closing){if(anchor!=0f) anchor=0f else onSelect()}
-            .semantics {customActions=listOf(CustomAccessibilityAction("Close session"){onClose();true})}
+            .semantics {customActions=listOf(CustomAccessibilityAction("Rename session"){onRename();true},CustomAccessibilityAction("Close session"){onClose();true})}
             .padding(start=11.dp,end=2.dp,top=12.dp,bottom=12.dp),
             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(11.dp)) {
             Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
@@ -64,6 +64,7 @@ import kotlin.math.roundToInt
             Box {
                 ChromeButton(ChromeIcon.MORE,"Session actions for ${target.session.label} on ${target.server.label}",!closing){menu=true}
                 DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+                    DropdownMenuItem(text={Text("Rename session")},onClick={menu=false;onRename()})
                     DropdownMenuItem(text={Text("Close session",color=MaterialTheme.colorScheme.error)},onClick={menu=false;onClose()})
                 }
             }

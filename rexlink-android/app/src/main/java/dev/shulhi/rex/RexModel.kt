@@ -80,6 +80,11 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     var sessionActionError by mutableStateOf("")
         private set
+    internal var renamingSessionKey by mutableStateOf("")
+        private set
+    private var renameServerId=""
+    private var renameSessionId=""
+    private var renameLabel=""
     private var closingServerId=""
     private var closingSessionId=""
     private val connections=mutableMapOf<String,RexConnection>()
@@ -117,6 +122,12 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                     attentionCount=connections.values.sumOf {if(it.state.value.connected) it.state.value.attentionCount else 0}
                     updateSessionTargets()
                     if(activityVisible) updateActivity()
+                    if(renamingSessionKey.isNotBlank() && profile.id==renameServerId) {
+                        if(!state.creating && state.sessions.any {it.id==renameSessionId && it.label==renameLabel}) renamingSessionKey=""
+                        else if(state.error.isNotBlank() || !state.connected || state.sessions.none {it.id==renameSessionId}) {
+                            renamingSessionKey="";sessionActionError=state.error.ifBlank {if(state.connected) "That session is no longer available" else "Connection interrupted. Check the session name before retrying."}
+                        }
+                    }
                     if(closingSessionKey.isNotBlank() && profile.id==closingServerId) {
                         if(state.sessions.none {it.id==closingSessionId}) closingSessionKey=""
                         else if(state.error.isNotBlank() || !state.connected) {
@@ -149,8 +160,20 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         connectServer(target.server.id)
         activeClient.selectSession(target.session.id)
     }
+    internal fun renameSession(target: SessionTarget,label: String): Boolean {
+        if(closingSessionKey.isNotBlank() || renamingSessionKey.isNotBlank()) return false
+        sessionActionError=""
+        sessionNameError(label)?.let {sessionActionError=it;return false}
+        val current=sessionTargets.firstOrNull {it.key==target.key && it.server.endpoint==target.server.endpoint}
+        if(current==null) {sessionActionError="That session is no longer available";return false}
+        renameServerId=target.server.id;renameSessionId=target.session.id;renameLabel=label.trim();renamingSessionKey=target.key
+        if(connections[target.server.id]?.renameSession(target.session.id,renameLabel)!=true) {
+            renamingSessionKey="";sessionActionError="Wait for the server to finish its current operation, then try again.";return false
+        }
+        return true
+    }
     internal fun closeSession(target: SessionTarget) {
-        if(closingSessionKey.isNotBlank()) return
+        if(closingSessionKey.isNotBlank() || renamingSessionKey.isNotBlank()) return
         sessionActionError=""
         val current=sessionTargets.firstOrNull {it.key==target.key && it.server.endpoint==target.server.endpoint}
         if(current==null) {sessionActionError="That session is no longer available";return}
