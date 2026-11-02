@@ -139,7 +139,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     Row(Modifier.fillMaxWidth().heightIn(min=50.dp).padding(horizontal=9.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
         if(!expanded) {
             Box(Modifier.semantics(mergeDescendants=true) {stateDescription=if(working) "Working" else "Idle"}) {
-                ProgramStack(programs,paneIndex,framed=true)
+                ProgramStack(programs,paneIndex,framed=true,fixedSlot=true)
             }
             Spacer(Modifier.width(7.dp))
         }

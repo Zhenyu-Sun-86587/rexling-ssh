@@ -26,22 +26,25 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 
-@Composable internal fun ProgramStack(programs: List<ProgramIdentity>, selected: Int, framed: Boolean=false) {
+@Composable internal fun ProgramStack(programs: List<ProgramIdentity>, selected: Int, framed: Boolean=false, fixedSlot: Boolean=false) {
     val items=programs.ifEmpty {listOf(ProgramIdentity.Terminal)}
     val front=selected.coerceIn(items.indices)
     val others=(1 until minOf(items.size,3)).map {(front+it)%items.size}
     val active=items[front]
     val frontY=if(framed) 4.dp else 3.5.dp
     val step=if(framed) 6.dp else 4.dp
-    Box(Modifier.size((if(framed) 40.dp else 28.dp)+step*others.size,if(framed) 35.dp else 25.dp)
+    val slotWidth=(if(framed) 40.dp else 28.dp)+step*if(fixedSlot) 2 else others.size
+    val paintedWidth=if(others.isEmpty()) {if(framed) 34.dp else 22.dp} else (if(framed) 32.dp else 21.dp)+step*others.size
+    val start=if(fixedSlot) (slotWidth-paintedWidth)/2 else 0.dp
+    Box(Modifier.size(slotWidth,if(framed) 35.dp else 25.dp)
         .clearAndSetSemantics {contentDescription=active.label+(if(items.size>1) ", ${items.size} panes" else "")}) {
         for((layer,index) in others.reversed().withIndex()) {
             val shift=step*(others.size-layer)
-            PaneProgramTile(items[index],Modifier.offset(x=shift,y=frontY+1.dp)
+            PaneProgramTile(items[index],Modifier.offset(x=start+shift,y=frontY+1.dp)
                 .graphicsLayer {rotationZ=3f+(others.size-layer-1)*3f}
                 .size(if(framed) 32.dp else 21.dp,if(framed) 25.dp else 16.dp),framed)
         }
-        PaneProgramTile(active,Modifier.offset(y=frontY)
+        PaneProgramTile(active,Modifier.offset(x=start,y=frontY)
             .graphicsLayer {rotationZ=if(others.isNotEmpty()) -6f else 0f}
             .size(if(framed) 34.dp else 22.dp,if(framed) 27.dp else 18.dp),framed)
     }
