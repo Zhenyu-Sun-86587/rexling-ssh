@@ -7,6 +7,7 @@ replace licenses or grant trademark rights for the following upstream material.
 | --- | --- |
 | Ghostty/libghostty-vt | MIT; `rexlink-core/native/GHOSTTY_LICENSE.txt`, pinned source in `ghostty-source.json`, and Android `assets/licenses/GHOSTTY_LICENSE.txt` |
 | JetBrains Mono / Nerd Font font files | SIL Open Font License and Nerd Fonts notices, sources and checksums in `rexlink-android/app/src/main/assets/licenses/` |
+| Noto Sans Symbols 2 fallback font | SIL Open Font License; `NOTO_SYMBOLS_OFL.txt` and pinned source/checksum in `NOTO_SYMBOLS_SOURCE.json` in the Android license assets |
 | Simple Icons logos | CC0-1.0; `simple-icons-CC0.txt` and `program-icons.json` in the same license assets; brand marks remain their owners' property |
 | Rex theme color projection | Original provenance and source hash retained in `rexlink-android/app/src/main/assets/themes/SOURCE.json`; Apache 2.0 is not asserted over upstream Rex material |
 | Rust / AndroidX / other dependencies | Their respective upstream licenses; pinned dependency versions in Cargo.lock and the Gradle manifests |

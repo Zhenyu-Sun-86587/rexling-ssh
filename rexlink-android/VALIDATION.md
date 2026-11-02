@@ -1141,3 +1141,27 @@ line allocation and verifies actual placed coordinates. Release build, release
 lint, signature, ART profiles and 16 KiB alignment checks pass. Native/input and
 terminal renderer logic are unchanged. The final release is installed on S22+;
 its base APK matches the shareable dist APK: `2504eae05ec3ccc8261f8f66bb106ba859e5379f337dfbfafe38124cdce5c4d8`.
+
+
+## Terminal symbol font fallback (2026-11-02)
+
+The bundled Nerd Font lacks U+23F5/U+23E9 and related media controls in its cmap.
+Added unmodified Noto Sans Symbols 2 as a bundled fallback, with pinned upstream
+revision, checksum and SIL OFL notice. Android 10+ uses a process-cached font
+family chain (four original Nerd styles first, symbols next, system fallback
+last). Android 9 uses a bounded per-cell fallback resolver; row, cursor and
+composing text share font selection. Primary text still defines the integer
+cell grid and baseline. Font families are cached without retaining an Activity.
+
+Release/debug builds, release lint, signature/ART/16 KiB checks and all 81
+non-fixture emulator UI checks pass. New tests verify media-symbol coverage in
+all styles/sizes and the explicit legacy resolution branch, render a real
+TerminalView triangle distinct from tofu, and verify following text stays on
+its original pixels. Existing ASCII/Nerd Font advance, hardware row, selection,
+link, mouse, gesture and header regressions pass. The legacy branch was tested
+on the API 37 emulator, not on a physical Android 9 device. The generated footer
+image was visually checked: two yellow triangles render correctly. No new
+performance comparison is claimed. Native and transport logic are unchanged.
+
+The release is installed on S22+; its base APK matches the shareable dist APK:
+`2057ac9d6c44523ae43cd0e899d6f23cd8c86280a4df3e95e6cb0c45a777ae66`. The APK grew by about 0.54 MB compressed.

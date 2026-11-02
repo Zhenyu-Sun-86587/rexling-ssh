@@ -205,7 +205,7 @@ class TerminalView(context: Context) : View(context) {
             canvas.drawRect(x,y,x+cursorWidth,y+cellHeight,backgroundPaint)
             if(cell!=null && cell.text.isNotEmpty() && cell.attributes and 16==0) {
                 paint.color=palette.cursorText;paint.alpha=255
-                paint.typeface=when(cell.attributes and 3) {1->fonts.bold;2->fonts.italic;3->fonts.boldItalic;else->fonts.regular}
+                paint.typeface=fonts.typefaceFor(cell.attributes and 3,cell.text)
                 val advance=advance(cell.text,cell.attributes and 3)
                 canvas.save();canvas.clipRect(x,y,x+cursorWidth,y+cellHeight)
                 if(advance>cursorWidth) canvas.scale(cursorWidth/advance,1f,x,y)
@@ -213,7 +213,7 @@ class TerminalView(context: Context) : View(context) {
                 canvas.restore()
             }
             if (composing.isNotEmpty()) {
-                paint.typeface = fonts.regular;paint.color=android.graphics.Color.WHITE
+                paint.typeface = fonts.typefaceFor(0,composing);paint.color=android.graphics.Color.WHITE
                 val composingWidth=max(cellWidth,paint.measureText(composing))
                 canvas.drawRect(x,y,x+composingWidth,y+cellHeight,backgroundPaint)
                 canvas.drawText(composing, x, y + baseline, paint)
@@ -248,7 +248,7 @@ class TerminalView(context: Context) : View(context) {
             val cell=cells[index++]
             if(cell.x>=columns || cell.width==0 || cell.text.isEmpty() || cell.attributes and 16!=0) continue
             val style=cell.attributes and 3
-            paint.typeface=when(style) {1->fonts.bold;2->fonts.italic;3->fonts.boldItalic;else->fonts.regular}
+            paint.typeface=fonts.typefaceFor(style,cell.text)
             paint.color=if(cell.attributes and 8!=0) palette.background(cell) else palette.foreground(cell)
             paint.alpha=if(cell.attributes and 4!=0) 150 else 255
             var text=cell.text;var width=cell.width
