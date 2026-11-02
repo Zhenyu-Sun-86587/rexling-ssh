@@ -1073,3 +1073,40 @@ files were removed. Raw traces remain local in ignored
 `.build/display-coordinator-ab/`.
 
 Full measurements: [s22plus-display-coordinator-2026-11-02.json](validation/s22plus-display-coordinator-2026-11-02.json).
+
+## Terminal mouse taps (2026-11-02)
+
+A controlled, mouse-reporting application now receives a touch tap as one left
+press/release pair at the rendered grid cell. Ghostty encodes the negotiated
+terminal mouse protocol. Both reports travel together through the ordered
+`block.event` input path, with pane/navigation/connection bindings, queue bounds
+and no uncertain replay. Mouse clicks form a queue barrier behind earlier input
+acknowledgments. The native actor drops stale, hidden, paused, unowned and
+mouse-disabled clicks. Legacy reports with non-UTF-8 coordinate bytes are
+rejected rather than corrupting input, matching the existing wheel transport.
+
+Web links retain tap priority, long-press still selects text, and horizontal
+pane swipes/vertical scrolling send no click. Padding/outside-grid taps are
+ignored in mouse mode. Pending taps are canceled if their target, grid,
+mouse-reporting enablement or ownership changes. Normal/viewing-mode taps keep
+the previous keyboard/take-control behavior. The keyboard button remains the
+way to open the keyboard while controlling a mouse-enabled application.
+
+Validation passes: 82 JVM tests, all 77 non-fixture emulator UI checks, final
+five mouse checks after adding the ownership-loss guard, host workspace tests,
+actual JNI/JVM smoke, Clippy with warnings denied, release lint, debug/release
+builds, and APK signature/ART/16 KiB alignment checks. Native tests verify
+negotiated SGR/legacy bytes, clamped coordinates, press/release pairing, snapshot
+restoration, disabled mouse modes and ordered/bound click queues. An opt-in live
+owned-server fixture verifies exactly one press/release pair reaches the PTY,
+then confirms stale-pane and mouse-disabled taps are dropped. Only its
+disposable session was created/destroyed; no input was sent to user terminals.
+This did not exercise the user's particular Neovim/Lazygit configuration.
+
+The final release is installed on S22+ RFCT21390SD. Its base APK hash matches
+`dist/Rexlink-0.1.0-arm64-release.apk`:
+`47909ac7d258b46ed14765734e622051f7c832542c0ea7894cc5bcebb9c0304c`.
+Implementation commit: `184042c`. Reproduce the live check on an explicitly owned
+server with `REX_TEST_SERVER=<server>` and the host Ghostty/Cargo environment
+from BUILDING.md, then `cargo test --locked --manifest-path rexlink-core/Cargo.toml
+-p rexlink-jni live_mouse_click_delivers -- --ignored`.
