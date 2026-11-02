@@ -60,4 +60,9 @@ class ModelsTest {
         assertFalse("A late finger-up after navigation must not relatch Shift",ShiftKeyState().release().active)
     }
 
+    @Test fun controlPopupShortcutsProduceTheExpectedTerminalBytes() {
+        val expected=listOf(3,4,26,18,12,1,5,23)
+        assertEquals(expected,controlShortcuts.map {TerminalInput.modified(it,true,false).single().code})
+    }
+
 }

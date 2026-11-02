@@ -270,7 +270,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
-    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onKeyboard: ()->Unit) {
+    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},onKeyboard: ()->Unit) {
     var expanded by remember {mutableStateOf(false)}
     val hiddenStart=with(androidx.compose.ui.platform.LocalDensity.current) {26.dp.roundToPx()}
     val keyScroll=rememberScrollState(hiddenStart)
@@ -290,7 +290,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     }
                     Row(Modifier.width(196.dp).fillMaxHeight(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                         DockKey("esc",controlled,description="Escape",modifier=Modifier.weight(1f),icon=ChromeIcon.ESCAPE,readable=readable) {onKey("esc")}
-                        DockKey("ctrl",controlled,control,description="Control",modifier=Modifier.weight(1f),icon=ChromeIcon.CONTROL,readable=readable,onClick=onControl)
+                        ControlDockKey(controlled,control,readable,Modifier.weight(1f),onControl,onControlShortcut)
                         DockKey("alt",controlled,alt,description="Alt",modifier=Modifier.weight(1f),icon=ChromeIcon.ALT,readable=readable,onClick=onAlt)
                         ShiftDockKey(controlled,shift,Modifier.weight(1f),onShift,onShiftPress,onShiftRelease,readable=readable)
                         DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f),icon=ChromeIcon.TAB,readable=readable) {onKey("tab")}

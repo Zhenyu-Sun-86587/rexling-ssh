@@ -248,6 +248,10 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun toggleShift() {shiftState=ShiftKeyState(latched=!shiftState.active)}
     fun pressShift() {shiftState=shiftState.press()}
     fun releaseShift(cancelled: Boolean) {shiftState=shiftState.release(cancelled)}
+    fun controlShortcut(letter: String) {
+        if(letter !in controlShortcuts || !visible || !state.value.controlled || state.value.creating || navigationRequest.pending) return
+        resetModifiers();type(TerminalInput.modified(letter,control=true,alt=false))
+    }
     fun type(text: String) {
         if (!visible || !state.value.controlled || state.value.creating || navigationRequest.pending || text.isEmpty()) return
         val input = TerminalInput.modified(text, controlModifier, altModifier, shiftModifier)
