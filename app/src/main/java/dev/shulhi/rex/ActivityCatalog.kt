@@ -9,9 +9,9 @@ enum class ActivityState(val wire: String,val label: String,val priority: Int) {
 data class ActivityRecord(val session: String,val sessionLabel: String,val window: String,val windowLabel: String,
     val block: String,val blockLabel: String,val id: String,val title: String,val message: String,val state: ActivityState,
     val kind: String,val progress: Int?,val updated: String,val program: ProgramIdentity) {
-    val key: String get()=listOf(session,block,id).joinToString("") {"${it.length}:$it"}
+    val key: String =listOf(session,block,id).joinToString("") {"${it.length}:$it"}
     val label: String get()=program.paneTitle(blockLabel,title)
-    val timestamp: Long get()=runCatching {Instant.parse(updated).toEpochMilli()}.getOrDefault(0)
+    val timestamp: Long =runCatching {Instant.parse(updated).toEpochMilli()}.getOrDefault(0)
     val stateLabel: String get()=if(state==ActivityState.BLOCKED) when(kind) {"permission"->"Approval";"question"->"Question";"auth"->"Sign in";else->state.label} else state.label
     companion object {
         private fun JSONObject.clean(name: String,max: Int)=optString(name).filterNot {it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt()}.take(max)

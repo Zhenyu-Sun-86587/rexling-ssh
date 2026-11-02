@@ -48,11 +48,11 @@ data class AppState(
 ) {
     val connected: Boolean get() = phase == "connected"
     companion object {
-        fun parse(text: String): AppState {
+        fun parse(text: String,previousActivity: List<ActivityRecord> = emptyList()): AppState {
             val root = JSONObject(text)
             return AppState(
                 workingBlocks = root.optJSONArray("working").objects {it as String}.toSet(),
-                activity=root.optJSONArray("activity").objects {ActivityRecord.parse(it as JSONObject)}.filterNotNull().take(1024),
+                activity=if(root.has("activity")) root.optJSONArray("activity").objects {ActivityRecord.parse(it as JSONObject)}.filterNotNull().take(1024) else previousActivity,
                 activityLoading=root.optBoolean("activityLoading"),activityError=root.optString("activityError"),activityPartial=root.optBoolean("activityPartial"),
                 titles = root.optJSONObject("titles")?.let { titles -> titles.keys().asSequence().associateWith { id ->
                     titles.optString(id).filterNot { it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt() }.take(256)

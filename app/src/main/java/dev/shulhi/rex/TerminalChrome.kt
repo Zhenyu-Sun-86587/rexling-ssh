@@ -213,7 +213,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},actions: @Composable ()->Unit) {
+    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},animateWorking: Boolean=true,actions: @Composable ()->Unit) {
     val list=rememberLazyListState()
     val index=windows.indexOfFirst { it.id==selectedId }
     LaunchedEffect(selectedId,windows.map {it.id}) {if(index>=0) {
@@ -227,7 +227,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 val active=w.id==selectedId
                 val indicatorColor=MaterialTheme.colorScheme.primary
                 val busy=paneWorking(w)
-                val workPhase=rememberWorkingPhase(active && busy)
+                val workPhase=rememberWorkingPhase(active && busy && animateWorking)
                 val programs=panePrograms(w)
                 val pane=selectedPane(w)
                 val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
@@ -239,7 +239,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         if(active) {
                             val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
                             drawRect(indicatorColor,origin,bar)
-                            if(busy) {
+                            if(busy && animateWorking) {
                                 val x=(workPhase.value*1.5f-.5f)*size.width
                                 drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
                                     listOf(Color.Transparent,Color.White.copy(alpha=.85f),Color.Transparent),x,x+size.width*.5f),origin,bar)

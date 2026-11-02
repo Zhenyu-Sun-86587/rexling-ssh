@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun ActivitySheet(sources: List<ActivitySource>,onRefresh: ()->Unit,onSelect: (ActivityTarget)->Unit,onClose: ()->Unit) {
     var filter by remember {mutableStateOf(ActivityFilter.ALL)}
-    val filtered=sources.map {it to ActivityCatalog.records(it,filter)}
+    val filtered=remember(sources,filter) {sources.map {it to ActivityCatalog.records(it,filter)}}
     ModalBottomSheet(onDismissRequest=onClose,containerColor=MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max=640.dp).padding(bottom=20.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically) {

@@ -7,6 +7,11 @@ use std::time::Duration;
 fn plain(value: &Value,limit: usize)->String {
     value.as_str().unwrap_or("").chars().filter(|c|!c.is_control() && !matches!(*c,'\u{202a}'..='\u{202e}'|'\u{2066}'..='\u{2069}')).take(limit).collect()
 }
+fn stable_title(value: &str)->String {
+    // Animated braille prefixes are redundant beside the sheet's explicit status.
+    let mut chars=value.chars();let first=chars.next();
+    if first.is_some_and(|c|('\u{2800}'..='\u{28ff}').contains(&c)) && chars.clone().next().is_some_and(char::is_whitespace) {chars.as_str().trim_start().to_owned()} else {value.to_owned()}
+}
 pub fn records(process: &Value,status: &Value,title: &Value,session: &Value,window: &Value,block: &Value)->Vec<Value> {
     status["records"].as_array().into_iter().flatten().filter_map(|record| {
         let state=record["state"].as_str()?;
@@ -20,7 +25,7 @@ pub fn records(process: &Value,status: &Value,title: &Value,session: &Value,wind
         let label=plain(&record["title"],256);
         let root=record["id"].as_str().is_none_or(str::is_empty);
         let live=if root && owner["pid"].is_number() && owner["pid"]==foreground["pid"] && owner["name"]==foreground["name"] {super::engine::program_title(process,status,title)} else {String::new()};
-        let label=if !live.is_empty() {live} else {label};
+        let label=stable_title(&if !live.is_empty() {live} else {label});
         Some(json!({"session":session["session_id"],"sessionLabel":plain(&session["label"],256),
             "window":window["window_id"],"windowLabel":plain(&window["label"],256),
             "block":block["block_id"],"blockLabel":plain(&block["label"],256),
@@ -30,15 +35,18 @@ pub fn records(process: &Value,status: &Value,title: &Value,session: &Value,wind
     }).collect()
 }
 /// Only the root report of this exact process follows the terminal's OSC title.
-pub fn apply_title(items: &mut Value,session: &str,block: &str,event: &Value) {
-    let Some(records)=items.as_array_mut() else {return;};
+pub fn apply_title(items: &mut Value,session: &str,block: &str,event: &Value)->bool {
+    let Some(records)=items.as_array_mut() else {return false;};
+    let mut changed=false;
     for record in records {
         if record["session"]==session && record["block"]==block && record["id"].as_str().is_none_or(str::is_empty)
             && event["owner"]["pid"].is_number() && record["ownerPid"]==event["owner"]["pid"] && record["owner"]==event["owner"]["name"] {
-            let title=plain(&event["title"],256);
-            record["title"]=if title.is_empty() {record["reportedTitle"].clone()} else {json!(title)};
+            let title=stable_title(&plain(&event["title"],256));
+            let next=if title.is_empty() {record["reportedTitle"].clone()} else {json!(title)};
+            if record["title"]!=next {record["title"]=next;changed=true;}
         }
     }
+    changed
 }
 pub async fn scan(endpoint: Endpoint)->Result<Value> {
     tokio::time::timeout(Duration::from_secs(15),async {
@@ -92,14 +100,14 @@ pub async fn scan(endpoint: Endpoint)->Result<Value> {
             {"state":"working","owner":{"pid":2,"name":"codex"},"title":"Status title"},
             {"state":"blocked","id":"child","owner":{"pid":2,"name":"codex"},"title":"Child task"},
             {"state":"done","owner":{"pid":1,"name":"codex"},"title":"Previous result"}]});
-        let mut items=json!(records(&process,&status,&json!({"owner":{"pid":2,"name":"codex"},"title":"⠋ Live task"}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
-        assert_eq!(items[0]["title"],"⠋ Live task");assert_eq!(items[1]["title"],"Child task");assert_eq!(items[2]["title"],"Previous result");
+        let mut items=json!(records(&process,&status,&json!({"owner":{"pid":2,"name":"codex"},"title":"Live task"}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
+        assert_eq!(items[0]["title"],"Live task");assert_eq!(items[1]["title"],"Child task");assert_eq!(items[2]["title"],"Previous result");
         apply_title(&mut items,"s","b",&json!({"owner":{"pid":2,"name":"codex"},"title":"⠙ Changed task"}));
-        assert_eq!(items[0]["title"],"⠙ Changed task");assert_eq!(items[1]["title"],"Child task");assert_eq!(items[2]["title"],"Previous result");
+        assert_eq!(items[0]["title"],"Changed task");assert_eq!(items[1]["title"],"Child task");assert_eq!(items[2]["title"],"Previous result");
         apply_title(&mut items,"s","b",&json!({"owner":{"pid":99,"name":"codex"},"title":"Wrong owner"}));
-        assert_eq!(items[0]["title"],"⠙ Changed task");
+        assert_eq!(items[0]["title"],"Changed task");
         apply_title(&mut items,"other","b",&json!({"owner":{"pid":2,"name":"codex"},"title":"Wrong session"}));
-        assert_eq!(items[0]["title"],"⠙ Changed task");
+        assert_eq!(items[0]["title"],"Changed task");
         apply_title(&mut items,"s","b",&json!({"owner":{"pid":2,"name":"codex"},"title":""}));
         assert_eq!(items[0]["title"],"Status title");
     }

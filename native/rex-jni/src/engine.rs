@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 pub struct Shared {
     pub revision: u64,
     pub json: String,
+    pub activity: Arc<Value>,
     pub pending_previews: BTreeMap<String, Value>,
     pub frame: Option<Arc<Frame>>,
     pub key: String,
@@ -38,7 +39,7 @@ impl Session {
             pending_previews: BTreeMap::new(),
             frame: None,
             key: String::new(),
-            wire: crate::updates::WireBase::default(),
+            wire: crate::updates::WireBase::default(),activity:Arc::default(),
         }));
         let worker = shared.clone();
         let updates=Arc::new(crate::updates::Updates::default());
@@ -68,6 +69,7 @@ impl Session {
         if state.revision <= after {return Ok(String::new());}
         let mut value: Value=serde_json::from_str(&state.json)?;
         value["revision"]=json!(state.revision);
+        value["activity"]=state.activity.as_ref().clone();
         value["screen"]=state.frame.as_ref().map_or(Value::Null,|frame|frame_value(frame));
         value["previews"]=serde_json::to_value(std::mem::take(&mut state.pending_previews))?;
         Ok(value.to_string())
@@ -117,6 +119,8 @@ struct Actor {
     activity_task: Option<ProgramTask>,
     activity_refresh: tokio::time::Instant,
     activity: Value,
+    activity_snapshot: Arc<Value>,
+    activity_dirty: bool,
     activity_error: String,
     activity_partial: bool,
     program_task: Option<ProgramTask>,
@@ -164,7 +168,7 @@ impl Actor {
             preview_task: None,
             summary_task: None,
             activity_open:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
-            activity:json!([]),activity_error:String::new(),activity_partial:false,
+            activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_error:String::new(),activity_partial:false,
             program_task: None,
             programs: json!({}),
             directories: json!({}),
@@ -179,14 +183,17 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
+        if self.activity_open && self.activity_dirty {self.activity_snapshot=Arc::new(self.activity.clone());self.activity_dirty=false;}
         if let Ok(mut shared) = self.shared.lock() {
+            if self.activity_open {shared.activity=self.activity_snapshot.clone();}
+            else if !shared.activity.is_null() {shared.activity=Arc::default();}
             shared.revision += 1;
             shared.frame=self.screen.clone();
             shared.key=format!("{}:{}",self.selected_session,self.selected_block);
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activity":if self.activity_open {&self.activity} else {&Value::Null},"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_task.is_some()}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":self.activity_task.is_some()}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -264,7 +271,7 @@ impl Actor {
                 },
                 result=async {match &mut self.activity_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
-                    match result {Ok(value)=>{self.activity=value["items"].clone();self.activity_partial=value["partial"]==true;self.activity_error.clear();},Err(e)=>self.activity_error=e.to_string()}
+                    match result {Ok(value)=>{if self.activity!=value["items"] {self.activity=value["items"].clone();self.activity_dirty=true;}self.activity_partial=value["partial"]==true;self.activity_error.clear();},Err(e)=>self.activity_error=e.to_string()}
                     for (id,event) in &self.title_events {crate::activity::apply_title(&mut self.activity,&self.selected_session,id,event);}
                     self.publish();
                 },
@@ -320,7 +327,7 @@ impl Actor {
         self.activity_task=None;
         self.program_task = None;
         self.preview_updates.clear();
-        self.session_details = json!({});self.activity=json!([]);self.activity_error.clear();self.activity_partial=false;
+        self.session_details = json!({});self.activity=json!([]);self.activity_dirty=true;self.activity_error.clear();self.activity_partial=false;
         self.programs = json!({});
         self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
         self.retry = None;
@@ -521,7 +528,7 @@ impl Actor {
                 if self.title_owners[id]["pid"].is_number() && !same_process(&self.title_owners[id],&payload["owner"]) {return;}
                 self.title_events.insert(id.into(),payload.clone());
                 if same_process(&self.title_owners[id],&payload["owner"]) {self.titles[id]=json!(display_title(payload));}
-                if self.activity_open {crate::activity::apply_title(&mut self.activity,&self.selected_session,id,payload);}
+                if crate::activity::apply_title(&mut self.activity,&self.selected_session,id,payload) {self.activity_dirty=true;}
             }
             "program_status_changed" | "program_status_removed" | "child_exited" => self.program_refresh=tokio::time::Instant::now(),
             _=>()
@@ -2287,7 +2294,7 @@ while True:
     #[test]
     #[ignore = "host metadata benchmark; run with --ignored --nocapture"]
     fn activity_metadata_publish_benchmark() {
-        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
         actor.activity=json!((0..256).map(|n|json!({"session":format!("session:{n}"),"block":format!("block:{n}"),"id":"","state":"working","app":"codex","owner":"codex","title":"A reported task title","message":"Work is continuing on this task.","updatedAt":"2026-11-02T00:00:00Z"})).collect::<Vec<_>>());
         for open in [false,true] {
@@ -2298,17 +2305,17 @@ while True:
     }
 
     #[test] fn hidden_activity_is_cached_without_copying_it_into_terminal_updates() {
-        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
         actor.activity=json!([{"title":"Cached task"}]);actor.publish();
-        let published=||serde_json::from_str::<Value>(&shared.lock().unwrap().json).unwrap();
+        let published=||{let shared=shared.lock().unwrap();let mut value:Value=serde_json::from_str(&shared.json).unwrap();value["activity"]=shared.activity.as_ref().clone();value};
         assert!(published()["activity"].is_null());assert_eq!(actor.activity[0]["title"],"Cached task");
         actor.activity_open=true;actor.publish();assert_eq!(published()["activity"][0]["title"],"Cached task");
         actor.activity_open=false;actor.publish();assert!(published()["activity"].is_null());
     }
 
     #[test] fn stale_or_hidden_take_and_resize_commands_cannot_target_the_new_pane() {
-        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
         actor.phase="connected".into();actor.selected_session="s".into();actor.selected_block="b".into();actor.navigation_id=2;
         let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
@@ -2326,7 +2333,7 @@ while True:
     }
 
     #[test] fn delayed_resize_apcs_cannot_revoke_canonical_ownership() {
-        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
         actor.controlled=true;actor.replica=Some(Replica::new(1));
         actor.replica.as_mut().unwrap().events.push(json!({"type":"resize","owner":"previous-client"}));
@@ -2335,7 +2342,7 @@ while True:
         actor.update_apcs();assert!(!actor.controlled);
     }
     #[test] fn unowned_layout_resize_is_quiet_but_unowned_typing_is_rejected() {
-        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
         let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         runtime.block_on(actor.command(json!({"type":"resize","columns":40,"rows":30}))).unwrap();

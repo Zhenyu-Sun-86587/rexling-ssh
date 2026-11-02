@@ -18,7 +18,7 @@ internal class TerminalUpdates {
         val nextRevision=data.long;require(nextRevision>revision)
         fun text(): String {val n=data.int;require(n>=0 && n<=data.remaining());val raw=ByteArray(n);data.get(raw);return raw.toString(Charsets.UTF_8)}
         val metadata=text()
-        var next=if(metadata.isNotEmpty()) AppState.parse(metadata) else state.copy(previewFrames=emptyMap())
+        var next=if(metadata.isNotEmpty()) AppState.parse(metadata,state.activity) else state.copy(previewFrames=emptyMap())
         val frame=when(val flag=data.get().toInt()) {
             0->state.screen
             1->null

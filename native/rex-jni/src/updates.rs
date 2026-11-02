@@ -40,6 +40,7 @@ impl Updates {
 pub struct WireBase {
     revision: u64,
     metadata: String,
+    activity: Arc<serde_json::Value>,
     key: String,
     frame: Option<Arc<Frame>>,
 }
@@ -78,9 +79,11 @@ pub fn encode(state: &mut Shared, after: u64) -> Vec<u8> {
     let mut out = b"RXT3".to_vec();
     u64le(&mut out, state.revision);
     let previews = std::mem::take(&mut state.pending_previews);
-    if reset || base.metadata != state.json || !previews.is_empty() {
+    let activity_changed=reset || !Arc::ptr_eq(&base.activity,&state.activity);
+    if reset || base.metadata != state.json || activity_changed || !previews.is_empty() {
         let mut metadata: serde_json::Value =
             serde_json::from_str(&state.json).expect("internal metadata JSON");
+        if activity_changed {metadata["activity"]=state.activity.as_ref().clone();}
         if !previews.is_empty() {
             metadata["previews"] = serde_json::to_value(previews).expect("preview frames");
         }
@@ -160,6 +163,7 @@ pub fn encode(state: &mut Shared, after: u64) -> Vec<u8> {
     state.wire = WireBase {
         revision: state.revision,
         metadata: state.json.clone(),
+        activity: state.activity.clone(),
         key: state.key.clone(),
         frame: state.frame.clone(),
     };
@@ -222,10 +226,11 @@ mod wire_tests {
             pending_previews: BTreeMap::new(),
             frame: Some(Arc::new(frame())),
             key: "a".into(),
-            wire: WireBase::default(),
+            wire: WireBase::default(),activity:Arc::default(),
         };
         let full = encode(&mut state, 0);
-        assert_eq!(full[18], 3);
+        let metadata_len=u32::from_le_bytes(full[12..16].try_into().unwrap()) as usize;
+        assert_eq!(full[16+metadata_len], 3);
         let mut next = frame();
         next.cells[200].text = "λ🦀".into();
         state.frame = Some(Arc::new(next));
@@ -235,10 +240,11 @@ mod wire_tests {
         assert!(delta.len() < full.len() / 20);
         state.revision = 4;
         let reset = encode(&mut state, 1);
-        assert_eq!(reset[18], 3);
+        assert_eq!(reset[16+u32::from_le_bytes(reset[12..16].try_into().unwrap()) as usize], 3);
         state.key = "other host pane".into();
         state.revision = 5;
-        assert_eq!(encode(&mut state, 4)[18], 3);
+        let reset=encode(&mut state,4);
+        assert_eq!(reset[16+u32::from_le_bytes(reset[12..16].try_into().unwrap()) as usize], 3);
         assert!(encode(&mut state, 5).is_empty());
         println!(
             "wire payload bytes: full={} one-row delta={}",
@@ -258,7 +264,7 @@ mod wire_tests {
     fn hyperlink_only_changes_emit_a_sparse_row_delta_and_removal() {
         let mut first=frame();
         for c in &mut first.cells[..3] {c.hyperlink=Some("https://example.com/one".into());}
-        let mut state=Shared {revision:1,json:"{}".into(),pending_previews:BTreeMap::new(),frame:Some(Arc::new(first)),key:"a".into(),wire:WireBase::default()};
+        let mut state=Shared {revision:1,json:"{}".into(),pending_previews:BTreeMap::new(),frame:Some(Arc::new(first)),key:"a".into(),wire:WireBase::default(),activity:Arc::default()};
         let full=encode(&mut state,0);assert_eq!(&full[..4],b"RXT3");
         assert_eq!(full.windows(b"https://example.com/one".len()).filter(|w|*w==b"https://example.com/one").count(),1);
         let mut next=frame();for c in &mut next.cells[..3] {c.hyperlink=Some("https://example.com/two".into());}
@@ -267,6 +273,16 @@ mod wire_tests {
         assert!(delta.ends_with(b"https://example.com/two"));
         state.frame=Some(Arc::new(frame()));state.revision=3;
         let removed=encode(&mut state,2);assert_eq!(removed[16],2);assert!(removed.ends_with(&[0,0]));
+    }
+
+    #[test] fn activity_catalog_is_sent_only_when_changed_and_resets_clear_it() {
+        let mut state=Shared {revision:1,json:"{}".into(),activity:Arc::new(serde_json::json!([{"title":"Task"}])),pending_previews:BTreeMap::new(),frame:None,key:"a".into(),wire:WireBase::default()};
+        let metadata=|packet:&[u8]|->serde_json::Value {let n=u32::from_le_bytes(packet[12..16].try_into().unwrap()) as usize;serde_json::from_slice(&packet[16..16+n]).unwrap()};
+        assert!(metadata(&encode(&mut state,0))["activity"].is_array());
+        state.revision=2;state.json="{\"titles\":{\"a\":\"Changed\"}}".into();
+        assert!(metadata(&encode(&mut state,1)).get("activity").is_none());
+        state.revision=3;state.activity=Arc::default();assert!(metadata(&encode(&mut state,2))["activity"].is_null());
+        state.revision=4;assert!(metadata(&encode(&mut state,1))["activity"].is_null());
     }
 
 }
