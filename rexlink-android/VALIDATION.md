@@ -814,3 +814,55 @@ ART profiles and 16 KiB library/ZIP alignment. This release also delivers the
 previously prepared fixed-width header icon slot. The header fix and latency
 implementation were recorded as separate signed commits on main after the
 user restored 1Password signing; signing was not disabled.
+
+
+## Physical S22+ cellular diagnostics (2026-11-02)
+
+The connected S22+ was confirmed on cellular through Tailscale, with Android
+reporting an LTE anchor and NR_NSA display override (5G NSA). Both the release
+app UID and diagnostic shell UID were covered by the VPN. The installed release
+was left in place; no preferences, current session selection, server settings
+or network settings were changed.
+
+A temporary release-mode ARM64 executable imported the unchanged production
+Actor/Control/Replica implementation and ran directly on the phone. It selected
+and owned only disposable raw Python PTYs, one per explicitly owned server.
+Five warmups preceded 30 isolated measured keystrokes. Each server also received
+an 80-key burst at 25 keys/second with the production eight-request window.
+
+| Measurement | Mac server | Linux server |
+| --- | ---: | ---: |
+| RPC round trip, median / p95 (25 calls) | 92.8 / 117.7 ms | 90.5 / 255.0 ms |
+| Input to native frame, median / p95 (30 keys) | 97.7 / 114.4 ms | 98.5 / 232.1 ms |
+| Slowest isolated native echo | 240.9 ms | 351.3 ms |
+| Final key drain after 80-key burst | 97.1 ms | 101.6 ms |
+| Full burst duration, including 3,160 ms injection schedule | 3,260.0 ms | 3,265.8 ms |
+
+All burst counters reached their expected totals. Neither run showed a sustained
+native input backlog at that tested rate. The similar RPC and native echo
+medians are consistent with network-dominated native-path latency, with
+occasional jitter. These separate sample distributions cannot identify an exact
+local processing cost. They are not input-to-pixel measurements and exclude
+Android key delivery, JNI transfer, Kotlin state handling and Canvas drawing.
+There was no pre-change phone A/B run.
+
+Fifteen ICMP probes per server reported no loss in this short sample, with means
+158.5 ms (Mac) and 165.4 ms (Linux); maxima were 284.5 and 321.5 ms. Different
+sampling intervals/traffic patterns mean these should not be treated as the
+same population as the RPC/echo samples.
+
+A separate physical Mac-to-phone `tailscale ping` stayed on DERP(sin) for all
+five probes (94–162 ms), and reported no direct connection. This is evidence
+about that specific peer pair, not proof of the embedded Rex virtual nodes'
+routes. [Tailscale documents](https://tailscale.com/docs/reference/connection-types)
+that relayed paths can have higher latency than direct UDP paths. Checking
+direct connectivity is a reasonable next network investigation; no routing or
+firewall changes were made.
+
+The release app moved to the launcher during CPU/frame sampling; gfxinfo
+reported zero rendered frames. That sample cannot support claims about rendering
+jank, foreground CPU or battery use. A separate foreground drawing trace remains
+necessary. Both disposable sessions and all temporary phone diagnostic files
+were removed. The existing app and user sessions were not driven with test input.
+
+Full results and methodology: [s22plus-cellular-2026-11-02.json](validation/s22plus-cellular-2026-11-02.json).

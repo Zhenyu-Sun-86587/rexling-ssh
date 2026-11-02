@@ -1,0 +1,128 @@
+{
+  "date": "2026-11-02",
+  "device": "Samsung Galaxy S22+ SM-S906E, Android 16",
+  "source_commit": "67a024723b5704e506afe68aa10d94779ce509d9",
+  "installed_release_sha256": "caafc78d6ef0756844e971b35054a32e1719a9ace19e96eff3a8ab4fb701e806",
+  "network": {
+    "transport": "CELLULAR through Tailscale VPN; Rexlink and diagnostic shell UIDs both covered",
+    "radio": "LTE anchor with NR_NSA override (5G NSA)",
+    "wifi_default": false
+  },
+  "methodology": {
+    "execution": "Temporary release-mode Android ARM64 executable; imports unchanged production engine.rs, input_queue.rs, activity.rs and updates.rs plus rexlink-core",
+    "app_installation": "Existing non-debuggable release not replaced; preferences and current selection not changed",
+    "fixtures": "One disposable raw Python PTY per owned server, destroyed in finally cleanup",
+    "metric": "Native input dispatch to received/decoded/published Ghostty frame, polling every 2ms; excludes Android input dispatch, JNI packet transfer, Kotlin, Canvas and pixel presentation",
+    "rpc": "25 sequential server.whoami calls, 60ms pause",
+    "isolated": "5 warmups then 30 measured one-character inputs; 40ms pause after observed echo",
+    "burst": "80 one-character commands at 40ms intervals (25 keys/sec), production eight-request window; timing earlier keys from first observed later counter is an upper bound",
+    "comparison": "No pre-change phone A/B measurement; synthetic loopback benchmark is documented separately"
+  },
+  "results": {
+    "mac": {
+      "burst": {
+        "interval_ms": 40,
+        "keys": 80,
+        "last_key_drain_ms": 97.126458,
+        "latency_upper_bounds": {
+          "max_ms": 227.857396,
+          "median_ms": 104.333646,
+          "min_ms": 88.424166,
+          "p95_ms": 165.260052,
+          "samples": 80
+        },
+        "note": "coalesced frames attribute earlier keys to their first observed later counter",
+        "total_ms": 3259.983696
+      },
+      "control_handshake_ms": 610.329583,
+      "fixture_activation_ms": 1535.995416,
+      "isolated_echo": {
+        "max_ms": 240.881354,
+        "median_ms": 97.655729,
+        "min_ms": 91.267448,
+        "p95_ms": 114.369271,
+        "samples": 30
+      },
+      "metric": "native dispatch to received/decoded/published terminal frame; excludes Kotlin/Canvas/pixel presentation",
+      "process": "standalone Android executable using unchanged production Actor/Control/Replica source",
+      "rpc_round_trip": {
+        "max_ms": 136.625937,
+        "median_ms": 92.807969,
+        "min_ms": 84.61937499999999,
+        "p95_ms": 117.735989,
+        "samples": 25
+      },
+      "server": "mac"
+    },
+    "linux": {
+      "burst": {
+        "interval_ms": 40,
+        "keys": 80,
+        "last_key_drain_ms": 101.58749999999999,
+        "latency_upper_bounds": {
+          "max_ms": 226.859687,
+          "median_ms": 104.39817699999999,
+          "min_ms": 89.928125,
+          "p95_ms": 185.525469,
+          "samples": 80
+        },
+        "note": "coalesced frames attribute earlier keys to their first observed later counter",
+        "total_ms": 3265.833541
+      },
+      "control_handshake_ms": 579.5833849999999,
+      "fixture_activation_ms": 1493.035781,
+      "isolated_echo": {
+        "max_ms": 351.33682300000004,
+        "median_ms": 98.487448,
+        "min_ms": 88.870573,
+        "p95_ms": 232.13229099999998,
+        "samples": 30
+      },
+      "metric": "native dispatch to received/decoded/published terminal frame; excludes Kotlin/Canvas/pixel presentation",
+      "process": "standalone Android executable using unchanged production Actor/Control/Replica source",
+      "rpc_round_trip": {
+        "max_ms": 267.75224,
+        "median_ms": 90.496354,
+        "min_ms": 80.71453100000001,
+        "p95_ms": 255.00239600000003,
+        "samples": 25
+      },
+      "server": "linux"
+    }
+  },
+  "icmp": {
+    "samples_each": 15,
+    "interval_ms": 300,
+    "mac": {
+      "loss_percent": 0,
+      "min_ms": 85.832,
+      "mean_ms": 158.467,
+      "max_ms": 284.497
+    },
+    "linux": {
+      "loss_percent": 0,
+      "min_ms": 81.61,
+      "mean_ms": 165.443,
+      "max_ms": 321.521
+    }
+  },
+  "route_probe": {
+    "scope": "Physical Mac Tailscale client to phone, separate from embedded Rex virtual-node routes",
+    "count": 5,
+    "path": "DERP(sin)",
+    "rtt_ms": [
+      124,
+      162,
+      118,
+      108,
+      94
+    ],
+    "direct_established": false,
+    "limitation": "Does not prove either embedded Rex node uses the same route"
+  },
+  "rendering_cpu": {
+    "status": "Inconclusive; release app was backgrounded on launcher during sampling and gfxinfo reported zero frames",
+    "conclusion": "No frame-time, battery or foreground CPU claim"
+  },
+  "cleanup": "Disposable sessions destroyed; temporary executable, shared library and UI dump removed from phone; no server or network configuration changed"
+}
