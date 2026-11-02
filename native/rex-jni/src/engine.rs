@@ -264,6 +264,7 @@ impl Actor {
                 result=async {match &mut self.activity_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
                     match result {Ok(value)=>{self.activity=value["items"].clone();self.activity_partial=value["partial"]==true;self.activity_error.clear();},Err(e)=>self.activity_error=e.to_string()}
+                    for (id,event) in &self.title_events {crate::activity::apply_title(&mut self.activity,&self.selected_session,id,event);}
                     self.publish();
                 },
                 result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
@@ -518,6 +519,7 @@ impl Actor {
                 if self.title_owners[id]["pid"].is_number() && !same_process(&self.title_owners[id],&payload["owner"]) {return;}
                 self.title_events.insert(id.into(),payload.clone());
                 if same_process(&self.title_owners[id],&payload["owner"]) {self.titles[id]=json!(display_title(payload));}
+                if self.activity_open {crate::activity::apply_title(&mut self.activity,&self.selected_session,id,payload);}
             }
             "program_status_changed" | "program_status_removed" | "child_exited" => self.program_refresh=tokio::time::Instant::now(),
             _=>()
@@ -2218,7 +2220,7 @@ while True:
         let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
         let mut ids=Vec::new();let mut blocks=Vec::new();
         for (index,state) in ["working","done"].iter().enumerate() {
-            let script=format!("stty -echo; printf '\\033]7501;state={state}:app=codex:title=Rml4dHVyZSB0YXNr\\007'; printf '\\033]7501;state=blocked:id=worker:kind=permission:msg=UmV2aWV3IHRoaXM=\\007'; printf 'ACTIVITY_READY\\n'; while IFS= read -r line; do :; done");
+            let script=format!("stty -echo; printf '\\033]7501;state={state}:app=codex:title=Rml4dHVyZSB0YXNr\\007'; printf '\\033]7501;state=blocked:id=worker:kind=permission:msg=UmV2aWV3IHRoaXM=\\007'; printf '\\033]0;Initial terminal title\\007'; printf 'ACTIVITY_READY\\n'; while IFS= read -r line; do printf '\\033]0;Updated terminal title\\007'; done");
             let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rex-android-activity-test-{}-{index}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}}]}))).unwrap();
             ids.push(created["session_id"].as_str().unwrap().to_owned());blocks.push(created["initial_windows"][0]["block_ids"][0].as_str().unwrap().to_owned());
         }
@@ -2235,6 +2237,10 @@ while True:
             let listed=until(&app,|v|v["activity"].as_array().is_some_and(|items|
                 items.iter().any(|a|a["session"]==ids[0] && a["state"]=="working") && items.iter().any(|a|a["session"]==ids[1] && a["state"]=="done") && items.iter().any(|a|a["id"]=="worker" && a["state"]=="blocked")));
             assert_eq!(listed["selectedBlock"],blocks[0]);assert_eq!(listed["controlled"],false);
+            assert!(listed["activity"].as_array().unwrap().iter().any(|a|a["block"]==blocks[0] && a["id"]=="" && a["title"]=="Initial terminal title"));
+            runtime.block_on(writer.attach(&ids[0])).unwrap();
+            runtime.block_on(writer.terminal(&ids[0],&blocks[0],"write",json!({"data":"update\n"}))).unwrap();
+            until(&app,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[0] && a["id"]=="" && a["title"]=="Updated terminal title")));
             assert_eq!(listed["screen"]["columns"],initial["screen"]["columns"]);
             app.command(json!({"type":"session","id":ids[1],"block":blocks[1],"navigationId":8})).unwrap();
             let jumped=until(&app,|v|v["selectedBlock"]==blocks[1] && v["screen"].is_object());
@@ -2247,5 +2253,6 @@ while True:
         for id in &ids {runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();}
         runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
+
 
 }

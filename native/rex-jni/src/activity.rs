@@ -19,14 +19,26 @@ pub fn records(process: &Value,status: &Value,title: &Value,session: &Value,wind
         let app=record["effective_app"].as_str().or(record["app"].as_str()).or(owner["name"].as_str()).unwrap_or("");
         let label=plain(&record["title"],256);
         let root=record["id"].as_str().is_none_or(str::is_empty);
-        let label=if label.is_empty() && root && (owner.is_null() || (owner["pid"]==foreground["pid"] && owner["name"]==foreground["name"])) {super::engine::program_title(process,status,title)} else {label};
+        let live=if root && owner["pid"].is_number() && owner["pid"]==foreground["pid"] && owner["name"]==foreground["name"] {super::engine::program_title(process,status,title)} else {String::new()};
+        let label=if !live.is_empty() {live} else {label};
         Some(json!({"session":session["session_id"],"sessionLabel":plain(&session["label"],256),
             "window":window["window_id"],"windowLabel":plain(&window["label"],256),
             "block":block["block_id"],"blockLabel":plain(&block["label"],256),
-            "id":plain(&record["id"],128),"app":app,"owner":plain(&owner["name"],64),
+            "id":plain(&record["id"],128),"app":app,"owner":plain(&owner["name"],64),"ownerPid":owner["pid"],"reportedTitle":plain(&record["title"],256),
             "title":label,"message":plain(&record["msg"],2048),"state":state,"kind":plain(&record["kind"],32),
             "progress":record["progress"].as_u64().filter(|p|*p<=100),"updatedAt":plain(&record["updated_at"],64)}))
     }).collect()
+}
+/// Only the root report of this exact process follows the terminal's OSC title.
+pub fn apply_title(items: &mut Value,session: &str,block: &str,event: &Value) {
+    let Some(records)=items.as_array_mut() else {return;};
+    for record in records {
+        if record["session"]==session && record["block"]==block && record["id"].as_str().is_none_or(str::is_empty)
+            && event["owner"]["pid"].is_number() && record["ownerPid"]==event["owner"]["pid"] && record["owner"]==event["owner"]["name"] {
+            let title=plain(&event["title"],256);
+            record["title"]=if title.is_empty() {record["reportedTitle"].clone()} else {json!(title)};
+        }
+    }
 }
 pub async fn scan(endpoint: Endpoint)->Result<Value> {
     tokio::time::timeout(Duration::from_secs(15),async {
@@ -74,4 +86,22 @@ pub async fn scan(endpoint: Endpoint)->Result<Value> {
         assert_eq!(items.len(),3);assert_eq!(items[0]["state"],"done");assert_eq!(items[0]["app"],"codex");
         assert!(items.iter().all(|v|v["session"]=="s" && v["block"]=="b"));
     }
+    #[test] fn root_titles_follow_live_osc_but_children_and_exited_owners_keep_their_titles() {
+        let process=json!({"foreground":{"pid":2,"name":"codex"}});
+        let status=json!({"records":[
+            {"state":"working","owner":{"pid":2,"name":"codex"},"title":"Status title"},
+            {"state":"blocked","id":"child","owner":{"pid":2,"name":"codex"},"title":"Child task"},
+            {"state":"done","owner":{"pid":1,"name":"codex"},"title":"Previous result"}]});
+        let mut items=json!(records(&process,&status,&json!({"owner":{"pid":2,"name":"codex"},"title":"⠋ Live task"}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
+        assert_eq!(items[0]["title"],"⠋ Live task");assert_eq!(items[1]["title"],"Child task");assert_eq!(items[2]["title"],"Previous result");
+        apply_title(&mut items,"s","b",&json!({"owner":{"pid":2,"name":"codex"},"title":"⠙ Changed task"}));
+        assert_eq!(items[0]["title"],"⠙ Changed task");assert_eq!(items[1]["title"],"Child task");assert_eq!(items[2]["title"],"Previous result");
+        apply_title(&mut items,"s","b",&json!({"owner":{"pid":99,"name":"codex"},"title":"Wrong owner"}));
+        assert_eq!(items[0]["title"],"⠙ Changed task");
+        apply_title(&mut items,"other","b",&json!({"owner":{"pid":2,"name":"codex"},"title":"Wrong session"}));
+        assert_eq!(items[0]["title"],"⠙ Changed task");
+        apply_title(&mut items,"s","b",&json!({"owner":{"pid":2,"name":"codex"},"title":""}));
+        assert_eq!(items[0]["title"],"Status title");
+    }
+
 }
