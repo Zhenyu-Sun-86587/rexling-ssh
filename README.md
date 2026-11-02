@@ -1,9 +1,11 @@
 # Rexlink
 
-Unofficial native Android client for [Superlogical Rex](https://www.superlogical.com/).
+Unofficial native Android client for Superlogical Rex.
 Connect directly to your authenticated Rex server over your private Tailscale network.
 Kotlin/Compose supplies the UI; Rust handles the Rex protocol and JNI; libghostty-vt
 maintains terminal state. No custom bridge, proxy or Rex subprocess is required.
+
+<img src="docs/images/rexlink-android.png" alt="Rexlink on Android showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="360">
 
 ```text
 rexlink/
