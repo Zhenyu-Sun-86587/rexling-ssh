@@ -75,7 +75,7 @@ pub fn encode(state: &mut Shared, after: u64) -> Vec<u8> {
     }
     let base = &state.wire;
     let reset = after != base.revision || base.key != state.key;
-    let mut out = b"RXT2".to_vec();
+    let mut out = b"RXT3".to_vec();
     u64le(&mut out, state.revision);
     let previews = std::mem::take(&mut state.pending_previews);
     if reset || base.metadata != state.json || !previews.is_empty() {
@@ -141,6 +141,19 @@ pub fn encode(state: &mut Shared, after: u64) -> Vec<u8> {
                     u32le(&mut out, rgb(cell.background));
                     text(&mut out, &cell.text);
                 }
+                // Sparse contiguous link ranges keep ordinary rows cheap.
+                let mut links: Vec<(u16,u16,&str)>=Vec::new();
+                for cell in *row {
+                    if cell.width==0 {continue;}
+                    if let Some(uri)=cell.hyperlink.as_deref() {
+                        if let Some(last)=links.last_mut().filter(|last|last.1==cell.x && last.2==uri) {
+                            last.1=cell.x+u16::from(cell.width);
+                        } else {links.push((cell.x,cell.x+u16::from(cell.width),uri));}
+                    }
+                }
+                u16le(&mut out,links.len() as u16);
+                for (start,end,uri) in links {u16le(&mut out,start);u16le(&mut out,end);text(&mut out,uri);}
+
             }
         }
     }
@@ -191,6 +204,7 @@ mod wire_tests {
                         background: [0; 3],
                         attributes: 0,
                         width: 1,
+                        hyperlink: None,
                     })
                 })
                 .collect(),
@@ -240,4 +254,19 @@ mod wire_tests {
         updates.close();
         assert_eq!(thread.join().unwrap(), -1);
     }
+    #[test]
+    fn hyperlink_only_changes_emit_a_sparse_row_delta_and_removal() {
+        let mut first=frame();
+        for c in &mut first.cells[..3] {c.hyperlink=Some("https://example.com/one".into());}
+        let mut state=Shared {revision:1,json:"{}".into(),pending_previews:BTreeMap::new(),frame:Some(Arc::new(first)),key:"a".into(),wire:WireBase::default()};
+        let full=encode(&mut state,0);assert_eq!(&full[..4],b"RXT3");
+        assert_eq!(full.windows(b"https://example.com/one".len()).filter(|w|*w==b"https://example.com/one").count(),1);
+        let mut next=frame();for c in &mut next.cells[..3] {c.hyperlink=Some("https://example.com/two".into());}
+        state.frame=Some(Arc::new(next));state.revision=2;
+        let delta=encode(&mut state,1);assert_eq!(delta[16],2);assert!(delta.len()<full.len()/20);
+        assert!(delta.ends_with(b"https://example.com/two"));
+        state.frame=Some(Arc::new(frame()));state.revision=3;
+        let removed=encode(&mut state,2);assert_eq!(removed[16],2);assert!(removed.ends_with(&[0,0]));
+    }
+
 }

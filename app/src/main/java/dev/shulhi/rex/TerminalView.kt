@@ -160,14 +160,14 @@ class TerminalView(context: Context) : View(context) {
                 val picture=Picture()
                 val target=picture.beginRecording(width,bottom.toInt().coerceAtLeast(1))
                 val rawLinks=TerminalLinks.row(cells,y,frame.columns)
-                val links=rawLinks.filterNot {it.end>=frame.columns && continues}
+                val links=rawLinks.filterNot {!it.explicit && it.end>=frame.columns && continues}
                 drawRow(target,cells,visibleColumns,top,bottom)
                 target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
                 backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
                 for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
                     insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
                 target.restore()
-                picture.endRecording();row=RecordedRow(cells,picture,links,continues,rawLinks.any {it.end>=frame.columns});recorded[y]=row;recordedRowCount++
+                picture.endRecording();row=RecordedRow(cells,picture,links,continues,rawLinks.any {!it.explicit && it.end>=frame.columns});recorded[y]=row;recordedRowCount++
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
             canvas.drawPicture(row.picture);canvas.restore()
@@ -301,7 +301,7 @@ class TerminalView(context: Context) : View(context) {
         // Row-wrap flags are not yet exported. Never launch an apparent URL
         // prefix at a full row boundary when the next row could continue it.
         return TerminalLinks.row(cells,row,frame.columns).filterNot {
-            it.end>=frame.columns && continuesInNextRow(frame,row)
+            !it.explicit && it.end>=frame.columns && continuesInNextRow(frame,row)
         }
     }
     private fun linkAt(x: Float,y: Float): TerminalLink? {

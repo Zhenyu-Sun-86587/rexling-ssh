@@ -33,4 +33,13 @@ class TerminalLinksTest {
         assertEquals("https://example.com",link.url)
         assertFalse(link.contains(90))
     }
+    @Test fun osc8LabelsUseStoredDestinationAndOverrideVisibleUrlText() {
+        val row=cells("https://shown.example").map {it.copy(hyperlink="https://actual.example/docs")}
+        val link=TerminalLinks.row(row,0,100).single()
+        assertEquals("https://actual.example/docs",link.url);assertTrue(link.explicit)
+        assertEquals(0,link.start);assertEquals(row.size,link.end)
+        assertTrue(TerminalLinks.row(row.map {it.copy(hyperlink="javascript:alert(1)")},0,100).isEmpty())
+        assertTrue(TerminalLinks.row(row.map {it.copy(attributes=16)},0,100).isEmpty())
+    }
+
 }

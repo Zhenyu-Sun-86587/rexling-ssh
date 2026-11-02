@@ -78,4 +78,16 @@ class TerminalLinksInteractionTest {
         }
     }
 
+    @Test fun osc8LabelAtWrappedRowBoundaryOpensStoredTargetInsteadOfVisibleText() {
+        val opened=mutableListOf<String>();var activated=false
+        instrumentation.runOnMainSync {
+            val label="https://shown.example"
+            val first=label.mapIndexed {i,c->TerminalCell(i,0,c.toString(),-1,0,0,1,"https://actual.example/docs")}
+            val frame=TerminalScreen(label.length,2,null,null,-1,0,first+TerminalCell(0,1,"x",-1,0,0,1))
+            val view=TerminalView(instrumentation.targetContext).apply {screen=frame;onOpenLink={opened+=it};onActivate={activated=true};layout(0,0,1800,400)}
+            event(view,MotionEvent.ACTION_DOWN,5f,5f,0);event(view,MotionEvent.ACTION_UP,5f,5f,30)
+        }
+        assertEquals(listOf("https://actual.example/docs"),opened);assertFalse(activated)
+    }
+
 }

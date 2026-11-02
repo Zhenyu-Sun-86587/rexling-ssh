@@ -11,7 +11,7 @@ use std::{
 
 type ApcFn = unsafe extern "C" fn(*mut c_void, *const u8, usize);
 type CellFn =
-    unsafe extern "C" fn(*mut c_void, u16, u16, *const u32, usize, *const u8, *const u8, u32, u8);
+    unsafe extern "C" fn(*mut c_void, u16, u16, *const u32, usize, *const u8, *const u8, u32, u8, *const u8, usize);
 #[repr(C)]
 #[derive(Default)]
 struct RawFrame {
@@ -69,6 +69,7 @@ pub struct Cell {
     pub background: [u8; 3],
     pub attributes: u32,
     pub width: u8,
+    pub hyperlink: Option<String>,
 }
 #[derive(Debug)]
 pub struct Frame {
@@ -281,6 +282,8 @@ impl Terminal {
             bg: *const u8,
             attributes: u32,
             width: u8,
+            uri: *const u8,
+            uri_len: usize,
         ) {
             let points = if len == 0 {
                 &[]
@@ -304,6 +307,7 @@ impl Terminal {
                     background,
                     attributes,
                     width,
+                    hyperlink: if uri_len==0 {None} else {Some(String::from_utf8_lossy(std::slice::from_raw_parts(uri,uri_len)).into_owned())},
                 });
             }
         }
@@ -598,6 +602,24 @@ mod tests {
         let snapshot=terminal.encode().unwrap();let (mut restored,_)=Terminal::decode(&snapshot).unwrap();
         assert_eq!(restored.frame().unwrap().input_flags&7,3);
         restored.write(b"\x1b[?1000l\x1b[?1007h").unwrap();assert_eq!(restored.input_flags().unwrap()&7,6);
+    }
+
+    #[test]
+    fn osc8_destinations_survive_wrapping_snapshot_and_metadata_only_replacement() {
+        let mut terminal=Terminal::new(8,5).unwrap();
+        terminal.write(b"\x1b]8;id=docs;https://example.com/one\x1b\\Open docs now\x1b]8;;\x1b\\!").unwrap();
+        let first=terminal.frame().unwrap();
+        let linked: Vec<_>=first.cells.iter().filter(|c|c.hyperlink.is_some()).collect();
+        assert!(linked.len()>=12);assert!(linked.iter().any(|c|c.y>0));
+        assert!(linked.iter().all(|c|c.hyperlink.as_deref()==Some("https://example.com/one")));
+        assert!(first.cells.iter().any(|c|c.text=="!" && c.hyperlink.is_none()));
+        let snapshot=terminal.encode().unwrap();let (mut restored,_)=Terminal::decode(&snapshot).unwrap();
+        assert_eq!(first.cells,restored.frame().unwrap().cells);
+        restored.write(b"\x1b[H\x1b]8;;https://example.com/two\x07Open\x1b]8;;\x07").unwrap();
+        let next=restored.frame().unwrap();
+        assert_eq!(next.cells[0].text,first.cells[0].text);
+        assert_eq!(next.cells[0].hyperlink.as_deref(),Some("https://example.com/two"));
+        assert_ne!(next.cells[0],first.cells[0]);
     }
 
 }

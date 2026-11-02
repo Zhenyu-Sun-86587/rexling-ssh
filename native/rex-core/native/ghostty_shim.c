@@ -5,7 +5,7 @@
 
 typedef void (*ApcFn)(void *, const uint8_t *, size_t);
 typedef void (*CellFn)(void *, uint16_t, uint16_t, const uint32_t *, size_t,
-                       const uint8_t *, const uint8_t *, uint32_t, uint8_t);
+                       const uint8_t *, const uint8_t *, uint32_t, uint8_t, const uint8_t *, size_t);
 typedef struct {
   uint16_t columns, rows, cursor_x, cursor_y;
   uint8_t cursor_visible, foreground[3], background[3];
@@ -206,6 +206,7 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
   GET(GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR,&t->rows);
   uint16_t y=0;
   uint32_t *graphemes=NULL; size_t capacity=0;
+  uint8_t *uri=NULL; size_t uri_capacity=0;
   while (ghostty_render_state_row_iterator_next(t->rows)) {
     r=ghostty_render_state_row_get(t->rows,GHOSTTY_RENDER_STATE_ROW_DATA_CELLS,&t->cells);
     if(r!=0)break;
@@ -246,12 +247,28 @@ int rp_frame(RpTerminal *t, RpFrame *frame, CellFn callback, void *userdata) {
       }
       uint8_t width=wide==GHOSTTY_CELL_WIDE_WIDE ? 2 :
           (wide==GHOSTTY_CELL_WIDE_SPACER_TAIL || wide==GHOSTTY_CELL_WIDE_SPACER_HEAD ? 0 : 1);
-      callback(userdata,x++,y,graphemes,count,(const uint8_t *)&fg,(const uint8_t *)&bg,flags,width);
+      size_t uri_len=0; bool has_link=false;
+      r=ghostty_cell_get(raw,GHOSTTY_CELL_DATA_HAS_HYPERLINK,&has_link);if(r!=0)goto done;
+      if(has_link && width>0) {
+        GhosttyGridRef ref=GHOSTTY_INIT_SIZED(GhosttyGridRef);
+        GhosttyPoint point={.tag=GHOSTTY_POINT_TAG_VIEWPORT,.value.coordinate={.x=x,.y=y}};
+        r=ghostty_terminal_grid_ref(t->terminal,point,&ref);if(r!=0)goto done;
+        r=ghostty_grid_ref_hyperlink_uri(&ref,uri,uri_capacity,&uri_len);
+        if(r==GHOSTTY_OUT_OF_SPACE && uri_len<=65536) {
+          uint8_t *next=realloc(uri,uri_len);
+          if(!next) {r=GHOSTTY_OUT_OF_MEMORY;goto done;}
+          uri=next;uri_capacity=uri_len;
+          r=ghostty_grid_ref_hyperlink_uri(&ref,uri,uri_capacity,&uri_len);
+        }
+        if(uri_len>65536) {uri_len=0;r=0;}
+        if(r!=0)goto done;
+      }
+      callback(userdata,x++,y,graphemes,count,(const uint8_t *)&fg,(const uint8_t *)&bg,flags,width,uri,uri_len);
     }
     y++;
   }
 done:
-  free(graphemes);
+  free(graphemes);free(uri);
   if(r==0)r=ghostty_render_state_clean(t->render);
   return r;
 }

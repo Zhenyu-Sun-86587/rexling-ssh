@@ -1359,7 +1359,8 @@ fn frame_value(frame: &Frame) -> Value {
                 rgb(c.foreground),
                 rgb(c.background),
                 c.attributes,
-                c.width
+                c.width,
+                c.hyperlink
             ])
         })
         .collect();
@@ -2145,6 +2146,33 @@ while True:
             let state:Value=serde_json::from_str(&app.poll(0).unwrap()).unwrap();assert!(text(&state).contains("SCROLL_POSITION:-1"));
         }));
         runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_osc8_destinations_survive_snapshot_live_updates_and_resume() {
+        let server=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let script=r#"stty -echo; printf '\033]8;;https://example.com/snapshot\007Docs\033]8;;\007 OSC8_READY\n'; while IFS= read -r line; do if [ "$line" = clear ]; then printf '\033[HDocs\nLINKS_CLEARED\n'; else printf '\033[H\033]8;;https://example.com/live\007Docs\033]8;;\007\n'; fi; done"#;
+        let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rex-android-osc8-test-{}",std::process::id()),"initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c",script]}}}}]}))).unwrap();
+        let id=created["session_id"].as_str().unwrap();
+        let block=created["initial_windows"][0]["block_ids"][0].as_str().unwrap();
+        runtime.block_on(writer.attach(id)).unwrap();
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":id})).unwrap();wait(&app,|v|v["selectedSession"]==id);
+            app.command(json!({"type":"block","id":block})).unwrap();
+            let has=|v:&Value,url:&str|v["screen"]["cells"].as_array().is_some_and(|cells|cells.iter().any(|c|c[7].as_str()==Some(url)));
+            wait(&app,|v|has(v,"https://example.com/snapshot"));
+            app.command(json!({"type":"take"})).unwrap();wait(&app,|v|v["controlled"]==true);
+            app.command(json!({"type":"input","text":"go\n"})).unwrap();wait(&app,|v|has(v,"https://example.com/live"));
+            app.command(json!({"type":"pause"})).unwrap();wait(&app,|v|v["phase"]=="paused");
+            app.command(json!({"type":"resume"})).unwrap();wait(&app,|v|v["phase"]=="connected" && has(v,"https://example.com/live"));
+            app.command(json!({"type":"take"})).unwrap();wait(&app,|v|v["controlled"]==true);
+            app.command(json!({"type":"input","text":"clear\n"})).unwrap();wait(&app,|v|text(v).contains("LINKS_CLEARED") && !has(v,"https://example.com/live"));
+        }));
+        runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
 }

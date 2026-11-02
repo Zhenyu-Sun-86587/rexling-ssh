@@ -2,7 +2,7 @@ package dev.shulhi.rex
 
 import java.net.URI
 
-internal data class TerminalLink(val row: Int,val start: Int,val end: Int,val url: String) {
+internal data class TerminalLink(val row: Int,val start: Int,val end: Int,val url: String,val explicit: Boolean=false) {
     fun contains(column: Int)=column>=start && column<end
 }
 
@@ -15,6 +15,15 @@ internal object TerminalLinks {
         return normalized.takeIf {(uri.scheme.equals("https",true) || uri.scheme.equals("http",true)) && !uri.host.isNullOrBlank()}
     }
     fun row(cells: List<TerminalCell>,row: Int,columns: Int): List<TerminalLink> {
+        val explicit=ArrayList<TerminalLink>()
+        for(cell in cells.sortedBy {it.x}) {
+            if(cell.width<=0 || cell.x<0 || cell.x>=columns || cell.attributes and 16!=0) continue
+            val uri=cell.hyperlink?.let(::webUrl) ?: continue
+            val previous=explicit.lastOrNull()
+            if(previous!=null && previous.end==cell.x && previous.url==uri)
+                explicit[explicit.lastIndex]=previous.copy(end=(cell.x+cell.width).coerceAtMost(columns))
+            else explicit.add(TerminalLink(row,cell.x,(cell.x+cell.width).coerceAtMost(columns),uri,true))
+        }
         val text=StringBuilder();val starts=ArrayList<Int>();val ends=ArrayList<Int>();var column=0
         fun append(value: String,start: Int,end: Int) {
             text.append(value);repeat(value.length) {starts.add(start);ends.add(end)}
@@ -22,10 +31,10 @@ internal object TerminalLinks {
         for(cell in cells.sortedBy {it.x}) {
             if(cell.width<=0 || cell.x<column || cell.x>=columns) continue
             while(column<cell.x) {append(" ",column,column+1);column++}
-            append(if(cell.attributes and 16!=0) " " else cell.text.ifEmpty {" "},cell.x,(cell.x+cell.width).coerceAtMost(columns))
+            append(if(cell.attributes and 16!=0 || cell.hyperlink!=null) " " else cell.text.ifEmpty {" "},cell.x,(cell.x+cell.width).coerceAtMost(columns))
             column=cell.x+cell.width
         }
-        return candidate.findAll(text).mapNotNull {match->
+        val inferred=candidate.findAll(text).mapNotNull {match->
             var value=match.value
             while(value.isNotEmpty()) {
                 val last=value.last()
@@ -35,5 +44,6 @@ internal object TerminalLinks {
             val url=webUrl(value) ?: return@mapNotNull null
             TerminalLink(row,starts[match.range.first],ends[match.range.first+value.length-1],url)
         }.toList()
+        return (explicit+inferred).sortedBy {it.start}
     }
 }
