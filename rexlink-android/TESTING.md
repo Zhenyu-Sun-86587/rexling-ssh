@@ -49,3 +49,17 @@ Use a dedicated emulator. The nine checks cover both wrap directions, two-item
 rings without duplicate navigation, catalog changes, single/empty lists, correct
 pane indicator identity during handoff, and cancellation at a wrap boundary.
 The header test also writes cache/loop-header.png for visual review of the stack.
+
+
+Opt-in host allocation check (from the monorepo root):
+
+```sh
+REXLINK_RENDER_BENCHMARK=1 REXLINK_RENDER_BENCHMARK_OUTPUT=/tmp/rexlink-render-benchmark.json \
+  ./rexlink-android/scripts/gradle.sh :app:testDebugUnitTest \
+  --tests dev.shulhi.rex.RenderWorkBenchmarkTest --rerun-tasks --no-daemon
+```
+
+This uses ThreadMXBean on the build JDK and includes test-loop overhead. It is
+an allocation/work check, not a phone latency or frame-pacing benchmark. Normal
+unit runs skip it. Device fade/gesture/link/cache regressions include
+PaneCompositingTest, PaneChromeTest, TerminalLinksTest and PaneFramesTest.

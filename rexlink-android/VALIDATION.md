@@ -1165,3 +1165,55 @@ performance comparison is claimed. Native and transport logic are unchanged.
 
 The release is installed on S22+; its base APK matches the shareable dist APK:
 `2057ac9d6c44523ae43cd0e899d6f23cd8c86280a4df3e95e6cb0c45a777ae66`. The APK grew by about 0.54 MB compressed.
+
+
+## Separate rendering optimizations (2026-11-02)
+
+Measured three changes separately: a logical-line URL-prefix precheck that avoids
+inferred-link character maps on plain text, reuse of unchanged preview maps, and
+a backdrop scrim replacing group-alpha pane fading. Wrapped/uppercase prefixes,
+hidden/gapped text and OSC 8 labels remain correct. Preview insertion order,
+leaving-frame precedence and the sixteen-frame limit are preserved. GPU tests
+compare overlapping interior text/background pixels against the original fade
+in both themes. A shared motion counter separates gesture frames in every build.
+
+All 88 normal JVM checks pass (one opt-in benchmark skipped), as do all 82
+non-fixture emulator UI checks, debug/release builds and release lint. Five
+isolated host benchmark runs and seven physical S22+ traces were collected.
+Each phone version warmed with output for five seconds, then used the same
+20-second disposable two-pane repaint/URL/OSC 8/swipe workload. Baseline and
+combined versions were repeated to expose drift. No trace loss/error/overwrite
+counters were reported. The expected app frame budget remained 8.33 ms.
+
+| Phone measurement, mean | Baseline / repeat | Isolated relevant change | Combined / repeat |
+| --- | ---: | ---: | ---: |
+| Link-index work | 1.315 / 1.322 ms | 0.777 ms | 0.765 / 0.756 ms |
+| Preview-cache work | 0.060 / 0.058 ms | 0.033 ms | 0.035 / 0.037 ms |
+| Terminal drawing | 3.144 / 3.262 ms | links: 2.804 ms | 2.718 / 2.799 ms |
+| Whole-frame work | 13.137 / 13.353 ms | varies | 12.532 / 13.333 ms |
+
+The repeatable gains are about 42% less link-index time and 14% less terminal
+draw time. Link work is nested in draw time; these are not additive. Host
+allocation measurements went from about 121 KB to 6 KB per changed 30x80
+linkless screen, and about 875 to 16 bytes per unchanged sixteen-entry cache
+call, including test-loop overhead. Host timings varied between JVMs and are
+not phone latency measurements.
+
+The isolated scrim run did not establish a reliable swipe-time gain. Gesture
+p95 was 17.50/17.90 ms for baseline, 17.22 ms for scrim alone, and 14.99/18.49 ms
+combined. Overall GFX jank also stayed within run variation. The scrim is kept
+for avoiding group-alpha compositing with compatible visuals, without claiming
+measured GPU-memory, battery or pacing gains. These short sequential stress
+runs do not establish ordinary typing or native/key-to-pixel improvements.
+Refresh-rate policy, native snapshot cap, transport and ordered input remain
+unchanged. Separate live server fixtures were not rerun for this UI-only pass.
+
+The combined release is installed on S22+; installed base APK and shareable
+`dist/Rexlink-0.1.0-arm64-release.apk` match SHA-256
+`c96de12d3c3fc843ed5a4cbf72db5b38ae35546b80864eee8a585898ba6d225c`.
+Signature, non-debuggable status, ART profiles and 16 KiB alignment pass. The
+original Ubuntu session/control/keyboard mode was restored, only the disposable
+session destroyed, and temporary phone traces removed. Private raw traces and
+variant artifacts remain in ignored `.build/render-pass/`.
+
+Full results: [s22plus-render-first-pass-2026-11-02.json](validation/s22plus-render-first-pass-2026-11-02.json).
