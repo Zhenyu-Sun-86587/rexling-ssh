@@ -608,3 +608,12 @@ The targeted owned-server OSC 8 test passes on Linux and Mac: create a disposabl
 All 28 emulator checks pass. These cover OSC 8 target precedence at a row boundary; existing URL, copy, scroll, render-cache and pane tests; and pixel-identical keyboard appearance through navigation's disabled state while input remains blocked. The smaller pointer keeps its accessible take/release action and tooltip. Debug/release builds, release lint, signature, non-debuggable setting, native alignment and ART-profile checks pass.
 
 Shareable release SHA256: `fd7fb1a89fef60f55caa75daf3eca5421b41b631d42dee9c748919302ec8f62e`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; settings preserved.
+
+
+## Wrapped links, link actions and hold-Ctrl popup — 2026-11-02
+
+56 JVM tests and 23 non-live native tests pass; Clippy with warnings denied passes. Added native coverage confirms soft-wrap and continuation flags distinguish hard newlines and survive snapshots. Logical-link tests verify multi-row URLs/hit ranges, incomplete-fragment rejection and changed-tail invalidation of unchanged prefix rows. Shortcut tests verify the eight emitted control bytes. Existing live snapshot/stream/resume checks pass on both owned Linux and Mac servers; disposable fixtures were removed.
+
+All 37 emulator checks pass, including real hold/slide/release selection across the popup window, outside cancellation, short Ctrl toggle and read-only guards. Link-menu checks copy the actual destination through Android's clipboard (restoring prior clipboard contents), capture Open and Sharesheet intents, preserve frozen destinations through output changes and keep ordinary text selection. No messages were sent and no external browser page was opened by tests. Wrapped continuation taps open the complete URI. Existing keyboard/pane pixel stability, selection, rendering-cache and performance checks pass.
+
+Debug/release builds, release lint, signature, non-debuggable, native alignment and ART-profile checks pass. Updated shareable release SHA256: `0f3d4bf23105661f360df058da2657d83b12d63f8c7b91cdc72457fbe1d401e5`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; existing settings preserved.

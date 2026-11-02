@@ -439,7 +439,7 @@ Web URL detection is local presentation logic; no new Rex method or server confi
 
 A deliberate tap opens an HTTP(S) ACTION_VIEW/BROWSABLE intent; pointer-down and pointer-up must still identify the same link. Scrolling, swipes, cancellation and selection never launch it. Browser launch does not acquire terminal ownership or write input, and missing handlers are handled locally. [Android intent reference](https://developer.android.com/training/basics/intents/sending).
 
-The Android cell snapshot has no soft-wrap flags. Printed-URL detection remains limited to one physical row and conservatively rejects possible wrapped prefixes. OSC 8 destinations are now exported explicitly as described below; their labels can span rows. Localhost is not rewritten.
+Printed URLs now join only across confirmed soft wraps, using row metadata described below. OSC 8 destinations are exported explicitly and their labels can span rows. Localhost is not rewritten.
 
 
 ## OSC 8 metadata and RXT3
@@ -448,4 +448,15 @@ The pinned public Ghostty C API exposes GHOSTTY_CELL_DATA_HAS_HYPERLINK and ghos
 
 Local JNI packets now use RXT3. Its header, input flags and cell records match RXT2. Each changed row appends u16 link-range count followed by sorted, non-overlapping ranges: u16 start column, u16 exclusive end, u32 UTF-8 length and URI bytes. Adjacent cells sharing one URI coalesce. Plain rows cost two extra bytes. Android still accepts RXT1/RXT2. Full frames and row deltas both carry ranges; zero ranges removes old links. JSON preview cells append an optional eighth URI element.
 
-Explicit OSC 8 destinations take precedence over visible URL-shaped labels; automatic matching is masked inside explicit links. Only HTTP(S) targets are opened. Known OSC 8 targets remain usable when labels wrap across rows, unlike guessed printed-URL continuations. Long-press continues selecting the label text. Snapshot, streaming, destination-only replacement/removal and resume were verified on both owned servers.
+Explicit OSC 8 destinations take precedence over visible URL-shaped labels; automatic matching is masked inside explicit links. Only HTTP(S) targets are opened. Known OSC 8 targets remain usable when labels wrap across rows. Printed URL continuations use explicit row flags instead of guesses. Long-press continues selecting the label text. Snapshot, streaming, destination-only replacement/removal and resume were verified on both owned servers.
+
+
+## Wrapped printed URLs and local link actions
+
+The public Ghostty render-row RAW value exposes GHOSTTY_ROW_DATA_WRAP and WRAP_CONTINUATION. The C shim adds client-local attributes bits 27 (wraps into next row), 28 (continuation of preceding row) and 29 (row metadata present) to each row's cells. These sit above palette-index bits 0–26, use the existing RXT3 u32 attributes field and naturally participate in row-delta comparison. Snapshot restoration preserves them. No Rex wire format or server setting changes.
+
+Android joins adjacent rows only when both the preceding wrap and following continuation flags are present. It maps the full detected destination back to separate physical hit/underline ranges. A logical-line cache tracks all its source rows, so replacing a wrapped tail updates unchanged prefix hit ranges. Hard newlines remain separate. Incomplete viewport fragments are not guessed; older packets retain conservative single-row matching. Explicit OSC 8 links still take precedence.
+
+Long press freezes both text and link target. The native floating selection toolbar adds Open link, Copy link address and Share link while retaining Copy/Select all. Copy address uses the clipboard; Share creates an Android ACTION_SEND/text/plain chooser containing only the URL. Merely opening the chooser sends nothing. Actions do not take ownership or type terminal input.
+
+Hold-Ctrl shortcuts are local UI controls. A short tap keeps one-shot Ctrl behavior. A long press displays eight labels without descriptions; moving highlights a choice and release sends exactly its control byte, guarded by current ownership/navigation state. Outside release/cancellation sends nothing. No descriptions or automatic shortcut execution are inferred from terminal content.
