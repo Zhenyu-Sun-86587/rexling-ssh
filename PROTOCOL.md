@@ -431,3 +431,12 @@ Commands bind the selected session and explicit target. Tab confirmation also bi
 Shift+arrows, Home/End, editing and function keys use xterm modifier parameters (1 + Shift + 2*Alt + 4*Ctrl); Shift+Tab sends CSI Z. Printable Shift applies ordinary ASCII case/symbol mapping. Reference: [xterm PC-style function keys](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-PC-Style-Function-Keys).
 
 Shift can latch for one key or remain held for multiple keys. Cancellation, pane/session departure, hiding a server, loss of control and pause clear it. A late finger-up cannot relatch cleared Shift. The shared navigation strip scrolls independently; scrolling and cancellation send no key. Hardware named keys also carry modifier parameters.
+
+
+## Visible web links in the Android renderer
+
+Web URL detection is local presentation logic; no new Rex method or server configuration is involved. Visible HTTP(S) and www-prefixed URLs are mapped from UTF-16 text back to terminal cell ranges, excluding wide-character spacers, hidden text and surrounding punctuation. Row-record caches retain underline/link ranges and track adjacent-row continuation changes only for boundary links.
+
+A deliberate tap opens an HTTP(S) ACTION_VIEW/BROWSABLE intent; pointer-down and pointer-up must still identify the same link. Scrolling, swipes, cancellation and selection never launch it. Browser launch does not acquire terminal ownership or write input, and missing handlers are handled locally. [Android intent reference](https://developer.android.com/training/basics/intents/sending).
+
+The Android cell snapshot currently has no soft-wrap flags or OSC 8 destinations. This implementation detects visible URLs within one physical row and conservatively rejects possible wrapped prefixes at full-row boundaries. It does not guess adjacent-row concatenation, rewrite localhost or extract hidden hyperlink destinations.

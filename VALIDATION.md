@@ -588,3 +588,12 @@ The swipe badge retains the target pane through settling and the timed display; 
 Two manual-clock emulator tests pass: sampling 22 frames across the handoff verifies continuous visibility and target identity, and a cancelled gesture stays dismissed after settling and the old timeout. A third test verifies take/release action semantics, selected state and the long-press label on the pointer-only ownership toggle. The intermediate cached-index variant failed a handoff assertion and was corrected before delivery. No eye icon is used for ownership.
 
 All 44 JVM tests, debug/release builds and release lint pass; APK checks pass. Updated shareable artifact SHA256: `7e29850bb61ee16cc9826022faa646be72733fb89d90d1d4cc012ee27ed5c19f`. Installed on S22+ RFCT21390SD with matching installed base APK hash; settings preserved.
+
+
+## Tappable visible web URLs — 2026-11-02
+
+49 JVM tests pass, including URLs with paths/queries/fragments, localhost/private IP/IPv6, Unicode paths and wide-cell prefixes, punctuation trimming, missing hosts, disallowed schemes, hidden text and sparse rows. Seventeen emulator checks pass: five URL interactions plus existing terminal selection/scrolling, background/cursor/cache and rendering performance tests. Browser intents were captured by a ContextWrapper; tests did not browse external pages.
+
+URL taps send ACTION_VIEW with BROWSABLE and the exact detected URL, with no activation/input. Tests cover swiping, cancellation, long-press copy, output changing between down/up, padding, ordinary taps, and rejecting possible wrapped prefixes while adjacent-row state changes. Debug/release builds, release lint and static APK checks pass.
+
+Shareable release SHA256: `63a0d0bc907ef78d41c7902e109ed8d9c065c033cf4d5b1b31ffb6ec86bba61c`. Installed on S22+ RFCT21390SD and verified by installed base APK hash; settings preserved.
