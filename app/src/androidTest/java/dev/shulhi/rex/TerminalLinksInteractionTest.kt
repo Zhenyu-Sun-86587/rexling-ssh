@@ -90,4 +90,18 @@ class TerminalLinksInteractionTest {
         assertEquals(listOf("https://actual.example/docs"),opened);assertFalse(activated)
     }
 
+    @Test fun tappingAWrappedUrlContinuationOpensTheWholeAddress() {
+        val opened=mutableListOf<String>()
+        instrumentation.runOnMainSync {
+            val text="https://example.com/a/long/path?q=one&next=two";val columns=12;val rows=(text.length+columns-1)/columns
+            val cells=text.mapIndexed {i,c->val row=i/columns;TerminalCell(i%columns,row,c.toString(),-1,0,
+                TerminalLinks.ROW_METADATA or (if(row<rows-1) TerminalLinks.WRAP else 0) or (if(row>0) TerminalLinks.CONTINUATION else 0),1)}
+            val metrics=TerminalFonts(instrumentation.targetContext).configure(android.graphics.Paint(),10f)
+            val view=TerminalView(instrumentation.targetContext).apply {screen=TerminalScreen(columns,rows,null,null,-1,0,cells);onOpenLink={opened+=it};layout(0,0,1800,1000)}
+            val x=metrics.cellWidth*2.5f;val y=metrics.cellHeight*1.5f
+            event(view,MotionEvent.ACTION_DOWN,x,y,0);event(view,MotionEvent.ACTION_UP,x,y,30)
+            assertEquals(listOf(text),opened)
+        }
+    }
+
 }

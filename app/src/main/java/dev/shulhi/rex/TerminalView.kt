@@ -29,15 +29,19 @@ import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.math.max
 
+internal enum class TerminalLinkAction { OPEN, COPY_ADDRESS, SHARE }
+
 class TerminalView(context: Context) : View(context) {
     var interactive = true
         set(value) {if(field!=value) {field=value;if(!value) clearSelection()}}
     private var selection: TerminalSelection?=null
     private var selectionMode: ActionMode?=null
+    private var selectionLink: TerminalLink?=null
     private var selectionTouch=false
     private var moveSelectionAnchor=false
     private var pressedLink: TerminalLink?=null
     internal var onOpenLink: (String)->Unit={openWebLink(it)}
+    internal var onShareLink: (String)->Unit={shareWebLink(it)}
     private var pressX=0f
     private var pressY=0f
     private val longPress=Runnable {performLongClick()}
@@ -79,7 +83,8 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
     private val fonts = TerminalFonts(context)
-    private data class RecordedRow(val cells: List<TerminalCell>,val picture: Picture,val links: List<TerminalLink>,val continues: Boolean,val boundary: Boolean)
+    private data class RecordedRow(val cells: List<TerminalCell>,val picture: Picture,val links: List<TerminalLink>)
+    private val linkIndex=TerminalLinks.Index()
     private var recorded= arrayOfNulls<RecordedRow>(0)
     private var rowGeometry=""
     private val advances=object: LinkedHashMap<Pair<Int,String>,Float>(256,.75f,true) {
@@ -149,25 +154,24 @@ class TerminalView(context: Context) : View(context) {
         android.os.Trace.beginSection("Rexlet.drawTerminal")
         val geometry="$width:$height:${frame.columns}:$visibleColumns:$visibleRows:$insetHorizontal:$insetTop:$insetBottom"
         if(geometry!=rowGeometry) {recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
+        val rowLinks=linkIndex.update(frame)
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
             var row=recorded[y]
-            val continues=continuesInNextRow(frame,y)
-            if(row==null || row.cells!=cells || (row.boundary && row.continues!=continues)) {
+            val links=rowLinks[y]
+            if(row==null || row.cells!=cells || row.links!=links) {
                 val origin=if(y==0) 0f else insetTop+y*cellHeight
                 val top=if(y==0) insetTop else 0f
                 val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
                 val picture=Picture()
                 val target=picture.beginRecording(width,bottom.toInt().coerceAtLeast(1))
-                val rawLinks=TerminalLinks.row(cells,y,frame.columns)
-                val links=rawLinks.filterNot {!it.explicit && it.end>=frame.columns && continues}
                 drawRow(target,cells,visibleColumns,top,bottom)
                 target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
                 backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
                 for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
                     insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
                 target.restore()
-                picture.endRecording();row=RecordedRow(cells,picture,links,continues,rawLinks.any {!it.explicit && it.end>=frame.columns});recorded[y]=row;recordedRowCount++
+                picture.endRecording();row=RecordedRow(cells,picture,links);recorded[y]=row;recordedRowCount++
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
             canvas.drawPicture(row.picture);canvas.restore()
@@ -294,22 +298,11 @@ class TerminalView(context: Context) : View(context) {
         requestFocus()
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(this, 0)
     }
-    private fun continuesInNextRow(frame: TerminalScreen,row: Int): Boolean =
-        frame.lines.getOrNull(row+1)?.firstOrNull {it.width>0 && it.x==0}?.text?.any {c->!c.isWhitespace()}==true
-    private fun linksForRow(frame: TerminalScreen,row: Int): List<TerminalLink> {
-        val cells=frame.lines.getOrNull(row) ?: return emptyList()
-        // Row-wrap flags are not yet exported. Never launch an apparent URL
-        // prefix at a full row boundary when the next row could continue it.
-        return TerminalLinks.row(cells,row,frame.columns).filterNot {
-            !it.explicit && it.end>=frame.columns && continuesInNextRow(frame,row)
-        }
-    }
     private fun linkAt(x: Float,y: Float): TerminalLink? {
         val frame=screen ?: return null
         if(x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom) return null
         val column=((x-insetHorizontal)/cellWidth).toInt();val row=((y-insetTop)/cellHeight).toInt()
-        val cells=frame.lines.getOrNull(row) ?: return null
-        val links=recorded.getOrNull(row)?.takeIf {it.cells==cells && (!it.boundary || it.continues==continuesInNextRow(frame,row))}?.links ?: linksForRow(frame,row)
+        val links=linkIndex.update(frame).getOrNull(row) ?: return null
         return links.firstOrNull {it.contains(column)}
     }
     private fun openWebLink(url: String) {
@@ -321,6 +314,23 @@ class TerminalView(context: Context) : View(context) {
         } catch (_: SecurityException) {
             Toast.makeText(context,"Could not open this web link",Toast.LENGTH_SHORT).show()
         }
+    }
+    private fun shareWebLink(url: String) {
+        val safe=TerminalLinks.webUrl(url) ?: return
+        val send=Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,safe)
+        try {context.startActivity(Intent.createChooser(send,"Share link").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
+        catch (_: ActivityNotFoundException) {Toast.makeText(context,"No app can share this link",Toast.LENGTH_SHORT).show()}
+        catch (_: SecurityException) {Toast.makeText(context,"Could not share this link",Toast.LENGTH_SHORT).show()}
+    }
+    internal fun selectedLinkAction(action: TerminalLinkAction): Boolean {
+        val url=selectionLink?.url?.let(TerminalLinks::webUrl) ?: return false
+        when(action) {
+            TerminalLinkAction.OPEN->onOpenLink(url)
+            TerminalLinkAction.COPY_ADDRESS->(context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("Web link",url))
+            TerminalLinkAction.SHARE->onShareLink(url)
+        }
+        clearSelection();return true
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if(!interactive) return false
@@ -370,7 +380,7 @@ class TerminalView(context: Context) : View(context) {
     }
     private fun clearSelection() {
         removeCallbacks(longPress)
-        selection=null;selectionTouch=false
+        selection=null;selectionLink=null;selectionTouch=false
         val mode=selectionMode;selectionMode=null;mode?.finish();invalidate()
     }
     private fun selectionEvent(event: MotionEvent): Boolean {
@@ -391,6 +401,10 @@ class TerminalView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_MOVE -> if(current!=null && event.pointerCount==1) {
                 current.move(((event.x-insetHorizontal)/cellWidth).toInt(),((event.y-insetTop)/cellHeight).toInt(),moveSelectionAnchor)
+                val link=selectionLink
+                if(link!=null && (current.first>TerminalSelection.Point(link.end-1,link.row) || current.last<TerminalSelection.Point(link.start,link.row))) {
+                    selectionLink=null;selectionMode?.invalidate()
+                }
                 selectionMode?.invalidateContentRect();invalidate()
             }
             MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL -> {selectionTouch=false;touchVelocity?.recycle();touchVelocity=null}
@@ -400,6 +414,7 @@ class TerminalView(context: Context) : View(context) {
     override fun performLongClick(): Boolean {
         val frame=screen ?: return false
         if(!interactive) return false
+        selectionLink=linkAt(pressX,pressY)
         pressedLink=null
         removeCallbacks(longPress);paneGesture.cancel();dragging=false;scrolling=false;scrollFling.abortAnimation();onPaneDrag?.invoke(0f,false)
         selection=TerminalSelection(frame,((pressX-insetHorizontal)/cellWidth).toInt(),((pressY-insetTop)/cellHeight).toInt()).also {it.word()}
@@ -409,18 +424,29 @@ class TerminalView(context: Context) : View(context) {
             override fun onCreateActionMode(mode: ActionMode,menu: Menu): Boolean {
                 menu.add(0,android.R.id.copy,0,"Copy").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
                 menu.add(0,android.R.id.selectAll,1,"Select all").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                if(selectionLink!=null) {
+                    menu.add(0,0x524501,2,"Open link").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+                    menu.add(0,0x524502,3,"Copy link address").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                    menu.add(0,0x524503,4,"Share link").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+                }
                 return true
             }
-            override fun onPrepareActionMode(mode: ActionMode,menu: Menu)=false
+            override fun onPrepareActionMode(mode: ActionMode,menu: Menu): Boolean {
+                for(id in listOf(0x524501,0x524502,0x524503)) menu.findItem(id)?.isVisible=selectionLink!=null
+                return true
+            }
             override fun onActionItemClicked(mode: ActionMode,item: MenuItem): Boolean = when(item.itemId) {
                 android.R.id.copy -> {
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Terminal selection",selection?.text().orEmpty()))
                     mode.finish();true
                 }
-                android.R.id.selectAll -> {selection?.all();invalidate();mode.invalidateContentRect();true}
+                android.R.id.selectAll -> {selection?.all();selectionLink=null;invalidate();mode.invalidate();mode.invalidateContentRect();true}
+                0x524501 -> selectedLinkAction(TerminalLinkAction.OPEN)
+                0x524502 -> selectedLinkAction(TerminalLinkAction.COPY_ADDRESS)
+                0x524503 -> selectedLinkAction(TerminalLinkAction.SHARE)
                 else -> false
             }
-            override fun onDestroyActionMode(mode: ActionMode) {if(selectionMode===mode) {selectionMode=null;selection=null;invalidate()}}
+            override fun onDestroyActionMode(mode: ActionMode) {if(selectionMode===mode) {selectionMode=null;selection=null;selectionLink=null;invalidate()}}
             override fun onGetContentRect(mode: ActionMode,view: View,outRect: android.graphics.Rect) {
                 val selected=selection ?: return super.onGetContentRect(mode,view,outRect)
                 outRect.set((insetHorizontal+selected.first.column*cellWidth).toInt(),(insetTop+selected.first.row*cellHeight).toInt(),
