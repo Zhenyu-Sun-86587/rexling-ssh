@@ -1471,3 +1471,29 @@ preserved, and matched the installed base APK hash to the shareable APK. The
 temporary test emulator was stopped. Native Rex transport/rendering code was
 unchanged; no additional performance work was done. See
 `validation/portside-integration-2026-11-03.json` for results and release identity.
+
+
+## Portside host/service addresses and Mac upload settings — 2026-11-03
+
+Diagnosed separate Tailscale device addresses for Rex's embedded service and the
+Mac's OS Tailscale node. The Rex service refused TCP 9417; Portside's actual node
+answered but reported uploads disabled. Preferences now explicitly lists Rex
+connections to associate with upload destinations, shows each Rex endpoint, and
+does not guess the Portside address from it. Bare hostnames/IPs default to 9417;
+explicit URLs keep their transport/port. Connection failures identify the target
+and distinguish DNS, refusal, timeout and TLS failures.
+
+JVM checks: 102 passed and one optional benchmark skipped. Release lint and static
+APK checks pass. Installed build 5 from source 7c81930597 on S22+ with data
+preserved and the installed base APK hash matching the shareable release.
+
+With explicit user approval, added an opt-in upload-folder control and chooser
+to the sibling Portside Mac hosting UI, persisted the optional folder, and passed
+--upload-dir to its bundled Rust helper. Its five hosted-server tests pass under
+the full Xcode SDK, including legacy settings, path validation, real uploaded
+bytes and persisted folder settings. Built the Mac bundle without overwriting
+the running executable. After the user approved relaunch, restored both running
+forwards, enabled ~/PortsideUploads and verified live /v1/info advertises it with
+the 100 MiB limit. Portside's pre-existing staged changes were preserved; our four
+Portside source/doc/test edits remain in that working tree. See
+`validation/portside-address-fix-2026-11-03.json` for results and APK identity.

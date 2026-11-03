@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-03",
+  "change": "Separate Portside host addresses from Rex service addresses and enable Mac hosted uploads",
+  "checks": {
+    "jvm_passed": 102,
+    "optional_benchmark_skipped": 1,
+    "release_lint_passed": true,
+    "static_apk_checks_passed": true,
+    "s22_plus_installed_hash_verified": true,
+    "portside_hosting_xctests_passed": 5,
+    "portside_legacy_config_compatibility_passed": true,
+    "real_hosted_file_bytes_and_settings_persistence_passed": true,
+    "updated_mac_bundle_built_and_relaunched": true,
+    "onping_and_rrof_forwards_restored": true,
+    "live_upload_info_enabled": true
+  },
+  "diagnosis": {
+    "same_physical_mac_separate_tailnet_devices": true,
+    "rex_service_address_portside_connection_refused": true,
+    "mac_node_portside_info_http_200": true,
+    "mac_uploads_previously_disabled": true
+  },
+  "upload_directory": "~/PortsideUploads",
+  "mac_hosting_changes": "Four files updated in the separate Portside checkout; its pre-existing staged work preserved",
+  "release_sha256": "b805d690ffb5fbea6f863cd452b98188d8b456bf3cef9447cea28eed845ee721",
+  "apk": "dist/Rexlink-2026.11.03-build5-7c81930597-arm64-release.apk",
+  "source_revision": "7c81930597",
+  "version_code": 5
+}
