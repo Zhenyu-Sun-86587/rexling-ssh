@@ -1798,3 +1798,294 @@ and static release APK checks passed. Installed release 20 on S22+ RFCT21390SD
 with data preserved; installed APK checksum matches validation/apk.json. Source
 remains based on 918f9265ae with local changes and the existing signing blocker.
 See validation/single-tab-title-2026-11-03.json.
+
+## Neovim floating key shortcuts — 2026-11-03
+
+A floating colon button appears for the current live Neovim pane, independently
+of terminal layout. It opens saved key shortcuts and a customization action.
+Preferences → Keyboard → Neovim shortcuts accepts one shortcut per line, with
+optional names such as LazyGit = <Space>lg. Supported notation includes Escape,
+Enter, Space, Tab, control/alt keys, arrows and F1–F12. Use an actual leader key
+rather than assuming Neovim's mapleader. An empty list hides the button.
+
+Shortcuts first send Ctrl-Backslash, Ctrl-N to reach Normal mode. Default :w,
+:q and related entries fill the command line and open the keyboard without
+Enter; explicit <CR> is available in custom sequences. Modifier state is reset
+before sending the complete sequence. Input selection checks the captured pane
+target, current live program, foreground/connection/control state and pending
+navigation. Menus close when their target or ownership changes. Cached chrome
+metadata never authorizes a shortcut.
+
+Validation: 140 JVM checks passed and one optional benchmark skipped; 19 focused
+Android checks passed covering menu/editor, invalid notation, customization
+persistence, pane transitions and both-theme settings. Release lint, debug and
+optimized release builds, and static APK checks passed. An isolated clean
+headless Neovim process verified the Normal-mode prefix from Insert, Visual and
+Terminal modes, a Space-leader mapping, and no Ex command execution before
+explicit Enter. No user Neovim instance/configuration was modified. Preferences
+preview inspected. Release 21 is built from base 076b1bfeb3 with local changes.
+Phone installation awaits USB reconnection or wireless ADB pairing.
+See validation/neovim-shortcuts-2026-11-03.json and validation/apk.json.
+
+Release 21 subsequently installed on S22+ RFCT21390SD through wireless ADB.
+The supplied address was its connection service; it accepted the existing Mac
+authorization without a new pairing step. Installed APK checksum matches the
+verified artifact. App data preserved, with no automatic app launch or editor
+interaction. The signed source commit attempt still failed in 1Password with
+“failed to fill whole buffer”; no unsigned commit was created.
+
+## Floating shortcut gestures and immediate commands — 2026-11-03
+
+The Neovim shortcut button is now circular with a crisp existing vector Neovim
+icon, 48 dp target, and drag placement within the terminal. Position saves as
+normalized coordinates only at drag end, survives recreation and remains in
+bounds when the keyboard or viewport size changes. Dragging closes the menu
+and does not select a shortcut; outside touches continue to the terminal.
+A preference toggle hides the feature without deleting customized shortcuts.
+
+At the user's updated request, plain colon commands now append Enter and run
+immediately; explicitly encoded Enter is not duplicated. Mapped sequences such
+as <Space>lg retain their exact keys. The input ownership/program/navigation
+guards remain. Top-bar program icon vertical swipes now select next/previous
+sessions once per release, including wrap across connected servers. Existing
+horizontal session strip gestures and fixed header line baselines remain.
+
+Validation: 140 JVM checks passed, one optional benchmark skipped; 26 Android
+checks passed covering drag/tap separation, outside touch forwarding, resize
+bounds, settings/position persistence, menu targeting, vertical and horizontal
+session loops, disabled navigation, header geometry and pane feedback. Debug
+and optimized release builds, release lint and static APK checks passed.
+Installed release 22 over wireless ADB on S22+ RFCT21390SD with app data
+preserved. Installed APK checksum matches validation/apk.json. No automatic
+app launch or live editor interaction was performed. Source is based on
+076b1bfeb3 with local changes. See validation/floating-shortcut-gestures-2026-11-03.json.
+
+## AssistiveTouch-style popup and header icon motion — 2026-11-03
+
+The Neovim button now uses a translucent rounded AssistiveTouch-style enclosure
+and concentric rings, retaining its 48 dp target and saved drag placement. Its
+popup shares the Ctrl menu's compact card/grid treatment: two columns, three
+rows, at most six shortcuts per page, vertical paging, a page counter and a
+customization footer. Fixed page bounds prevent movement as the last page
+contains fewer items. Dark/light colors are explicit; visual QA caught and
+corrected inherited black text in the dark popup before phone installation.
+
+Top-bar program icons follow vertical drags with bounded translation, slight
+fade/scale and a spring return after release/cancellation. Motion is read in a
+small graphics layer, with no idle animation or header/text layout changes.
+Session selection still happens once on release with existing loop behavior.
+
+Validation: 28 focused Android checks passed, including vertical page limits,
+no selection during scrolling, stable page bounds, drag/outside touches, header
+icon movement/cancel return, fixed title bounds, session loops and existing
+pane feedback. The five popup checks passed again after the contrast fix.
+Light/dark menu and button previews inspected. Debug/release builds, release
+lint and static APK verification passed. Installed final release 23 wirelessly
+on S22+ RFCT21390SD, preserving app data; installed APK checksum matches
+validation/apk.json. Source is based on 076b1bfeb3 with local changes. Git signing
+remains blocked by the prior 1Password error; no unsigned commit was created.
+See validation/assistive-shortcuts-2026-11-03.json.
+
+## Arrow popup and Enter key — 2026-11-03
+
+The primary key row now has separate flexible modifier keys, one arrow-menu
+button, Enter, a visible extra-key chevron beside the keyboard icon, and no
+horizontal scrolling. The arrow button opens a compact Ctrl-style popup above
+the bottom dock: Up above Left/Down/Right. The popup stays open for repeated
+taps and stationary holds, using the existing repeat/modifier/input-target
+guards. Target changes and ownership loss close it; moving off a held arrow
+cancels input. Enter sends one carriage return. F1–F12 and other extra keys
+remain available under the relocated chevron.
+
+Validation: 25 focused Android checks passed for the keyboard row, arrow pad
+repeat and Ctrl shortcut modes, including Shift combinations, cancelled input,
+readonly contrast, narrow 320 dp layout, Enter, extra-key expansion, popup
+placement above an unchanged dock, target changes, held repeat and cancellation.
+Light/dark arrow popup and primary-row previews inspected. Debug/release builds,
+release lint and static APK verification passed. Installed release 24 wirelessly
+on S22+ RFCT21390SD with app data preserved; installed APK checksum matches
+validation/apk.json. Source remains based on 076b1bfeb3 with local changes and
+the existing 1Password signing blocker. See validation/arrow-popup-keyboard-2026-11-03.json.
+
+## Persistent arrow popup toggle — 2026-11-03
+
+Outside/back dismissal and the arrow popup BackHandler are removed. Other
+keys or outside taps leave the non-focusable popup open; the main arrow button
+toggles it closed/open. Input-target and ownership resets remain. This also
+avoids outside dismissal resetting state before the trigger's own click.
+
+Fifteen keyboard/repeat Android checks passed. A new regression dispatches
+actual Android MotionEvents using accessibility-reported screen bounds: open
+the popup, tap Escape/Enter outside it while verifying input and persistent
+visibility, then close and reopen with the main arrow button. Existing repeat,
+modifier, readonly, narrow-layout and target-change checks also pass. Debug
+and optimized release builds and static APK verification passed. Installed
+release 25 wirelessly on S22+ RFCT21390SD with data preserved; installed APK
+checksum matches validation/apk.json. Source remains based on 076b1bfeb3 with
+local changes and the existing 1Password signing blocker.
+See validation/sticky-arrow-popup-2026-11-03.json.
+
+
+## Optional Neovim shortcut groups — 2026-11-03
+
+Optional [Group] section headers create subtly shaded group pills in the
+floating shortcut menu. [] returns to ungrouped entries. Group clicks replace
+the current grid without sending terminal input; Back restores the root page.
+There is one group level, with six actions per vertically paged view and at
+most 16 actions total. Menu bounds remain fixed across levels. Existing flat
+saved lists and literal bracket key sequences remain compatible.
+
+Validation: 143 JVM checks passed with one optional skip; 13 focused Android
+checks passed, covering group navigation, paged children, root-page restoration,
+no input on group clicks, legacy lists and grouped preference persistence.
+Light/dark group previews inspected. Debug/release builds, release lint and
+static APK verification passed. Installed release 26 wirelessly on S22+
+RFCT21390SD, preserving app data, and verified installed APK SHA-256 matches
+validation/apk.json. The phone app was not launched. Source remains based on
+076b1bfeb3 with local changes and the existing 1Password signing blocker.
+See validation/neovim-shortcut-groups-2026-11-03.json.
+
+
+## Speech-bubble popups — 2026-11-03
+
+Neovim shortcuts, Ctrl shortcuts and arrows share one rounded speech-bubble
+surface with an integrated pointer, border and shadow. The pointer tracks its
+trigger within screen-edge limits and flips to the top when opening below the
+trigger. Ctrl slide-to-select bounds exclude the decorative pointer. Existing
+menu grouping/paging, hold/double-tap input, arrow repeat and sticky arrow-button
+toggle behavior are preserved.
+
+Thirty distinct focused Android checks passed. The added below-trigger Ctrl
+regression initially touched the system status bar; its fixture was moved into
+the app's content area, then all 12 Ctrl checks passed again. Native Ctrl
+slide/release and arrow outside-key/trigger interactions pass. Light/dark Vim
+and arrow previews, plus above/below-edge Ctrl previews, were inspected.
+Debug/release builds, release lint and static APK verification passed.
+Installed release 27 wirelessly on S22+ RFCT21390SD, preserving app data,
+without launching the app; installed APK SHA-256 matches validation/apk.json.
+Source remains based on 076b1bfeb3 with local changes and the existing
+1Password signing blocker. See validation/speech-bubble-popups-2026-11-03.json.
+
+
+## Compact persistent Vim menu — 2026-11-03
+
+Neovim shortcut actions no longer dismiss the popup. Its group/page stay open
+for repeated commands; outside taps dismiss it and Back leaves it open.
+Customize still opens settings, while pane changes and control loss retain
+their existing safety resets. Maximum width is now 224 dp (from 244), key rows
+44 dp (from 48), header/footer 32 dp (from 40), padding 6 dp and gaps 3 dp.
+Font sizes are unchanged and the speech-bubble outline remains.
+
+All eight focused Neovim Android checks passed, including repeated root/group
+actions, native Back and outside-touch behavior, paging, group navigation,
+customization, dragging and pane/control resets. Light/dark previews inspected.
+Debug and optimized release builds, release lint, static APK verification and
+diff whitespace checks passed. Installed release 28 wirelessly on S22+
+RFCT21390SD without launching the app, preserving app data; installed APK
+SHA-256 matches validation/apk.json. Source remains based on 076b1bfeb3 with
+local changes and the existing 1Password signing blocker.
+See validation/compact-persistent-vim-menu-2026-11-03.json.
+
+
+## Circular Vim menu and unlimited shortcut count — 2026-11-03
+
+Neovim shortcuts now offer a saved Grid/Circular layout choice in their
+preferences, defaulting to Circular. The full circular wheel has up to six
+outer shortcut targets around an Edit/Back center, vertical paging and optional
+single-level groups. Actions leave the current menu/group/page open; outside
+taps (including transparent wheel corners) dismiss it. Existing pane/control
+safety resets remain. The grid is tighter again: 216 dp maximum width, 40 dp
+rows, 28 dp header/footer, 5 dp padding and 2 dp gaps; text sizes are unchanged.
+The 16-shortcut limit and old 12,000-character serialized-list limit are removed.
+Individual label/key validation remains, and group validation uses set lookups.
+
+Validation: 144 JVM checks passed, one optional skip, including 200-item flat
+and grouped lists beyond the old serialized-size cap. Sixteen focused Android
+checks passed, including 36-item grid paging, 19-item group paging, repeated
+actions, native Back/outside dismissal in both layouts, non-overlapping circular
+targets and center control, layout selection and preference restoration with
+41 shortcuts. Light/dark circular and compact-grid previews inspected. Final
+debug/release builds, release lint, static APK verification and diff whitespace
+checks passed. Installed release 29 wirelessly on S22+ RFCT21390SD with app data
+preserved, without launching it; installed APK SHA-256 matches validation/apk.json.
+Source remains based on 076b1bfeb3 with local changes and the existing 1Password
+signing blocker. See validation/circular-vim-menu-2026-11-03.json.
+
+
+## Vim controls around the AssistiveTouch button — 2026-11-04
+
+The circular layout now centers on the actual floating button, rather than
+opening a separate disc above it. Individual shortcut pills orbit the center
+without a filled menu background. Maximum footprint is 196 dp, targets 60x40 dp,
+center 48 dp and labels 11 sp. At terminal edges the button temporarily moves
+inward to fit the ring; outside dismissal restores its saved position without
+writing another preference. The covered underlying button drawing is suppressed
+while the popup draws the center. Empty spaces and outside taps dismiss; actions
+retain their group/page. Grid and unlimited saved shortcut count are unchanged.
+
+All 11 distinct focused Vim Android checks passed, including native screen
+geometry at opposite edges, center alignment with the actual anchor, unchanged
+saved position, paging, non-overlapping targets, repeated actions and outside
+input. The geometry fixture uses Compose window coordinates for the covered
+button because a focusable popup hides covered accessibility nodes. The editor
+check passed again after scrolling its validation error into view when obscured
+by the emulator keyboard. Final light/dark and opposite-edge previews inspected.
+Debug/release builds, release lint, static APK and whitespace verification passed.
+Installed release 30 wirelessly on S22+ RFCT21390SD without launching it, preserving
+app data; installed APK checksum matches validation/apk.json. Source remains
+based on 076b1bfeb3 with local changes and the existing 1Password signing blocker.
+See validation/anchored-vim-wheel-2026-11-04.json.
+
+
+## Radial Vim contrast and looping pages — 2026-11-04
+
+Radial keys now use an opaque charcoal fill with white labels, a clearer border
+and stronger shadow in both themes. Visible key backgrounds have tighter padding
+and 8 dp corners; the center uses an opaque dark fill with 10 dp corners. Root
+center taps consume the tap without opening preferences or dismissing the menu;
+group center taps still return to root. Settings remain in preferences, and the
+grid's explicit Customize footer remains. Both layouts repeat logical pages in
+either direction, displaying logical page counts and restoring the root page
+when leaving a group. Single-page lists do not scroll.
+
+Eleven distinct focused Vim Android checks passed, including forward/backward
+wrap in grid and circular groups, repeated center taps without preferences,
+root-page restoration, anchored screen geometry, repeated commands and outside
+dismissal. The existing editor check raced a validation update in the full run;
+its draft and validation state are now synchronized explicitly, and its isolated
+recheck passed. Light/dark radial previews inspected. Debug/release builds,
+release lint, static APK and whitespace verification passed.
+
+The phone's previous wireless endpoint had closed. After the user supplied its
+updated connection address, existing Mac authorization reconnected successfully.
+Installed release 31 wirelessly on S22+ RFCT21390SD with app data preserved and
+without launching the app; installed APK SHA-256 matches validation/apk.json.
+Source remains based on 076b1bfeb3 with local changes and the existing 1Password
+signing blocker.
+See validation/vim-wheel-polish-2026-11-04.json.
+
+
+## Dragging the open radial Vim menu — 2026-11-04
+
+The radial center accepts drags while its controls remain open. The actual
+anchor and all controls move together, preserving the current group and logical
+page. Pointer movement uses screen-space coordinates to compensate for the native
+popup moving under the finger. Dragging starts from the displayed position,
+including temporary edge insets. The full ring stays clamped to the terminal;
+release saves its normalized position once, while cancellation restores the
+previous saved position without typing or navigating Back. Closed-button drag,
+looping pages and outside dismissal remain unchanged.
+
+Five distinct focused Android checks passed, including real native MotionEvents
+for open-group drag, release/cancel, clamping, anchor/menu alignment and position
+persistence after closing. The native cancellation assertion now waits for the
+asynchronous accessibility bounds update; its isolated recheck passed. Existing
+closed drag, group/page looping, opposite-edge placement and outside dismissal
+checks passed. Dragged-menu preview inspected. Debug/release builds, release lint,
+static APK verification and whitespace checks passed.
+
+Release 32 is ready but not installed yet: both recently supplied wireless ADB
+ports (39537 and 44407) refuse connections. Awaiting a current main-screen address
+or USB connection. Source remains based on 076b1bfeb3 with local changes and the
+existing 1Password signing blocker.
+See validation/open-vim-wheel-drag-2026-11-04.json.

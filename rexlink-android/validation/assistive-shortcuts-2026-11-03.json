@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-03",
+  "change": "AssistiveTouch-style shortcut button, compact vertical paging and header icon motion",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 23,
+  "apk": "dist/Rexlink-2026.11.03-build23-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "0655809a4931fe4f950f01b8e95ce3b533b44669b25d2d9069b0d6810d655ec1",
+  "checks": {
+    "focused_android_passed": 28,
+    "popup_recheck_after_dark_contrast_fix_passed": 5,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "light_dark_menu_and_button_previews_inspected": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Translucent rounded AssistiveTouch-style button with concentric rings, retaining saved bounded drag placement. Popup matches Ctrl-grid styling with two columns, three rows and six shortcuts per page, vertical swipes, fixed page bounds, page count and customization footer. Header icon follows vertical dragging with a small fade/scale and springs back on release/cancel using graphics-layer transforms; text and header layout stay fixed. Input target and ownership guards retained.",
+  "phone_install": "Installed release 23 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches the verified artifact; app data preserved",
+  "source_commit": "Pending existing 1Password signing error from the prior attempt; no unsigned commit created"
+}

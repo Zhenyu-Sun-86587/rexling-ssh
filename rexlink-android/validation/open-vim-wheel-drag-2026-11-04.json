@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Drag the AssistiveTouch center while radial Vim controls stay open",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 32,
+  "apk": "dist/Rexlink-2026.11.03-build32-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "4b9c802cd39ee6207c3eb34963d08040ac83a2ae33cb7a1ab1b6ef448dd736ec",
+  "checks": {
+    "focused_android_passed": 5,
+    "native_open_drag_recheck_passed": 1,
+    "group_and_page_retained_passed": true,
+    "save_only_on_release_passed": true,
+    "cancel_without_saving_passed": true,
+    "native_clamp_and_center_alignment_passed": true,
+    "closed_drag_and_outside_dismissal_passed": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "dragged_menu_preview_inspected": true
+  },
+  "behavior": "The radial center now accepts dragging while the menu remains open. Screen-space pointer deltas compensate for native popup movement; the anchor and all shortcut controls move together. Starting at a temporarily inset edge anchor has no jump. The full ring is clamped to the terminal. Group/page remain selected, drag release saves the normalized position once, and cancellation restores the previous saved position without sending keys or navigating Back. Existing closed-button drag, looping pages and outside dismissal are preserved.",
+  "phone_install": "Not installed yet: latest supplied ADB connection ports 39537 and 44407 refuse connections; awaiting updated main-screen wireless debugging address or USB",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

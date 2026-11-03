@@ -26,7 +26,7 @@ internal fun openPortside(context: Context): Boolean {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onPortside: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
-    shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={}) {
+    shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={}) {
     ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max=680.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             SettingsHeader("Preferences","Close preferences",onClose)
@@ -46,6 +46,8 @@ internal fun openPortside(context: Context): Boolean {
                         }
                     }
                 }
+                SettingsDivider()
+                SettingsRow("Neovim shortcuts","Customize the floating key menu",SettingsGlyph.COMMAND,onNeovim)
             }
             SettingsSection("Connections") {
                 SettingsRow("Background alerts","Know when a task needs your attention",SettingsGlyph.ALERTS,onAlerts)

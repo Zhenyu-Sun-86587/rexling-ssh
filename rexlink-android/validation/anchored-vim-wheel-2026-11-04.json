@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-04",
+  "change": "Smaller radial Vim controls centered on the actual AssistiveTouch button",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 30,
+  "apk": "dist/Rexlink-2026.11.03-build30-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "7b445cb9a6b810288995d7b6a93a543828c41eb5577b864ad497016c5f94407d",
+  "checks": {
+    "focused_android_passed": 11,
+    "editor_recheck_passed": 1,
+    "native_anchor_center_alignment_passed": true,
+    "native_opposite_edge_clamping_passed": true,
+    "resting_position_restoration_passed": true,
+    "light_dark_and_edge_previews_inspected": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Circular layout now uses separate floating shortcut pills around the actual AssistiveTouch anchor, with no filled circular menu surface. Maximum orbit footprint is 196dp, 60x40dp pills, 48dp center button and 11sp labels. Ring and center stay aligned with the actual button. Opening near an edge temporarily nudges the button into the terminal; dismissing restores its saved position without writing a new preference. The underlying duplicate button drawing is suppressed while the popup draws its center. Transparent spaces/outside taps dismiss; actions retain menu/group/page. Grid preference and shortcut count behavior unchanged.",
+  "phone_install": "Installed release 30 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-03",
+  "change": "Persistent arrow popup with main-button toggle",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 25,
+  "apk": "dist/Rexlink-2026.11.03-build25-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "a37c1dcd6669a8cfad4f65013c4083dc89f2e1918fb42a44e8d7a6a99c435c59",
+  "checks": {
+    "keyboard_repeat_android_passed": 15,
+    "native_android_touch_dispatch_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Disabled outside/back dismissal for the non-focusable arrow popup and removed its BackHandler. Other keys and outside touches no longer dismiss it; the main arrow button toggles it closed/open. Existing input-target and ownership resets remain. Regression uses real Android MotionEvents through InputDispatcher to test outside Escape/Enter taps plus close/reopen on the trigger, rather than only Compose semantic clicks.",
+  "phone_install": "Installed release 25 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches verified artifact; app data preserved",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

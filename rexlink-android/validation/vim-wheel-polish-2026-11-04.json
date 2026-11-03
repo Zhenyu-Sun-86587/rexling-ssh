@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Higher-contrast compact radial buttons, no center settings action and looping Vim menu pages",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 31,
+  "apk": "dist/Rexlink-2026.11.03-build31-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "36030c2c6568551597b3b102b1bc93199ae5b4dc067130e23d735e2060f6dcf7",
+  "checks": {
+    "focused_android_passed": 11,
+    "editor_isolated_recheck_passed": 1,
+    "grid_bidirectional_wrap_passed": true,
+    "circular_group_bidirectional_wrap_passed": true,
+    "center_keeps_root_menu_open_without_settings_passed": true,
+    "native_anchor_edge_and_restoration_passed": true,
+    "light_dark_previews_inspected": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Radial buttons use opaque charcoal with white labels, a clearer border and stronger shadow in both themes. Visible key backgrounds are tighter with 8dp corners; center uses opaque dark fill with 10dp corners. Root center taps do not open preferences or dismiss; group center still returns to root. Grid and circular pages repeat in both directions with logical page counts and root-page restoration. Single-page menus do not scroll.",
+  "phone_install": "Installed release 31 wirelessly on S22+ RFCT21390SD after reconnecting to its updated ADB connection address; installed APK SHA-256 matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-03",
+  "change": "Speech-bubble surfaces for Neovim, Ctrl and arrow popups",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 27,
+  "apk": "dist/Rexlink-2026.11.03-build27-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "b22a94912795c6891406aeb1aa765f5526eeffd68c09f6fbecaf4fa045184b07",
+  "checks": {
+    "focused_android_passed": 30,
+    "ctrl_recheck_passed": 12,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "light_dark_previews_inspected": true,
+    "below_edge_trigger_preview_inspected": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Shared rounded speech-bubble outline with integrated border, shadow and 8dp pointer. Pointer tracks the trigger within screen-edge limits and moves to the top for below-trigger placement. Ctrl hit testing excludes pointer space. Existing Neovim groups, paging, Ctrl hold/double-tap, arrow repeat and main-button-only dismissal preserved.",
+  "phone_install": "Installed release 27 wirelessly on S22+ RFCT21390SD with app data preserved; installed APK SHA-256 matches verified artifact; app not launched",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

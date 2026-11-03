@@ -19,21 +19,23 @@ class RepeatKeyTest {
     @get:Rule val ui=createComposeRule()
     private val sent=mutableListOf<String>()
     @Test fun heldArrowRepeatsAndStopsOnRelease() {
-        ui.setContent {MaterialTheme {ArrowKeyGroup(true,Modifier.width(90.dp).height(40.dp),{sent+=it},inputKey="a")}}
+        ui.setContent {MaterialTheme {ArrowKeyPad(true,Modifier.width(184.dp).height(100.dp),{sent+=it},inputKey="a")}}
         ui.mainClock.autoAdvance=false
         ui.onNodeWithContentDescription("Left arrow").performTouchInput {down(center)}
         ui.mainClock.advanceTimeBy(750);ui.runOnIdle {assertTrue(sent.size>=3);assertTrue(sent.all {it=="left"})}
         ui.onNodeWithContentDescription("Left arrow").performTouchInput {up()};ui.mainClock.advanceTimeByFrame()
         val count=sent.size;ui.mainClock.advanceTimeBy(500);ui.runOnIdle {assertEquals(count,sent.size)}
     }
-    @Test fun scrollingTheArrowGroupNeverTypes() {
-        ui.setContent {MaterialTheme {ArrowKeyGroup(true,Modifier.width(90.dp).height(40.dp),{sent+=it})}}
-        ui.onNodeWithContentDescription("Arrow keys").performTouchInput {swipeLeft()}
+    @Test fun draggingAcrossTheArrowPadNeverTypes() {
+        ui.setContent {MaterialTheme {ArrowKeyPad(true,Modifier.width(184.dp).height(100.dp),{sent+=it})}}
+        ui.onNodeWithContentDescription("Arrow directions").performTouchInput {
+            swipe(androidx.compose.ui.geometry.Offset(width-2f,height*.75f),androidx.compose.ui.geometry.Offset(2f,height*.75f),300)
+        }
         ui.runOnIdle {assertTrue(sent.isEmpty())}
     }
     @Test fun aNewPaneCancelsHeldRepeatAndNeverRetargetsTheOldGesture() {
         val target=mutableStateOf("a")
-        ui.setContent {val current=target.value;MaterialTheme {ArrowKeyGroup(true,Modifier.width(90.dp).height(40.dp),{sent+=current},inputKey=current)}}
+        ui.setContent {val current=target.value;MaterialTheme {ArrowKeyPad(true,Modifier.width(184.dp).height(100.dp),{sent+=current},inputKey=current)}}
         ui.mainClock.autoAdvance=false
         ui.onNodeWithContentDescription("Left arrow").performTouchInput {down(center)}
         ui.mainClock.advanceTimeBy(650);ui.runOnIdle {assertTrue(sent.isNotEmpty());target.value="b"}
@@ -42,7 +44,7 @@ class RepeatKeyTest {
         ui.onNodeWithContentDescription("Left arrow").performTouchInput {up()}
     }
     @Test fun disabledRepeatCannotType() {
-        ui.setContent {MaterialTheme {ArrowKeyGroup(false,Modifier.width(90.dp).height(40.dp),{sent+=it})}}
+        ui.setContent {MaterialTheme {ArrowKeyPad(false,Modifier.width(184.dp).height(100.dp),{sent+=it})}}
         ui.onNodeWithContentDescription("Left arrow").assertIsNotEnabled().performTouchInput {longClick()}
         ui.runOnIdle {assertTrue(sent.isEmpty())}
     }

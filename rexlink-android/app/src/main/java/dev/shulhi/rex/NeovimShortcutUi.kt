@@ -1,0 +1,288 @@
+package dev.shulhi.rex
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.shadow
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.PI
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import kotlin.math.roundToInt
+
+@Composable internal fun NeovimShortcutButton(items: List<NeovimShortcut>,target: String,enabled: Boolean,onChoose: (NeovimShortcut,String)->Unit,onCustomize: ()->Unit,modifier: Modifier=Modifier,
+    position: Offset=Offset(0f,1f),onPosition: (Offset)->Unit={},bottomInset: Dp=10.dp,layout: NeovimShortcutLayout=NeovimShortcutLayout.GRID) {
+    var open by remember(target) {mutableStateOf(false)}
+    var dragged by remember {mutableStateOf<Offset?>(null)}
+    val latestPosition by rememberUpdatedState(position)
+    val savePosition by rememberUpdatedState(onPosition)
+    LaunchedEffect(enabled,target) {if(!enabled) open=false;dragged=null}
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val density=LocalDensity.current
+        val edge=with(density) {12.dp.toPx()}
+        val maxX=with(density) {(maxWidth-24.dp-48.dp).coerceAtLeast(0.dp).toPx()}
+        val maxY=with(density) {(maxHeight-12.dp-bottomInset-48.dp).coerceAtLeast(0.dp).toPx()}
+        val popupWidth=(maxWidth-24.dp).coerceIn(140.dp,216.dp)
+        val wheelWidth=minOf(196.dp,(maxWidth-16.dp).coerceAtLeast(48.dp),(maxHeight-bottomInset-16.dp).coerceAtLeast(48.dp))
+        val wheelHalf=with(density) {wheelWidth.toPx()/2}
+        val buttonHalf=with(density) {24.dp.toPx()}
+        val wheelEdge=with(density) {8.dp.toPx()}
+        val viewportWidth=with(density) {maxWidth.toPx()}
+        val viewportHeight=with(density) {(maxHeight-bottomInset).toPx()}
+
+        LaunchedEffect(position,maxX,maxY) {dragged=null}
+        fun resting()=Offset(latestPosition.x*maxX,latestPosition.y*maxY)
+        fun displayed(at: Offset): Offset {
+            val x=edge+at.x.coerceIn(0f,maxX);val y=edge+at.y.coerceIn(0f,maxY)
+            // Make room for a full ring without changing the saved resting position.
+            val inset=wheelEdge+wheelHalf-buttonHalf
+            return if(open && layout==NeovimShortcutLayout.CIRCULAR) Offset(
+                x.coerceIn(inset,maxOf(inset,viewportWidth-wheelEdge-wheelHalf-buttonHalf)),
+                y.coerceIn(inset,maxOf(inset,viewportHeight-wheelEdge-wheelHalf-buttonHalf))) else Offset(x,y)
+        }
+        val menuDrag=NeovimMenuDrag(
+            start={dragged=displayed(dragged ?: resting())-Offset(edge,edge)},
+            move={delta->dragged=displayed((dragged ?: resting())+delta)-Offset(edge,edge)},
+            end={dragged?.let {savePosition(Offset(if(maxX>0) it.x/maxX else 0f,if(maxY>0) it.y/maxY else 1f))}},
+            cancel={dragged=null})
+        Box(Modifier.offset {
+            val shown=displayed(dragged ?: resting())
+            IntOffset(shown.x.roundToInt(),shown.y.roundToInt())
+        }.size(48.dp).pointerInput(enabled,target,maxX,maxY) {
+            if(enabled) detectDragGestures(
+                onDragStart={open=false;dragged=resting()},
+                onDrag={change,delta->change.consume();val at=(dragged ?: resting())+delta;dragged=Offset(at.x.coerceIn(0f,maxX),at.y.coerceIn(0f,maxY))},
+                onDragCancel={dragged=null},
+                onDragEnd={dragged?.let {savePosition(Offset(if(maxX>0) it.x/maxX else 0f,if(maxY>0) it.y/maxY else 1f))}})
+        }) {
+        FilledTonalIconButton(onClick={open=true},enabled=enabled,shape=RoundedCornerShape(14.dp),
+            modifier=Modifier.size(48.dp).drawWithContent {if(!open || layout!=NeovimShortcutLayout.CIRCULAR) drawContent()}.semantics {contentDescription="Neovim shortcuts"},
+            colors=IconButtonDefaults.filledTonalIconButtonColors(containerColor=Color.Black.copy(alpha=if(open) .78f else .54f),
+                disabledContainerColor=Color.Black.copy(alpha=.22f))) {
+            Canvas(Modifier.size(36.dp)) {
+                drawCircle(Color.White.copy(alpha=if(enabled) .18f else .1f),radius=size.minDimension*.46f)
+                drawCircle(Color.White.copy(alpha=if(enabled) .32f else .15f),radius=size.minDimension*.36f)
+                drawCircle(Color.White.copy(alpha=if(enabled) .95f else .35f),radius=size.minDimension*.27f)
+            }
+        }
+        if(open && enabled) {
+            NeovimShortcutPopup(items,{onChoose(it,target)},{open=false;onCustomize()},{open=false},
+                width=if(layout==NeovimShortcutLayout.CIRCULAR) wheelWidth else popupWidth,layout=layout,menuDrag=menuDrag)
+        }
+        }
+    }
+}
+
+/** Six cells at a time, using the same compact treatment as the Ctrl shortcut grid. */
+@Composable private fun NeovimShortcutPopup(items: List<NeovimShortcut>,onChoose: (NeovimShortcut)->Unit,onCustomize: ()->Unit,onDismiss: ()->Unit,width: Dp,layout: NeovimShortcutLayout,menuDrag: NeovimMenuDrag) {
+    val provider=rememberSpeechBubblePositioner()
+    val centered=remember {object: PopupPositionProvider {
+        override fun calculatePosition(anchorBounds: IntRect,windowSize: IntSize,layoutDirection: LayoutDirection,popupContentSize: IntSize)=
+            IntOffset(anchorBounds.center.x-popupContentSize.width/2,anchorBounds.center.y-popupContentSize.height/2)
+    }}
+    var group by remember(items) {mutableStateOf("")}
+    var rootPage by remember(items) {mutableIntStateOf(0)}
+    val root=remember(items) {NeovimShortcuts.entries(items)}
+    val hasGroups=root.any {it is NeovimShortcutEntry.Group}
+    val slotCount=remember(items) {maxOf(root.size,items.groupBy {it.group}.filterKeys {it.isNotEmpty()}.values.maxOfOrNull {it.size} ?: 0)}
+    val rows=((minOf(slotCount,6)+1)/2).coerceAtLeast(1)
+    Popup(popupPositionProvider=if(layout==NeovimShortcutLayout.CIRCULAR) centered else provider,onDismissRequest=onDismiss,properties=PopupProperties(focusable=true,dismissOnClickOutside=true,dismissOnBackPress=false)) {
+        key(group,layout) {
+        val entries=NeovimShortcuts.entries(items,group)
+        val pages=(entries.size+5)/6
+        // Start in the middle of repeated logical pages so either swipe direction wraps.
+        val repeatBase=if(pages>1) Int.MAX_VALUE/2-(Int.MAX_VALUE/2)%pages else 0
+        val initialPage=if(group.isEmpty()) rootPage.coerceAtMost((pages-1).coerceAtLeast(0)) else 0
+        val pager=rememberPagerState(initialPage=repeatBase+initialPage,pageCount={if(pages>1) Int.MAX_VALUE else 1})
+        if(layout==NeovimShortcutLayout.CIRCULAR) {
+            NeovimShortcutWheel(entries,group,pager,pages,width,onChoose={item->when(item) {
+                is NeovimShortcutEntry.Action->onChoose(item.shortcut)
+                is NeovimShortcutEntry.Group->{rootPage=pager.currentPage%pages.coerceAtLeast(1);group=item.label}
+            }},onCenter={if(group.isNotEmpty()) group=""},onDismiss=onDismiss,menuDrag=menuDrag)
+        } else {
+        SpeechBubble(provider,Modifier.width(width).semantics {contentDescription="Neovim shortcut menu";stateDescription=if(group.isEmpty()) "Shortcuts" else "Group $group"}) {
+        Column(Modifier.padding(5.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+            if(hasGroups) Row(Modifier.fillMaxWidth().height(28.dp),verticalAlignment=Alignment.CenterVertically) {
+                if(group.isNotEmpty()) ChromeButton(ChromeIcon.LEFT,"Back to all shortcuts",modifier=Modifier.size(28.dp)) {group=""}
+                Text(group.ifEmpty {"Shortcuts"},Modifier.weight(1f).padding(horizontal=8.dp),fontSize=12.sp,fontWeight=FontWeight.Medium,
+                    maxLines=1,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            VerticalPager(pager,Modifier.fillMaxWidth().height((rows*40+(rows-1)*2).dp)
+                .semantics {contentDescription="Neovim shortcut pages"},userScrollEnabled=pages>1) {page->
+                Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                    repeat(rows) {row->
+                        Row(Modifier.fillMaxWidth().height(40.dp),horizontalArrangement=Arrangement.spacedBy(2.dp)) {
+                            repeat(2) {column->
+                                val item=entries.getOrNull((page%pages.coerceAtLeast(1))*6+row*2+column)
+                                if(item==null) Spacer(Modifier.weight(1f).fillMaxHeight())
+                                else Box(Modifier.weight(1f).fillMaxHeight().padding(horizontal=if(item is NeovimShortcutEntry.Group) 3.dp else 0.dp,vertical=if(item is NeovimShortcutEntry.Group) 3.dp else 0.dp)
+                                    .clip(RoundedCornerShape(if(item is NeovimShortcutEntry.Group) 24.dp else 11.dp))
+                                    .then(if(item is NeovimShortcutEntry.Group) Modifier.background(MaterialTheme.colorScheme.onSurface.copy(alpha=.065f))
+                                        .semantics {contentDescription="Shortcut group ${item.label}"} else Modifier)
+                                    .clickable(role=Role.Button) {when(item) {
+                                        is NeovimShortcutEntry.Action->onChoose(item.shortcut)
+                                        is NeovimShortcutEntry.Group->{rootPage=pager.currentPage%pages.coerceAtLeast(1);group=item.label}
+                                    }},contentAlignment=Alignment.Center) {
+                                    Text(item.label,Modifier.padding(horizontal=4.dp),fontFamily=MonoUi,fontSize=13.sp,lineHeight=16.sp,fontWeight=FontWeight.Bold,
+                                        maxLines=2,overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center,color=MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().height(28.dp),verticalAlignment=Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(11.dp)).clickable(role=Role.Button,onClick=onCustomize),contentAlignment=Alignment.CenterStart) {
+                    Text("Customize shortcuts",Modifier.padding(horizontal=8.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.primary)
+                }
+                if(pages>1) Text("${pager.currentPage%pages+1}/$pages",Modifier.padding(horizontal=8.dp),fontFamily=MonoUi,fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        }
+        }
+        }
+    }
+}
+
+private class NeovimMenuDrag(val start: ()->Unit,val move: (Offset)->Unit,val end: ()->Unit,val cancel: ()->Unit)
+
+/** Screen-space deltas stay stable while the native Popup window follows the finger. */
+@Composable private fun neovimMenuDrag(callbacks: NeovimMenuDrag): Modifier {
+    val latest by rememberUpdatedState(callbacks)
+    var coordinates by remember {mutableStateOf<LayoutCoordinates?>(null)}
+    return Modifier.onGloballyPositioned {coordinates=it}.pointerInput(Unit) {
+        var last: Offset?=null
+        fun screen(at: Offset)=coordinates?.takeIf {it.isAttached}?.localToScreen(at)?.takeIf {it.isSpecified}
+        detectDragGestures(
+            onDragStart={at->last=screen(at);latest.start()},
+            onDrag={change,_->
+                change.consume()
+                screen(change.position)?.let {at->last?.let {latest.move(at-it)};last=at}
+            },
+            onDragEnd={last=null;latest.end()},
+            onDragCancel={last=null;latest.cancel()})
+    }
+}
+
+/** Floating shortcut pills orbit the AssistiveTouch button itself, without a large menu surface. */
+@Composable private fun NeovimShortcutWheel(entries: List<NeovimShortcutEntry>,group: String,pager: androidx.compose.foundation.pager.PagerState,pages: Int,width: Dp,
+    onChoose: (NeovimShortcutEntry)->Unit,onCenter: ()->Unit,onDismiss: ()->Unit,menuDrag: NeovimMenuDrag) {
+    val dismiss by rememberUpdatedState(onDismiss)
+    val cellWidth=width*(60f/196f)
+    val cellHeight=width*(40f/196f)
+    val centerSize=width*(48f/196f)
+    Box(Modifier.size(width).semantics {contentDescription="Neovim shortcut menu";stateDescription=if(group.isEmpty()) "Shortcuts" else "Group $group"}
+        .pointerInput(Unit) {detectTapGestures {dismiss()}}) {
+        VerticalPager(pager,Modifier.fillMaxSize().semantics {contentDescription="Neovim shortcut pages"},userScrollEnabled=pages>1) {page->
+            val start=(page%pages.coerceAtLeast(1))*6
+            val visible=entries.subList(start,minOf(start+6,entries.size))
+            Box(Modifier.fillMaxSize()) {
+                visible.forEachIndexed {index,item->
+                    val angle=-PI/2+index*2*PI/visible.size
+                    val x=width*(.5f+(70f/196f)*cos(angle).toFloat())-cellWidth/2
+                    val y=width*(.5f+(70f/196f)*sin(angle).toFloat())-cellHeight/2
+                    val shape=RoundedCornerShape(8.dp)
+                    Box(Modifier.offset(x,y).width(cellWidth).height(cellHeight).padding(horizontal=2.dp,vertical=3.dp).shadow(6.dp,shape).clip(shape)
+                        .background(Color(0xFF303846))
+                        .then(if(item is NeovimShortcutEntry.Group) Modifier.background(Color.White.copy(alpha=.08f))
+                            .semantics {contentDescription="Shortcut group ${item.label}"} else Modifier)
+                        .border(1.dp,Color.White.copy(alpha=.4f),shape)
+                        .clickable(role=Role.Button) {onChoose(item)},contentAlignment=Alignment.Center) {
+                        Text(item.label,Modifier.padding(horizontal=1.dp),fontFamily=MonoUi,fontSize=11.sp,lineHeight=13.sp,fontWeight=FontWeight.Bold,
+                            maxLines=2,overflow=TextOverflow.Ellipsis,textAlign=TextAlign.Center,color=Color.White)
+                    }
+                }
+            }
+        }
+        Column(Modifier.align(Alignment.Center).size(centerSize).then(neovimMenuDrag(menuDrag)).shadow(4.dp,RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF171C25))
+            .semantics {contentDescription=if(group.isEmpty()) "Neovim shortcut center" else "Back to all shortcuts"}
+            .clickable(role=Role.Button,onClick=onCenter),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
+            if(group.isEmpty()) Canvas(Modifier.size(centerSize*.75f)) {
+                drawCircle(Color.White.copy(alpha=.18f),radius=size.minDimension*.46f)
+                drawCircle(Color.White.copy(alpha=.32f),radius=size.minDimension*.36f)
+                drawCircle(Color.White.copy(alpha=.95f),radius=size.minDimension*.27f)
+            } else {
+                ChromeSymbol(ChromeIcon.LEFT,Modifier.size(17.dp),Color.White)
+                Text(group,Modifier.padding(horizontal=3.dp),fontSize=9.sp,lineHeight=11.sp,maxLines=1,overflow=TextOverflow.Ellipsis,color=Color.White)
+            }
+        }
+        if(pages>1) Text("${pager.currentPage%pages+1}/$pages",Modifier.align(Alignment.Center).offset(y=centerSize/2+8.dp).clip(RoundedCornerShape(4.dp))
+            .background(Color(0xFF303846)).padding(horizontal=3.dp,vertical=1.dp),
+            fontFamily=MonoUi,fontSize=9.sp,lineHeight=11.sp,color=Color.White)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable internal fun NeovimShortcutsSheet(items: List<NeovimShortcut>,onSave: (String)->String?,onClose: ()->Unit,
+    enabled: Boolean=true,onEnabled: (Boolean)->Unit={},
+    layout: NeovimShortcutLayout=NeovimShortcutLayout.GRID,onLayout: (NeovimShortcutLayout)->Unit={}) {
+    var draft by rememberSaveable {mutableStateOf(NeovimShortcuts.editorText(items))}
+    var error by remember {mutableStateOf<String?>(null)}
+    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().heightIn(max=680.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            SettingsHeader("Neovim shortcuts","Close Neovim shortcuts",onClose)
+            Row(Modifier.fillMaxWidth().toggleable(enabled,role=Role.Switch,onValueChange=onEnabled).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("Enable Neovim shortcuts",Modifier.weight(1f),style=SettingsType.row)
+                Switch(checked=enabled,onCheckedChange=null)
+            }
+            Text("Menu layout",style=SettingsType.section,color=MaterialTheme.colorScheme.primary)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                NeovimShortcutLayout.entries.forEach {choice->
+                    FilterChip(selected=layout==choice,onClick={onLayout(choice)},
+                        label={Text(if(choice==NeovimShortcutLayout.GRID) "Grid" else "Circular",style=SettingsType.row)})
+                }
+            }
+            Text("One shortcut per line. Use a name followed by = for a custom label.",style=SettingsType.body)
+            Text("Examples: :w or LazyGit = <Space>lg. Optional [Git] headers group following shortcuts; [] returns to ungrouped shortcuts. One group level only.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(draft,{draft=it;error=null},Modifier.fillMaxWidth(),label={Text("Shortcuts")},minLines=5,maxLines=8,
+                textStyle=SettingsType.body.copy(fontFamily=MonoUi),isError=error!=null,shape=RoundedCornerShape(14.dp))
+            error?.let {Text(it,style=SettingsType.detail,color=MaterialTheme.colorScheme.error)}
+            Text("Shortcuts start in Normal mode. : commands run immediately. Other key sequences are sent as configured; use <CR> for Enter. Also supports <Esc>, <Tab>, arrow keys and <C-x>. Use <Space> for a Space leader. Drag the floating button to move it.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                TextButton(onClick={draft=NeovimShortcuts.editorText(NeovimShortcuts.defaults);error=null}) {Text("Reset defaults")}
+                Button(onClick={error=onSave(draft);if(error==null) onClose()}) {Text("Save")}
+            }
+        }
+    }
+}

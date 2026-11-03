@@ -1,6 +1,9 @@
 package dev.shulhi.rex
 
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.graphics.Bitmap
+import java.io.File
+import androidx.compose.ui.graphics.asAndroidBitmap
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -24,10 +27,10 @@ import org.junit.runner.RunWith
 class ControlShortcutsTest {
     @get:Rule val ui=createComposeRule()
     private var toggles=0;private val sent=mutableListOf<String>()
-    private fun fixture(enabled: Boolean=true,gesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,initiallyActive: Boolean=false) {
+    private fun fixture(enabled: Boolean=true,gesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,initiallyActive: Boolean=false,alignment: Alignment=Alignment.BottomCenter) {
         ui.setContent {var active by remember {mutableStateOf(initiallyActive)}
-            MaterialTheme {Box(Modifier.size(320.dp,320.dp)) {
-                ControlDockKey(enabled,active,true,Modifier.align(Alignment.BottomCenter).size(36.dp),
+            MaterialTheme {Box(Modifier.size(320.dp,320.dp).padding(top=40.dp)) {
+                ControlDockKey(enabled,active,true,Modifier.align(alignment).size(36.dp),
                     {toggles++;active=!active},{sent+=it},gesture)
             }}
         }
@@ -83,6 +86,25 @@ class ControlShortcutsTest {
         ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
         ui.runOnIdle {assertEquals(listOf("j"),sent);assertEquals(0,toggles)}
     }
+    @Test fun popupBelowAnEdgeTriggerStillSelectsTheCorrectRow() {
+        fixture(alignment=Alignment.TopStart)
+        val start=bounds("Control");val down=SystemClock.uptimeMillis();ui.mainClock.autoAdvance=false
+        touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
+        ui.mainClock.advanceTimeBy(650);repeat(3){ui.mainClock.advanceTimeByFrame()};ui.waitForIdle()
+        assertTrue(bounds("Control shortcuts").top>start.bottom)
+        capture("below-edge")
+        val target=bounds("Control W")
+        touch(MotionEvent.ACTION_MOVE,target.exactCenterX(),target.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.onNodeWithContentDescription("Control W").assertIsSelected()
+        touch(MotionEvent.ACTION_UP,target.exactCenterX(),target.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.runOnIdle {assertEquals(listOf("w"),sent);assertEquals(0,toggles)}
+    }
+    private fun capture(name: String) {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        File(context.cacheDir,"control-bubble-$name.png").outputStream().use {
+            ui.onNodeWithContentDescription("Control shortcuts").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)
+        }
+    }
     @Test fun releasingOutsideThePopupCancelsWithoutTogglingOrTyping() {
         fixture();val start=bounds("Control");val down=SystemClock.uptimeMillis();ui.mainClock.autoAdvance=false
         touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
@@ -125,6 +147,7 @@ class ControlShortcutsTest {
         ui.onNodeWithContentDescription("Control").performTouchInput {doubleClick()}
         ui.onNodeWithContentDescription("Control shortcuts").assertIsDisplayed()
         ui.onNodeWithContentDescription("Control").assertIsNotSelected()
+        capture("above")
         ui.onNodeWithContentDescription("Control J").performClick()
         ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
         ui.runOnIdle {assertEquals(listOf("j"),sent)}

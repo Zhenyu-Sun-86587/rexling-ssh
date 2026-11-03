@@ -46,7 +46,7 @@ internal fun Modifier.repeatKey(enabled: Boolean,target: String,onKey: ()->Unit)
                             if(!moved && !repeated && change.position.x in 0f..size.width.toFloat() && change.position.y in 0f..size.height.toFloat()) send()
                             change.consume();break
                         }
-                        // Leave moves unconsumed so the arrow-strip scroller can take over.
+                        // Leave moves unconsumed so parent gestures can take over.
                     }
                 } finally {job.cancel();pressed=false}
             }

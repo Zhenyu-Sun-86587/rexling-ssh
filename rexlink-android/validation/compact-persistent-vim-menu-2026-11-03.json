@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-03",
+  "change": "Persistent and slightly more compact Vim shortcut menu",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 28,
+  "apk": "dist/Rexlink-2026.11.03-build28-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "aa3bc79b3e428d865956f1fd16416b802079af3f270fbae43a00356ee8b1d6c8",
+  "checks": {
+    "focused_android_passed": 8,
+    "native_outside_dismissal_passed": true,
+    "repeated_root_and_group_actions_passed": true,
+    "back_key_keeps_menu_open": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "light_dark_previews_inspected": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Choosing a Neovim shortcut keeps its popup, group and page open. Outside taps dismiss it; Back does not dismiss it. Customize opens settings and closes the popup, and existing pane/control safety resets remain. Width reduced from 244dp to 224dp, rows from 48dp to 44dp, header/footer from 40dp to 32dp, padding from 8dp to 6dp, gaps from 4dp to 3dp. Font sizes unchanged.",
+  "phone_install": "Installed release 28 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

@@ -129,8 +129,38 @@ clients. Hold and release without dragging for **Move left**, **Move right** and
 **Close tab**. Rename a session from its row’s
 **⋮ → Rename session** in the session list; changes sync through Rex.
 Long-press Ctrl for common control shortcuts, including **Ctrl+J** and **Ctrl+]**.
+The arrow button opens a compact popup above the key row. Tap or hold its arrow
+keys to navigate; the popup stays open while using other keys or tapping outside.
+Tap the arrow button again to close it. Enter has a dedicated
+key, and the chevron beside the keyboard icon expands F1–F12 and navigation keys.
 Under **Preferences → Keyboard → Ctrl shortcuts**, choose **Hold** (the default)
 or **Double tap** to open the list. Single taps still toggle Ctrl immediately.
+Neovim panes have a draggable AssistiveTouch-style button for saved key shortcuts. Its
+position is remembered and stays inside the terminal when its size changes.
+Choose **Circular** (the default) or **Grid** in the Neovim shortcut preferences.
+The circular layout places compact shortcut pills around the AssistiveTouch
+button itself, without a large menu background. At an edge the button moves
+inward while open, then returns to its saved position. Its center goes back
+from a group and otherwise leaves the menu open. Drag the center with the
+radial menu open to move the whole cluster and save its position on release.
+Both layouts show six shortcuts
+at a time; swipe up/down for more pages, looping from last to first and back.
+There is no fixed limit on the number of saved shortcuts.
+It stays open after selecting shortcuts; tap outside to dismiss it.
+Optional group headers such as `[Git]` put following shortcuts inside a subtly
+shaded group pill. Tap it to show its shortcuts; Back returns
+to the main menu. Use `[]` to return to ungrouped entries in the editor. Groups
+have one level, and both the main menu and groups support vertical paging.
+The defaults include `:w` and `:q`, which run immediately. Edit **Preferences →
+Keyboard → Neovim shortcuts** with one
+shortcut per line, optionally named as `LazyGit = <Space>lg`. Shortcuts start in
+Normal mode; key notation includes `<Esc>`, `<CR>`, `<Tab>`, arrow keys and
+`<C-x>`. Use your actual leader key, such as `<Space>`. Bare colon commands get
+Enter automatically; other key sequences are sent as configured. The preference
+toggle hides the button without deleting shortcuts; an empty list also hides it.
+Swipe up/down on the top-bar program icon to switch to the next/previous
+session, looping across connected servers like the horizontal session strip.
+The icon follows the vertical gesture and springs back without moving the header text.
 Tap the input cursor row in Codex or Claude to open the keyboard, including when
 the program uses terminal mouse reporting. Other application clicks keep their
 normal behavior.

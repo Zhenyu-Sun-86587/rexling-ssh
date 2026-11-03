@@ -48,9 +48,9 @@ signing separately before publishing. SDK paths and caches remain ignored.
 - Typing uses Rex’s ordered key-event stream with up to eight requests in flight.
   Delayed acknowledgments no longer stop terminal output or rendering. Adjacent
   queued plain text can be combined without delaying the first keystroke.
-- The one-row keyboard dock offers modifiers, a scrollable arrow group,
+- The one-row keyboard dock offers modifiers, an arrow popup, a dedicated Enter key,
   hold/repeat, Ctrl shortcuts and an expandable panel with F1–F12.
-- **⋮ → Appearance** saves independent light/dark presets, including the
+- **⋮ → Preferences → Appearance** saves independent light/dark presets, including the
   Rexlink defaults. Font size changes in 1-sp steps. Theme requests are sent
   while owning the pane; programs may override their own colorscheme.
 - Reconnect notices expose input-paused state and Retry now. Network changes

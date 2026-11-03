@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-03",
+  "change": "Round movable Neovim button, enable preference, immediate commands and vertical session swipes",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 22,
+  "apk": "dist/Rexlink-2026.11.03-build22-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "6babc4cac5216eaa2e30e0d1f6facbc16707fde9deb07c692701c707bb9362ce",
+  "checks": {
+    "jvm_passed": 140,
+    "optional_benchmark_skipped": 1,
+    "focused_android_passed": 26,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Round 48 dp Neovim vector-icon button with drag placement persisted as normalized coordinates, bounded by terminal area and resized with keyboard/rotation. Drag-end preference writes only; overlay does not intercept outside touches or resize terminal. Enable toggle preserves key list. Plain colon commands append Enter, explicit Enter is not duplicated, and other macros keep configured keys. Header program icon swipes up/down select next/previous session with wrapping across connected servers.",
+  "phone_install": "Installed release 22 on S22+ RFCT21390SD through wireless ADB, preserving data and verifying installed APK SHA-256",
+  "source_state": "Release built with local changes from the stated base revision; source and evidence retained in the containing commit"
+}

@@ -121,6 +121,15 @@ internal class RexConnection(application: Application, private val scope: Corout
     internal fun imageInputTarget(): String = "$navigationSerial:${state.value.connectionEpoch}:${state.value.selectedSession}:${state.value.selectedBlock}"
     fun keyTarget(): String = "$keyEpoch:$navigationSerial:${state.value.selectedSession}:${state.value.selectedBlock}"
     fun keyForTarget(name: String,target: String) {if(target==keyTarget()) key(name)}
+    internal fun neovimShortcut(item: NeovimShortcut,target: String): Boolean {
+        val current=state.value
+        val input=NeovimShortcuts.input(current,item,target,keyTarget(),visible && foreground,navigationRequest.pending) ?: return false
+        resetModifiers()
+        if(!command("input","text" to input,"session" to current.selectedSession,"block" to current.selectedBlock,
+                "navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch)) return false
+        keyboardRequest=""
+        return true
+    }
     fun activity(open: Boolean) = command("activity","open" to open)
     private var seen=runCatching {JSONObject(preferences.getString("activity_seen:$savedEndpoint","{}").orEmpty())}.getOrDefault(JSONObject())
     fun isActivitySeen(record: ActivityRecord)=record.attentionKey.isNotBlank() && seen.optString(record.attentionKey)==record.attentionVersion

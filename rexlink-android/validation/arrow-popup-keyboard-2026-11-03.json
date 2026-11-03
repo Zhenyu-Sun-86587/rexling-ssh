@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-03",
+  "change": "Single arrow popup button, Enter key and extra-key chevron beside keyboard",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 24,
+  "apk": "dist/Rexlink-2026.11.03-build24-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "4c88eb3bc9c3ca2bef9453040298d56d8240bff52e736ee07d8ad349c39b1744",
+  "checks": {
+    "keyboard_repeat_ctrl_android_passed": 25,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "keyboard_and_light_dark_popup_previews_inspected": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "One-row dock uses flexible separate modifier buttons, one arrow-menu button, Enter, a visible extra-keys chevron and keyboard icon. Compact arrow cluster opens above the bottom key row without changing row bounds; it stays open for repeated taps/holds. Shift/Control/Alt use the existing input pipeline. Popup closes when its input target/control changes, cancelling repeats. Removed obsolete horizontal arrow strip; extra-key panel retains F1-F12 and navigation/delete keys.",
+  "phone_install": "Installed release 24 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches verified artifact; app data preserved",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

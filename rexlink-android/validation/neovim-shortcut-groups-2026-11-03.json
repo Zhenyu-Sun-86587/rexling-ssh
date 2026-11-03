@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-03",
+  "change": "Optional single-level Neovim shortcut groups",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 26,
+  "apk": "dist/Rexlink-2026.11.03-build26-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "a60eb2dbe220be7cdf9c073e152e985c31ae2cafb315d04dda4b9fd037feb93a",
+  "checks": {
+    "jvm_passed": 143,
+    "jvm_optional_skipped": 1,
+    "focused_android_passed": 13,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "light_dark_group_previews_inspected": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Optional [Group] section headers in the shortcut editor create subtly shaded group pills. [] returns to ungrouped entries. Group clicks replace the grid without sending keys; Back restores the root page. Single-level groups only, 16 actions total, with vertical paging inside groups. Popup bounds stay fixed across levels. Legacy flat lists and bracket-literal key sequences remain compatible.",
+  "phone_install": "Installed release 26 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}

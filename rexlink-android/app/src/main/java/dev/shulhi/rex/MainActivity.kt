@@ -123,6 +123,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var appearance by remember {mutableStateOf(false)}
     var about by remember {mutableStateOf(false)}
     var preferencesOpen by remember {mutableStateOf(false)}
+    var neovimSettings by remember {mutableStateOf(false)}
     var portsideOpen by remember {mutableStateOf(false)}
     var alerts by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
@@ -252,6 +253,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         ConnectionNotice(state.phase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.TopEnd).padding(10.dp))
+                        if(model.neovimShortcutsEnabled && ready && chosen==liveBlock && chosen !in state.cachedPrograms && state.programs[chosen]?.kind==ProgramKind.NEOVIM && model.neovimShortcuts.isNotEmpty()) {
+                            NeovimShortcutButton(model.neovimShortcuts,keyTarget,controlled,
+                                onChoose={item,target->client.neovimShortcut(item,target)},onCustomize={neovimSettings=true},layout=model.neovimShortcutLayout,
+                                modifier=Modifier.fillMaxSize(),position=model.neovimShortcutPosition,onPosition=model::moveNeovimShortcut,bottomInset=if(blocks.size>1) 64.dp else 10.dp)
+                        }
                         }
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
                         Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
@@ -287,7 +293,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
     if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;portsideOpen=true},{preferencesOpen=false;about=true},
-        onClose={preferencesOpen=false},shortcutGesture=model.shortcutGesture,onShortcutGesture=model::changeShortcutGesture)
+        onClose={preferencesOpen=false},shortcutGesture=model.shortcutGesture,onShortcutGesture=model::changeShortcutGesture,
+        onNeovim={preferencesOpen=false;neovimSettings=true})
+    if(neovimSettings) NeovimShortcutsSheet(model.neovimShortcuts,model::saveNeovimShortcuts,onClose={neovimSettings=false},
+        enabled=model.neovimShortcutsEnabled,onEnabled=model::enableNeovimShortcuts,
+        layout=model.neovimShortcutLayout,onLayout=model::changeNeovimShortcutLayout)
     if(portsideOpen) PortsideSettingsSheet(model,{action->withPortsideNetwork(action)}) {portsideOpen=false}
     if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("Image upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}},dismissButton={TextButton(onClick={model.images.notice="";portsideOpen=true}) {Text("Portside settings")}})
     if(about) AboutSheet {about=false}

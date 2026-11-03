@@ -2,7 +2,6 @@ package dev.shulhi.rex
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -14,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
@@ -27,7 +25,6 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,15 +63,7 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
         return if(col in 0 until CONTROL_SHORTCUT_COLUMNS && row in 0 until controlShortcutRows && index in controlShortcuts.indices && px-col*(w+gap)<w && py-row*(h+gap)<h) index else -1
     }
     BackHandler(visible) {dismiss()}
-    val provider=remember(padding) {object: PopupPositionProvider {
-        override fun calculatePosition(anchorBounds: IntRect,windowSize: IntSize,layoutDirection: LayoutDirection,popupContentSize: IntSize): IntOffset {
-            val edge=padding.toInt()
-            val x=(anchorBounds.center.x-popupContentSize.width/2).coerceIn(edge,maxOf(edge,windowSize.width-popupContentSize.width-edge))
-            val above=anchorBounds.top-popupContentSize.height-edge
-            val y=(if(above>=edge) above else anchorBounds.bottom+edge).coerceIn(edge,maxOf(edge,windowSize.height-popupContentSize.height-edge))
-            val position=IntOffset(x,y);popup=IntRect(position,popupContentSize);return position
-        }
-    }}
+    val provider=rememberSpeechBubblePositioner {popup=it}
     val selected=active || pressed || visible
     Box(modifier.fillMaxHeight().onGloballyPositioned {anchor=it.boundsInWindow()}
         .clip(RoundedCornerShape(11.dp)).background(if(selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
@@ -121,10 +110,8 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
             (if(selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(readable) 1f else .38f))
         if(visible) Popup(popupPositionProvider=provider,onDismissRequest={dismiss()},
             properties=PopupProperties(focusable=false,dismissOnClickOutside=true)) {
-            Column(Modifier.width(244.dp).shadow(10.dp,RoundedCornerShape(18.dp))
-                .clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .border(1.dp,MaterialTheme.colorScheme.outline,RoundedCornerShape(18.dp)).padding(8.dp)
-                .semantics {contentDescription="Control shortcuts"},verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            SpeechBubble(provider,Modifier.width(244.dp).semantics {contentDescription="Control shortcuts"}) {
+            Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 repeat(controlShortcutRows) {row->
                     Row(Modifier.fillMaxWidth().height(44.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                         repeat(CONTROL_SHORTCUT_COLUMNS) {col->
@@ -140,6 +127,7 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
                         }
                     }
                 }
+            }
             }
         }
     }

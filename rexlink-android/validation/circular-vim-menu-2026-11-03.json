@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-03",
+  "change": "Optional full circular Vim menu and unlimited saved shortcut count",
+  "base_revision": "076b1bfeb3",
+  "local_changes": true,
+  "version_code": 29,
+  "apk": "dist/Rexlink-2026.11.03-build29-076b1bfeb3-modified-arm64-release.apk",
+  "release_sha256": "65b68888add177d25576801eba3ae8f9cfb4ae24f306c7be84abb8834a5f1a6f",
+  "checks": {
+    "jvm_passed": 144,
+    "jvm_optional_skipped": 1,
+    "focused_android_passed": 16,
+    "large_list_roundtrip_passed": true,
+    "layout_preference_persistence_passed": true,
+    "circular_target_nonoverlap_passed": true,
+    "native_outside_dismissal_both_layouts_passed": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "light_dark_previews_inspected": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Removed the 16-shortcut count cap and old 12000-character stored JSON cap. Retained individual label/key validation and one-level groups. Added saved Grid/Circular preference (Circular default): up to six ring targets around a central Edit/Back control, vertical paging, stable menu bounds and repeated action selection without dismissal. Circle corners outside the visible wheel dismiss it. Grid tightened to 216dp maximum width, 40dp rows, 28dp header/footer, 5dp padding and 2dp gaps, with text sizes unchanged.",
+  "phone_install": "Installed release 29 wirelessly on S22+ RFCT21390SD; installed APK SHA-256 matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Pending existing 1Password signing error; no unsigned commit created"
+}
