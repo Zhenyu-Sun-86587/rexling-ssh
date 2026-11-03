@@ -18,6 +18,9 @@ python3 scripts/verify_apk.py --apk app/build/outputs/apk/release/app-release.ap
 ```
 
 The release APK is `app/build/outputs/apk/release/app-release.apk` (arm64, API 28+).
+Run `./scripts/gradle.sh :app:shareRelease` for a copy in `dist/` named
+`Rexlink-<date>-build<code>-<commit>-arm64-release.apk`, with a SHA-256 checksum.
+Its identity matches **⋮ → About Rexlink**; local edits add `-modified`.
 The package remains `dev.shulhi.rex`, preserving existing installs and settings.
 Local releases retain the development signing identity; configure production
 signing separately before publishing. SDK paths and caches remain ignored.

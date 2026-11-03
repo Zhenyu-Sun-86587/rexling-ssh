@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -27,7 +29,7 @@ android {
         applicationId = "dev.shulhi.rex"
         minSdk = 28
         targetSdk = 37
-        versionCode = 2
+        versionCode = 3
         versionName = dateVersion
         buildConfigField("String","GIT_REVISION","\"$revision\"")
         buildConfigField("boolean","LOCAL_CHANGES",modified.toString())
@@ -89,3 +91,24 @@ val buildRust by tasks.registering(Exec::class) {
     outputs.dir(project.file("src/main/jniLibs/arm64-v8a"))
 }
 tasks.named("preBuild").configure { dependsOn(buildRust) }
+
+// Use the same configuration values as About, never the checkout at copy time.
+tasks.register("shareRelease") {
+    group="distribution"
+    description="Build a release APK named with its version, build code and source revision."
+    dependsOn("assembleRelease")
+    val name="Rexlink-$dateVersion-build${android.defaultConfig.versionCode}-$revision${if(modified) "-modified" else ""}-arm64-release.apk"
+    val source=layout.buildDirectory.file("outputs/apk/release/app-release.apk")
+    val target=rootProject.layout.projectDirectory.file("dist/$name")
+    val checksum=rootProject.layout.projectDirectory.file("dist/$name.sha256")
+    inputs.file(source)
+    outputs.files(target,checksum)
+    doLast {
+        val apk=target.asFile
+        apk.parentFile.mkdirs()
+        source.get().asFile.copyTo(apk,overwrite=true)
+        val hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(apk.readBytes()))
+        checksum.asFile.writeText("$hash  $name\n")
+        logger.lifecycle("Shareable APK: ${apk.absolutePath}")
+    }
+}

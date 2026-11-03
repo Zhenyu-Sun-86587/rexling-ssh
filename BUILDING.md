@@ -48,6 +48,18 @@ remain pinned by the Android project.
 Release output: `rexlink-android/app/build/outputs/apk/release/app-release.apk`.
 Debug output: `rexlink-android/app/build/outputs/apk/debug/app-debug.apk`.
 
+For a shareable release with its build identity in the filename:
+
+```sh
+./rexlink-android/scripts/gradle.sh :app:shareRelease
+```
+
+This builds the release and copies it to
+`rexlink-android/dist/Rexlink-<date>-build<code>-<commit>-arm64-release.apk`,
+with a matching `.apk.sha256` file. Version, build code and commit match About.
+Tracked local edits add `-modified` after the commit; source archives use `unknown`.
+The standard Gradle output remains available at `app-release.apk`.
+
 The visible app version uses the build's UTC date (`YYYY.MM.DD`). **⋮ → About
 Rexlink** shows that version, Android's numeric build code, build type and Git
 revision, with **Copy build info** for bug reports. Tracked local edits are marked

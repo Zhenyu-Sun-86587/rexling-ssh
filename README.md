@@ -39,7 +39,7 @@ then install with Android SDK platform-tools:
 
 ```sh
 adb devices -l
-adb -s <your-device-serial> install -r "Rexlink-<version>-arm64-release.apk"
+adb -s <your-device-serial> install -r "Rexlink-<version>-build<code>-<commit>-arm64-release.apk"
 ```
 
 Open **Rexlink**, enter your Rex server's authenticated private HTTPS URL, and
@@ -67,6 +67,10 @@ From this repository root:
 ```sh
 ./rexlink-android/scripts/gradle.sh :app:assembleRelease
 ```
+
+For a shareable APK whose filename includes the date, build number and commit,
+run `./rexlink-android/scripts/gradle.sh :app:shareRelease`. The APK and SHA-256
+checksum are written to `rexlink-android/dist/`.
 
 To install the APK you just built:
 
