@@ -35,7 +35,7 @@ class ActivityAttentionTest {
         try {
             ui.runOnUiThread {model=RexModel(app,name);store.put("attention",model);model.connectServer(profile.id)}
             ui.setContent {MaterialTheme(colorScheme=darkColorScheme(primary=Color(0xff315cf4))) {
-                TerminalActions(true,true,true,true,{},{},{},{},attentionCount=model.attentionCount)
+                TerminalActions(true,true,{},{},attentionCount=model.attentionCount)
             }}
             ui.waitUntil(20000) {model.activeClient.state.value.connected && model.attentionCount>0}
             val eye=ui.onNodeWithContentDescription("Activity")

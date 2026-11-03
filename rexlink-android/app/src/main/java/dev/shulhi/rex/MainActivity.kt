@@ -259,8 +259,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
                             TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=state.selectedSession,animateWorking=!model.activityVisible,actions={
-                                TerminalActions(ready,model.connectedCount>0,blocks.isNotEmpty(),state.selectedBlock.isNotBlank(),
-                                    {model.showActivity(true)},{picker="panes"},client::createPane,client::createTab,attentionCount=model.attentionCount)
+                                TerminalActions(state.connected && state.selectedSession.isNotBlank(),model.connectedCount>0,
+                                    {model.showActivity(true)},{picker="tabs"},attentionCount=model.attentionCount)
                             })
                             KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
                                 client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget) {
@@ -287,30 +287,13 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     if(about) AboutSheet {about=false}
     if(alerts) BackgroundAlertsDialog(model) {alerts=false}
     if(servers) ServersSheet(model){servers=false}
-    if(picker=="panes") ModalBottomSheet(onDismissRequest={picker=""}) {
-        Column(Modifier.fillMaxWidth().heightIn(max=450.dp).verticalScroll(rememberScrollState()).padding(bottom=20.dp)) {
-            Text("Panes",Modifier.padding(20.dp),fontWeight=FontWeight.Bold,fontSize=18.sp)
-            blocks.forEachIndexed {index,b->
-                val program=state.programs[b.id] ?: ProgramIdentity.Terminal
-                val label=program.paneTitle(b.label,state.titles[b.id].orEmpty())
-                Row(Modifier.fillMaxWidth().clickable{picker="";client.selectBlock(b.id)}
-                    .padding(horizontal=20.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically,
-                    horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    ProgramStack(listOf(program),0,framed=true)
-                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                        Text(label,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            fontWeight=if(b.id==chosen) FontWeight.Bold else FontWeight.Medium,
-                            color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                        Text(state.directories[b.id].orEmpty().ifBlank {program.label},fontSize=11.sp,
-                            color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    }
-                    Text(if(b.id==chosen) "✓" else "${index+1}",color=if(b.id==chosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    ChromeButton(ChromeIcon.CLOSE,"Close pane $label",ready) {picker="";closeTarget=closePaneTarget(b)}
-                }
-            }
-            TextButton(onClick={picker="";client.createPane()},enabled=ready){Text("New pane")}
-        }
-    }
+    if(picker=="tabs" || picker=="panes") TabPaneSwitcher(windows,window?.id.orEmpty(),chosen,
+        state.programs,state.titles,state.directories,client::tabPaneIndex,ready,
+        canCreateTab=ready && state.selectedSession.isNotBlank(),canCreatePane=ready && state.selectedBlock.isNotBlank(),
+        onTab={picker="";client.selectWindow(it)},onPane={picker="";client.selectBlock(it)},
+        onNewTab={picker="";client.createTab()},onNewPane={picker="";client.createPane()},
+        onCloseTab={picker="";closeTarget=closeTabTarget(it)},onClosePane={picker="";closeTarget=closePaneTarget(it)},
+        onClose={picker=""},initialPage=if(picker=="panes") 1 else 0)
     closeTarget?.let {target->
         AlertDialog(onDismissRequest={closeTarget=null},title={Text(if(target.tab) "Close tab?" else "Close pane?")},
             text={Text(if(target.tab) "Close “${target.label}”? This ends every program in its ${target.blocks.size} pane${if(target.blocks.size==1) "" else "s"}."

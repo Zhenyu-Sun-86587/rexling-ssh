@@ -27,19 +27,19 @@ class ActivitySheetTest {
         ui.onNodeWithContentDescription("Review, Approval, Session s2, Mac").performClick()
         ui.runOnIdle {assertEquals("b",selected!!.server.id);assertEquals("s2",selected!!.record.session);assertEquals("pane2",selected!!.record.block)}
     }
-    @Test fun tabActionsKeepActivityRightmostAndOfferAllPaneTabOperations() {
+    @Test fun tabButtonOpensTheSwitcherDirectlyAndKeepsActivityRightmost() {
         val calls=mutableListOf<String>()
-        ui.setContent {MaterialTheme {TerminalActions(true,true,true,true,{calls+="activity"},{calls+="switch"},{calls+="pane"},{calls+="tab"})}}
-        val pane=ui.onNodeWithContentDescription("Pane options").fetchSemanticsNode().boundsInRoot
+        ui.setContent {MaterialTheme {TerminalActions(true,true,{calls+="activity"},{calls+="switcher"})}}
+        val pane=ui.onNodeWithContentDescription("Tabs and panes").fetchSemanticsNode().boundsInRoot
         val eye=ui.onNodeWithContentDescription("Activity").fetchSemanticsNode().boundsInRoot
         assertTrue(eye.left>=pane.right)
-        for((label,expected) in listOf("Switch pane" to "switch","New pane" to "pane","New tab" to "tab")) {
-            ui.onNodeWithContentDescription("Pane options").performClick();ui.onNodeWithText(label).performClick()
-            ui.runOnIdle {assertEquals(expected,calls.last())}
-        }
+        ui.onNodeWithContentDescription("Tabs and panes").performClick()
+        ui.runOnIdle {assertEquals(listOf("switcher"),calls)}
+        ui.onNodeWithText("Switch pane").assertDoesNotExist()
+        ui.onNodeWithText("New pane").assertDoesNotExist()
+        ui.onNodeWithText("New tab").assertDoesNotExist()
         ui.onNodeWithContentDescription("Activity").performClick()
         ui.runOnIdle {assertEquals("activity",calls.last())}
-        ui.onNodeWithContentDescription("Add terminal").assertDoesNotExist()
     }
     @Test fun staleActivityIsDisabledAndShowsItsRefreshError() {
         val server=ServerProfile.create("Linux","https://linux.example","a");var selected=false
@@ -58,7 +58,7 @@ class ActivitySheetTest {
         ui.runOnIdle {assertEquals(0,opened)}
     }
     @Test fun eyeHasAnAccessibleAttentionIndicator() {
-        ui.setContent {MaterialTheme {TerminalActions(true,true,true,true,{},{},{},{},attentionCount=2)}}
+        ui.setContent {MaterialTheme {TerminalActions(true,true,{},{},attentionCount=2)}}
         ui.onNodeWithContentDescription("Activity").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"2 new activity items"))
     }
 

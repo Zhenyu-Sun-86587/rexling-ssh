@@ -374,19 +374,10 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
-@Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,canSwitch: Boolean,canSplit: Boolean,
-    onActivity: ()->Unit,onPanes: ()->Unit,onNewPane: ()->Unit,onNewTab: ()->Unit,attentionCount: Int=0) {
-    var expanded by remember {mutableStateOf(false)}
+@Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,
+    onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0) {
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-        Box {
-            ChromeButton(ChromeIcon.SPLIT,"Pane options",enabled,readable=activityEnabled) {expanded=true}
-            androidx.compose.material3.DropdownMenu(expanded,{expanded=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                androidx.compose.material3.DropdownMenuItem(text={Text("Switch pane")},enabled=canSwitch,onClick={expanded=false;onPanes()})
-                androidx.compose.material3.HorizontalDivider()
-                androidx.compose.material3.DropdownMenuItem(text={Text("New pane")},enabled=canSplit,onClick={expanded=false;onNewPane()})
-                androidx.compose.material3.DropdownMenuItem(text={Text("New tab")},onClick={expanded=false;onNewTab()})
-            }
-        }
+        ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)
         Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
             ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,modifier=Modifier.semantics {stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},onClick=onActivity)
             if(attentionCount>0) Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(6.dp).background(MaterialTheme.colorScheme.primary,RoundedCornerShape(3.dp)))

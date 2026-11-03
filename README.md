@@ -99,8 +99,11 @@ address. Add hosts under **⋮ → Servers**. The header cycles through sessions
 across connected hosts; the terminal card switches panes. Both loop at the ends.
 Check **⋮ → Preferences → About Rexlink** for the date-based app version, build number and
 commit; **Copy build info** copies these details for bug reports.
-The bottom dock switches
-tabs and opens pane options or Activity. Hold a tab and drag it left or right to
+The bottom dock switches tabs and opens Activity. Its tab/pane button opens a
+switcher directly: tap **Tabs** or **Panes**, or swipe between them. Select a row
+to switch, use **New tab** or **New pane** in its section, or close an item with
+its × button and confirmation. Panes lists the panes in the current tab.
+Hold a tab and drag it left or right to
 rearrange it; hold near an edge to scroll farther. The order syncs with other Rex
 clients. Hold and release without dragging for **Move left**, **Move right** and
 **Close tab**. Rename a session from its row’s
