@@ -54,4 +54,53 @@ class WorkspaceNavigationTest {
         assertNull(navigation.neighbour(listOf(second),"c",1))
     }
 
+    @Test fun historyRoundTripRetainsEachSessionsTabAndEachTabsPane() {
+        val history=WorkspaceNavigation()
+        history.remember("a",listOf(first,second),"b")
+        history.remember("a",listOf(first,second),"c")
+        history.remember("b",listOf(first,second),"a")
+        val restored=WorkspaceNavigation.decode(history.encode())
+        assertEquals("b",restored.pane("a",first))
+        assertEquals("c",restored.pane("a",listOf(first,second)))
+        assertEquals("a",restored.pane("b",listOf(first,second)))
+    }
+    @Test fun aPendingUserSelectionSurvivesBeforeItsSnapshotArrives() {
+        val history=WorkspaceNavigation()
+        history.remember("s",listOf(first,second),"a")
+        history.request("s","c")
+        val restored=WorkspaceNavigation.decode(history.encode())
+        val initial=AppState(phase="connected",sessions=listOf(SessionItem("s","Session")),selectedSession="s",selectedBlock="a",windows=listOf(first,second))
+        assertEquals(WorkspaceTarget("s","c"),restored.target(initial,"s"))
+        assertEquals("c",restored.pane("s",listOf(first,second)))
+    }
+    @Test fun restoringSelectsTheSavedSessionBeforeItsPaneAndIgnoresTransientStates() {
+        val history=WorkspaceNavigation();history.remember("saved",listOf(first,second),"b")
+        val initial=AppState(phase="connected",sessions=listOf(SessionItem("other","Other"),SessionItem("saved","Saved")),selectedSession="other",selectedBlock="a",windows=listOf(first,second))
+        assertEquals(WorkspaceTarget("saved"),history.target(initial,"saved"))
+        assertEquals(WorkspaceTarget("saved","b"),history.target(initial.copy(selectedSession="saved"),"saved"))
+        assertNull(history.target(initial.copy(phase="reconnecting"),"saved"))
+        assertNull(history.target(initial.copy(creating=true),"saved"))
+        assertNull(history.target(initial.copy(selectedSession="saved",selectedBlock="b"),"saved"))
+    }
+    @Test fun deletedSavedTerminalsFallBackWithoutRetryingMissingIds() {
+        val history=WorkspaceNavigation();history.remember("s",listOf(first,second),"b")
+        val state=AppState(phase="connected",sessions=listOf(SessionItem("s","Session")),selectedSession="s",windows=listOf(first.copy(blocks=listOf(first.blocks[0])),second))
+        assertEquals(WorkspaceTarget("s","a"),history.target(state,"s"))
+        assertEquals(WorkspaceTarget("s","c"),history.target(state.copy(windows=listOf(second)),"s"))
+        assertEquals(WorkspaceTarget("s","a"),history.target(state,"deleted-session"))
+        assertNull(history.target(state.copy(sessions=emptyList()),"s"))
+    }
+    @Test fun repeatedSnapshotsDoNotProduceNewHistoryWrites() {
+        val history=WorkspaceNavigation()
+        assertTrue(history.remember("s",listOf(first,second),"b"))
+        assertFalse(history.remember("s",listOf(first,second),"b"))
+        assertFalse(history.request("s","b"))
+        assertTrue(history.request("s","c"))
+    }
+    @Test fun malformedHistoryAndMissingFieldsRemainSafe() {
+        for(raw in listOf(null,"broken","[]","""{"s":{"window":42,"block":{},"panes":{"one":true}},"bad":4}""")) {
+            assertEquals("a",WorkspaceNavigation.decode(raw).pane("s",listOf(first,second)))
+        }
+    }
+
 }

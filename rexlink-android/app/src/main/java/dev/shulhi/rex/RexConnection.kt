@@ -102,7 +102,9 @@ internal class RexConnection(application: Application, private val scope: Corout
     val shiftModifier: Boolean get()=shiftState.active
     var navigationRequest by mutableStateOf(NavigationRequest())
         private set
-    private val navigation = WorkspaceNavigation()
+    private val workspace=SavedWorkspace(preferences,savedEndpoint)
+    private val navigation=workspace.navigation
+    private var restoreWorkspace=true
     private val activation=PaneActivation()
     private var navigationSerial = 0L
     private var keyEpoch by mutableStateOf(0L)
@@ -159,16 +161,20 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 navigationRequest = navigationRequest.acknowledge(next)
                                 pendingTabOrder=pendingTabOrder?.keepFor(next)
                                 val old=state.value
-                                if(old.connectionEpoch!=next.connectionEpoch) {activation.resume();cancelKeyRepeats();resetModifiers()}
+                                if(old.connectionEpoch!=next.connectionEpoch) {
+                                    activation.resume();cancelKeyRepeats();resetModifiers()
+                                    navigationRequest=NavigationRequest();restoreWorkspace=true
+                                }
                                 android.os.Trace.beginSection("Rexlink.previewCache")
                                 try {paneFrames=updatePaneFrames(paneFrames,old,next)} finally {android.os.Trace.endSection()}
-                                if(next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession) {
+                                if(!restoreWorkspace && next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession &&
+                                    (navigationRequest.session==null || navigationRequest.session==next.selectedSession)) {
                                     val old=state.value.selectedSession
                                     if(old.isNotBlank() && !navigationRequest.pending) {
                                         lastSessionId=old
                                         preferences.edit {putString("last_session:${next.endpoint}",old)}
                                     }
-                                    preferences.edit {putString("current_session:${next.endpoint}",next.selectedSession)}
+                                    workspace.selectSession(next.selectedSession)
                                 }
                                 if(old.controlled!=next.controlled || old.selectedBlock!=next.selectedBlock || old.phase!=next.phase) cancelKeyRepeats()
                                 if(!next.controlled || old.selectedBlock!=next.selectedBlock) resetModifiers()
@@ -177,7 +183,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
                                 mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())
-                                rememberCurrentTerminal(); openPreferredTerminal();claimActivePane()
+                                openPreferredTerminal();rememberCurrentTerminal();claimActivePane()
                             }
                         } catch (error: Exception) {
                             withContext(Dispatchers.Main.immediate) {
@@ -209,6 +215,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
+        restoreWorkspace=true
         pendingTabOrder=null
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         resetModifiers()
@@ -223,6 +230,10 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun disconnect() { pendingTabOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
+        if(id.isBlank()) return
+        workspace.selectSession(id)
+        if(!state.value.connected) {navigationRequest=NavigationRequest();restoreWorkspace=true;return}
+        restoreWorkspace=false
         if (id == (navigationRequest.session ?: state.value.selectedSession)) return
         pendingTabOrder=null
         val old=navigationRequest.session ?: state.value.selectedSession
@@ -243,7 +254,8 @@ internal class RexConnection(application: Application, private val scope: Corout
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         navigationRequest = NavigationRequest(block = id, id = ++navigationSerial)
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
-        navigation.remember(current.selectedSession, current.windows, id)
+        restoreWorkspace=false
+        workspace.remember(current.selectedSession,current.windows,id)
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun openActivity(session: String,block: String) {
@@ -253,6 +265,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             lastSessionId=current.selectedSession;preferences.edit {putString("last_session:${current.endpoint}",lastSessionId)}
         }
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
+        restoreWorkspace=false;workspace.request(session,block)
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
         command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
     }
@@ -265,17 +278,19 @@ internal class RexConnection(application: Application, private val scope: Corout
         }
     }
     fun rememberCurrentTerminal() {
-        val current = state.value
-        if (!navigationRequest.pending) navigation.remember(current.selectedSession, current.windows, current.selectedBlock)
+        val current=state.value
+        if(current.connected && !current.creating && !restoreWorkspace && !navigationRequest.pending && current.selectedBlock.isNotBlank())
+            workspace.remember(current.selectedSession,current.windows,current.selectedBlock)
     }
     fun openPreferredTerminal() {
-        val current = state.value
-        if(current.creating) return
-        if(!navigationRequest.pending && current.connected && current.selectedSession.isBlank()) {
-            val saved=preferences.getString("current_session:${current.endpoint}","")
-            (current.sessions.firstOrNull { it.id==saved } ?: current.sessions.firstOrNull())?.let { selectSession(it.id) }
-        } else if (!navigationRequest.pending && current.connected && current.selectedSession.isNotBlank() && current.selectedBlock.isBlank()) {
-            navigation.pane(current.selectedSession, current.windows)?.let(::selectBlock)
+        val current=state.value
+        if(!current.connected || current.creating || navigationRequest.pending) return
+        if(!restoreWorkspace && current.selectedSession.isNotBlank() && current.selectedBlock.isNotBlank()) return
+        val target=workspace.target(current)
+        restoreWorkspace=false
+        if(target!=null) {
+            if(target.session!=current.selectedSession) selectSession(target.session)
+            else target.block?.let(::selectBlock)
         }
     }
     fun swipePane(step: Int) {
@@ -336,7 +351,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun refresh() = command("refresh")
     fun claimActivePane() {
         val current=state.value
-        if(activation.shouldTake(current,navigationRequest,visible && foreground,lastSize)) sendTake(current)
+        if(!restoreWorkspace && activation.shouldTake(current,navigationRequest,visible && foreground,lastSize)) sendTake(current)
     }
     private fun sendTake(current: AppState) = command("take","session" to current.selectedSession,"block" to current.selectedBlock,
         "navigationId" to current.navigationId,"columns" to lastSize.first,"rows" to lastSize.second)
@@ -367,7 +382,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
         command("pause")
     }
-    fun resume() { if(!foreground) activation.resume();foreground = true; command("resume") }
+    fun resume() { if(!foreground) {activation.resume();restoreWorkspace=true};foreground = true; command("resume") }
     fun toggleControl() { controlModifier = !controlModifier }
     fun toggleAlt() { altModifier = !altModifier }
     fun toggleShift() {shiftState=ShiftKeyState(latched=!shiftState.active)}

@@ -4,13 +4,14 @@ import kotlin.math.roundToInt
 import kotlin.math.abs
 
 internal data class TabWidth(val width: Float,val showTitle: Boolean)
+internal const val TAB_GAP_DP=2f
 
 /** Content widths include the icon, text and padding. Allocation uses whole pixels. */
 internal fun tabWidths(available: Float,contentWidths: List<Float>,activeIndex: Int,density: Float=1f): List<TabWidth> {
     if(contentWidths.isEmpty()) return emptyList()
     val minimum=(48f*density).roundToInt()
     val count=contentWidths.size
-    val space=(available.coerceAtLeast(0f)*density).roundToInt()-(4f*density).roundToInt()*(count-1)
+    val space=(available.coerceAtLeast(0f)*density).roundToInt()-(TAB_GAP_DP*density).roundToInt()*(count-1)
     val preferred=contentWidths.mapIndexed {i,width->(width*density).roundToInt().coerceIn(minimum,((if(i==activeIndex) 160f else 120f)*density).roundToInt())}
     val widths=IntArray(count) {minimum}
     if(activeIndex in widths.indices) {

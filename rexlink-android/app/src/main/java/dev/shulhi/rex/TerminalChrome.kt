@@ -321,7 +321,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             }
                             drag.cancel()
                         })
-                },state=list,userScrollEnabled=drag.id==null,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                },state=list,userScrollEnabled=drag.id==null,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(TAB_GAP_DP.dp)) {
                 val displayed=if(drag.id==null) windows else drag.order.mapNotNull {id->windows.firstOrNull {it.id==id}}
                 itemsIndexed(displayed,key={_,w->w.id}) {i,w ->
                     val windowIndex=windows.indexOfFirst {it.id==w.id}

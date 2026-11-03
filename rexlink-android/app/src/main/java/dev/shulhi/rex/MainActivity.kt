@@ -177,7 +177,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     LaunchedEffect(palette) { model.updateTerminalTheme(palette) }
     LaunchedEffect(state.phase) {if(state.connected || state.phase=="preview") showServer=false}
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
-        client.rememberCurrentTerminal();client.openPreferredTerminal()
+        client.openPreferredTerminal();client.rememberCurrentTerminal()
     }
     LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock) {
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}

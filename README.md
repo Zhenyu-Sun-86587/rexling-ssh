@@ -97,6 +97,9 @@ the development signing identity; see the build guide before publishing a releas
 Keep Tailscale connected on the phone and enter your Rex server's private HTTPS
 address. Add hosts under **⋮ → Servers**. The header cycles through sessions
 across connected hosts; the terminal card switches panes. Both loop at the ends.
+Rexlink saves the last session, tab and pane for each server, including the last
+pane used in each tab, and restores them when reopened. Closed terminals fall
+back to an existing pane.
 Check **⋮ → Preferences → About Rexlink** for the date-based app version, build number and
 commit; **Copy build info** copies these details for bug reports.
 The bottom dock switches tabs and opens Activity. Its tab/pane button opens a

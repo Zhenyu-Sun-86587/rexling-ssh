@@ -115,7 +115,7 @@ class AdaptiveTabsTest {
     }
     @Test fun captionsFollowTheActiveTabLikeAnAccordion() {
         count.intValue=3;selected.value="2";width.floatValue=400f
-        names.value=listOf("Distant Codex task","Adjacent Codex task","Identify the image | rexlink")
+        names.value=listOf("Distant Codex task with a longer title","Adjacent Codex task","Identify the image | rexlink")
         show(programOrder=List(3){programs[0]})
         ui.onNodeWithText(names.value[0]).assertDoesNotExist()
         ui.onNodeWithText(names.value[1]).assertIsDisplayed()
