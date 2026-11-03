@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-03",
+  "change": "Accordion caption priority by distance from the active tab",
+  "source_revision": "a4dd17cc4e",
+  "version_code": 10,
+  "apk": "dist/Rexlink-2026.11.03-build10-a4dd17cc4e-arm64-release.apk",
+  "release_sha256": "5d92889a7233855fd0ab586653ca3d263f11bc3526d7cd93a0ceaf6bf2bfe6be",
+  "policy": "Reveal minimum useful captions nearest the active tab first, then grow captions outward by distance. Equal-distance neighbors share growth. Preserve natural content widths, caps, compact icon targets and overflow scrolling.",
+  "checks": {
+    "jvm_passed": 114,
+    "optional_benchmark_skipped": 1,
+    "focused_ui_passed": 15,
+    "release_lint_passed": true,
+    "accordion_left_and_right_visual_review_passed": true,
+    "static_release_apk_checks_passed": true,
+    "s22_plus_installed_hash_verified": true,
+    "headless_emulator_closed": true
+  },
+  "coverage": [
+    "Adjacent caption wins at either end",
+    "Equal-distance neighbors share space before distant tabs",
+    "A short distant caption cannot steal an adjacent captions budget",
+    "Selecting a different active tab transfers caption priority",
+    "Existing content sizing, short labels, pixel rounding, overflow visibility and drag reorder"
+  ],
+  "scope": "Android tab width allocation only; no added animation loops or transport changes"
+}

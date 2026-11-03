@@ -1586,3 +1586,24 @@ Installed optimized release build 9, source 2482e7fa3d, on S22+ with data
 preserved; the installed base APK SHA-256 matches the shareable release. Static
 release checks pass. The headless emulator was closed after testing. Details
 are in validation/content-sized-tabs-2026-11-03.json and validation/apk.json.
+
+## Accordion caption priority — 2026-11-03
+
+Inactive captions now receive space outward from the active tab. Useful minimum
+captions are revealed nearest first; remaining width grows captions by distance,
+sharing space between equally close neighbors. Farther tabs collapse first.
+Natural content sizing, width caps, 48 dp targets, overflow visibility, cached
+measurement and existing motion/reorder behavior remain.
+
+Validation: 114 JVM tests passed and one optional benchmark skipped; release
+lint passed. Fifteen focused UI tests passed, including selection transferring
+caption priority between either end of the strip, content sizing, short labels,
+pixel rounding, overflow/resize visibility, stacked icons and drag reorder.
+Pure tests also cover symmetric neighbors and a short distant caption competing
+with an adjacent one. Reviewed left/right accordion previews matching the user
+screenshot's intended ordering.
+
+Installed optimized release build 10, source a4dd17cc4e, on S22+ with data
+preserved. Static release checks pass and installed base APK SHA-256 matches
+the shareable release. Headless emulator closed after testing. See
+validation/adjacent-tab-priority-2026-11-03.json and validation/apk.json.
