@@ -94,7 +94,10 @@ Keep Tailscale connected on the phone and enter your Rex server's private HTTPS
 address. Add hosts under **⋮ → Servers**. The header cycles through sessions
 across connected hosts; the terminal card switches panes. Both loop at the ends.
 The bottom dock switches
-tabs and opens pane options or Activity. Rename a session from its row’s
+tabs and opens pane options or Activity. Hold a tab and drag it left or right to
+rearrange it; hold near an edge to scroll farther. The order syncs with other Rex
+clients. Hold and release without dragging for **Move left**, **Move right** and
+**Close tab**. Rename a session from its row’s
 **⋮ → Rename session** in the session list; changes sync through Rex.
 The selected pane streams a Ghostty
 snapshot followed by incremental VT output. Opening a pane claims it once when

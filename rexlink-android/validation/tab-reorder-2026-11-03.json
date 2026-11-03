@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-03",
+  "change": "Drag to reorder tabs, synchronized through Rex session.move_window",
+  "checks": {
+    "jvm_passed": 95,
+    "jvm_optional_benchmark_skipped": 1,
+    "emulator_ui_passed": 92,
+    "focused_tab_gesture_tests": 6,
+    "native_non_live_passed": 60,
+    "native_ignored": 15,
+    "live_owned_session_reorder_passed": true,
+    "selection_control_and_size_preserved": true,
+    "external_order_updates_received": true,
+    "stale_targets_rejected_and_acknowledged": true,
+    "native_clippy_passed": true,
+    "host_jni_smoke_passed": true,
+    "release_lint_passed": true,
+    "static_apk_checks_passed": true
+  },
+  "release_sha256": "aa1c9969324c60071683c367b0856d50c4211c3778a2a30723d4d367f15dd7bb",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true,
+  "reopened_after_update": true,
+  "scope": "Only disposable owned sessions mutated during protocol testing; no user terminal input or server configuration changed"
+}

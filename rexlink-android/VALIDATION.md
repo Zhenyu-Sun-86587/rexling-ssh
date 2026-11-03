@@ -1369,3 +1369,30 @@ foreground coverage immediately inside the bottom-center mask boundary. The
 profile and 16KiB packaging checks pass. Installed on S22+ RFCT21390SD with data
 preserved and verified the installed base APK hash against the shareable release.
 See `validation/launcher-framing-2026-11-03.json`.
+
+
+## Synchronized tab reordering — 2026-11-03
+
+Hold a tab, then drag left or right to reorder it. Other tabs move aside, and
+holding near a strip edge scrolls to offscreen tabs. Holding and releasing without
+dragging opens Move left, Move right and Close tab; accessibility actions provide
+the same moves. Ordinary swipes continue to scroll the strip. Cancelled gestures
+and session changes discard the preview.
+
+A drop sends one session.move_window request. The displayed order stays optimistic
+until its native acknowledgement; failures restore the authoritative order and
+are not retried automatically. Rex broadcasts order changes to other clients.
+Window reordering preserves program metadata instead of clearing icons/titles.
+The selected pane, terminal stream, size and ownership remain unchanged.
+
+All 92 non-fixture emulator UI checks pass, including six new held-gesture,
+auto-scroll, cancellation, menu and accessibility checks. JVM checks: 95 passed
+and one optional benchmark skipped. Native checks: 60 passed, 15 ignored; the new
+live test was then explicitly run and passed against an owned disposable
+three-tab session. It verifies server order, external changes, stable selection,
+control and size, and rejected stale targets with acknowledgements. Native clippy,
+host JNI smoke, release lint and APK signature/profile/16KiB checks pass.
+
+Installed the release on S22+ RFCT21390SD with app data preserved, reopened it and
+verified its base APK hash matches the shareable release. See
+`validation/tab-reorder-2026-11-03.json` for results and the release hash.

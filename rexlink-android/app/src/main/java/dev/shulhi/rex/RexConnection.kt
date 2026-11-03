@@ -21,6 +21,19 @@ internal class RexConnection(application: Application, private val scope: Corout
         private set
     var paneFrames by mutableStateOf<Map<String,TerminalScreen>>(emptyMap())
         private set
+    private var tabMoveSerial=0L
+    private var pendingTabOrder by mutableStateOf<PendingTabOrder?>(null)
+    fun orderedWindows(value: AppState): List<WindowItem> = pendingTabOrder?.apply(value) ?: value.windows
+    fun moveTab(id: String,before: String?): Boolean {
+        val current=state.value
+        if(handle==0L || !visible || !foreground || !current.connected || current.creating || navigationRequest.pending) return false
+        val old=orderedWindows(current).map {it.id}
+        val order=moveTabBefore(old,id,before) ?: return false
+        if(order==old) return false
+        pendingTabOrder=PendingTabOrder(current.selectedSession,++tabMoveSerial,order)
+        command("move_tab","session" to current.selectedSession,"id" to id,"before" to before.orEmpty(),"requestId" to tabMoveSerial)
+        return true
+    }
     private val mutableState = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = mutableState
     private val mutableChrome=MutableStateFlow(AppState())
@@ -121,7 +134,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) {cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {pendingTabOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -142,6 +155,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                             android.os.Trace.beginSection("Rexlink.ready.$handle.${next.revision}");android.os.Trace.endSection()
                             withContext(Dispatchers.Main.immediate) {
                                 navigationRequest = navigationRequest.acknowledge(next)
+                                pendingTabOrder=pendingTabOrder?.keepFor(next)
                                 val old=state.value
                                 if(old.connectionEpoch!=next.connectionEpoch) {activation.resume();cancelKeyRepeats();resetModifiers()}
                                 android.os.Trace.beginSection("Rexlink.previewCache")
@@ -185,11 +199,13 @@ internal class RexConnection(application: Application, private val scope: Corout
         val error = NativeBridge.command(handle, request.toString())
         if (error.isNotEmpty()) {
             navigationRequest = NavigationRequest()
+            pendingTabOrder=null
             setState(state.value.copy(error=error))
         }
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
+        pendingTabOrder=null
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         resetModifiers()
         val value = server.trim()
@@ -200,10 +216,11 @@ internal class RexConnection(application: Application, private val scope: Corout
         preferences.edit { putString("endpoint", value) }
         command("connect", "server" to value)
     }
-    fun disconnect() { cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { pendingTabOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         if (id == (navigationRequest.session ?: state.value.selectedSession)) return
+        pendingTabOrder=null
         val old=navigationRequest.session ?: state.value.selectedSession
         if(old.isNotBlank() && old!=id) {
             lastSessionId=old
@@ -339,6 +356,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun releaseControl() { activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
+        pendingTabOrder=null
         cancelDisplay();cancelKeyRepeats()
         navigationRequest = NavigationRequest()
         foreground = false; resizeJob?.cancel(); controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""

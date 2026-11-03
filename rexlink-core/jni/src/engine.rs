@@ -122,6 +122,7 @@ struct Actor {
     selected_session: String,
     selected_block: String,
     navigation_id: u64,
+    tab_move_id: u64,
     controlled: bool,
     theme: Option<Value>,
     creating: bool,
@@ -182,6 +183,7 @@ impl Actor {
             selected_session: String::new(),
             selected_block: String::new(),
             navigation_id: 0,
+            tab_move_id: 0,
             controlled: false,
             theme: None,
             creating: false,
@@ -217,7 +219,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -531,7 +533,7 @@ impl Actor {
             windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks}));
         }
         let next = json!(windows);
-        let ids = |windows: &Value| -> Vec<String> {
+        let ids = |windows: &Value| -> BTreeSet<String> {
             windows
                 .as_array()
                 .into_iter()
@@ -703,7 +705,10 @@ impl Actor {
     }
     async fn execute_command(&mut self,value:Value) {
         let navigation=value["navigationId"].as_u64();
+        let tab_move=if value["type"]=="move_tab" {value["requestId"].as_u64()} else {None};
         if let Err(error)=self.command(value).await {self.command_error(error,navigation,false);}
+        // Acknowledge failures too, so an optimistic order can roll back without retrying a mutation.
+        if let Some(id)=tab_move {self.tab_move_id=id;self.publish();}
     }
     async fn send_input(&mut self,value:Value)->Result<()> {
         ensure!(!self.monitoring,"Background monitor is read-only");
@@ -951,6 +956,21 @@ impl Actor {
                 self.open_block(block).await?;
                 self.creating = false;
                 self.publish();
+            }
+            "move_tab" => {
+                ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before moving tabs");
+                ensure!(value["session"].as_str()==Some(self.selected_session.as_str()),"The selected session changed");
+                let id=value["id"].as_str().context("tab ID required")?;
+                let before=value["before"].as_str().filter(|s|!s.is_empty());
+                let exists=|id:&str|self.windows.as_array().into_iter().flatten().any(|w|w["id"]==id);
+                ensure!(exists(id) && before.is_none_or(exists),"That tab is no longer available");
+                ensure!(before!=Some(id),"A tab cannot be moved before itself");
+                let mut params=json!({"session_id":self.selected_session,"window_id":id});
+                if let Some(before)=before {params["before_window_id"]=json!(before);}
+                self.error.clear();
+                self.control.as_mut().context("not connected")?.call("session.move_window",params).await?;
+                // Moving a window never opens/resizes a terminal or changes focus/ownership.
+                self.refresh_view().await?;
             }
             "session" => {
                 self.preview_task = None;
@@ -2622,6 +2642,57 @@ while True:
         assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");assert!(!actor.controlled);
         runtime.block_on(actor.command(json!({"type":"network","online":true}))).unwrap();assert!(actor.retry.is_some());
         actor.connect_task=Some(Box::pin(pending()));runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();assert!(actor.connect_task.is_none());assert!(actor.retry.is_some());
+    }
+
+    #[test] fn reordering_windows_preserves_program_metadata() {
+        let shared=Arc::new(Mutex::new(Shared {revision:0,json:String::new(),activity:Arc::default(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        let window=|id:&str|json!({"window_id":id,"label":id,"layers":[{"blocks":[{"block_id":id,"creator_name":"com.superlogical.terminal"}]}]});
+        actor.set_view(&json!({"windows":[window("a"),window("b")]}));
+        actor.selected_block="a".into();actor.programs=json!({"a":["codex"]});actor.titles=json!({"a":"Title"});actor.working=json!(["a"]);
+        actor.set_view(&json!({"windows":[window("b"),window("a")]}));
+        assert_eq!(actor.windows[0]["id"],"b");assert_eq!(actor.selected_block,"a");
+        assert_eq!(actor.programs,json!({"a":["codex"]}));assert_eq!(actor.titles["a"],"Title");assert_eq!(actor.working,json!(["a"]));
+    }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_reorder_tabs_preserves_selection_control_and_size_and_syncs_other_clients() {
+        let server=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(10)).unwrap(),None,Trace::default())).unwrap();
+        let layout=json!({"block":{"flavor":"com.superlogical.terminal.shell","options":{"shell":"none","command":["/bin/sh","-c","printf REORDER_READY; cat"]}}});
+        let created=runtime.block_on(writer.call("session.create",json!({"label":format!("rexlink-reorder-test-{}",std::process::id()),"initial_windows":[{"window_label":"One","layout":layout},{"window_label":"Two","layout":layout},{"window_label":"Three","layout":layout}]}))).unwrap();
+        let id=created["session_id"].as_str().unwrap();
+        let windows=created["initial_windows"].as_array().unwrap().iter().map(|w|w["window_id"].clone()).collect::<Vec<_>>();
+        let block=&created["initial_windows"][0]["block_ids"][0];
+        let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.block_on(writer.attach(id)).unwrap();
+            let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();wait(&app,|v|v["phase"]=="connected");
+            app.command(json!({"type":"session","id":id,"block":block})).unwrap();wait(&app,|v|v["selectedBlock"]==*block && text(v).contains("REORDER_READY"));
+            app.command(json!({"type":"take"})).unwrap();wait(&app,|v|v["controlled"]==true);
+            app.command(json!({"type":"resize","columns":40,"rows":20})).unwrap();wait(&app,|v|v["screen"]["columns"]==40 && v["screen"]["rows"]==20);
+            let ids=|v:&Value|v["windows"].as_array().unwrap().iter().map(|w|w["id"].clone()).collect::<Vec<_>>();
+            for (request,tab,before,expected) in [
+                (1,&windows[2],windows[0].clone(),vec![windows[2].clone(),windows[0].clone(),windows[1].clone()]),
+                (2,&windows[0],json!(""),vec![windows[2].clone(),windows[1].clone(),windows[0].clone()]),
+            ] {
+                app.command(json!({"type":"move_tab","session":id,"id":tab,"before":before,"requestId":request})).unwrap();
+                let moved=wait(&app,|v|v["tabMoveId"]==request);
+                assert_eq!(moved["error"],"");assert_eq!(ids(&moved),expected);assert_eq!(moved["selectedBlock"],*block);assert_eq!(moved["controlled"],true);
+                assert_eq!(moved["screen"]["columns"],40);assert_eq!(moved["screen"]["rows"],20);
+                let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
+                assert_eq!(view["windows"].as_array().unwrap().iter().map(|w|w["window_id"].clone()).collect::<Vec<_>>(),expected);
+            }
+            runtime.block_on(writer.call("session.move_window",json!({"session_id":id,"window_id":windows[0],"before_window_id":windows[2]}))).unwrap();
+            wait(&app,|v|v["windows"][0]["id"]==windows[0]);
+            for (request,session,tab,before) in [(3,"stale",windows[0].clone(),json!("")),(4,id,json!("missing"),json!("")),(5,id,windows[0].clone(),windows[0].clone())] {
+                app.command(json!({"type":"move_tab","session":session,"id":tab,"before":before,"requestId":request})).unwrap();
+                let rejected=wait(&app,|v|v["tabMoveId"]==request);assert_ne!(rejected["error"],"");assert_eq!(rejected["selectedBlock"],*block);assert_eq!(rejected["controlled"],true);
+                assert_eq!(ids(&rejected),vec![windows[0].clone(),windows[2].clone(),windows[1].clone()]);
+            }
+        }));
+        runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
 
     #[test]
