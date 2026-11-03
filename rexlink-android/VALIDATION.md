@@ -1418,3 +1418,20 @@ Built the release from clean source revision eefb173ac4: version 2026.11.03, bui
 its installed version/code and base APK hash against the shareable dated APK.
 See `validation/about-2026-11-03.json` for results and the release hash. Native
 terminal code was unchanged; no additional network or performance work was done.
+
+
+## Shareable APK identities — 2026-11-03
+
+Added :app:shareRelease, which builds an optimized release and copies it into
+dist with date, numeric build code and source commit in its filename, plus a
+SHA-256 sidecar. It uses the same configuration values as About; tracked local
+edits add -modified and source exports use unknown. Standard Gradle APK paths
+remain unchanged. Build code advances to 3 for this release.
+
+Ran the task from clean source revision 92e0abac39. The resulting
+Rexlink-2026.11.03-build3-92e0abac39-arm64-release.apk matches the release manifest
+version/code and generated About revision. Its bytes match app-release.apk and
+its checksum sidecar verifies. Static release signature, baseline-profile and
+16KiB packaging checks pass. The prior installed build 2 was also copied under
+its original eefb173ac4 identity with unchanged bytes. No app UI/native changes
+were made; no additional device or emulator tests were needed for this task.

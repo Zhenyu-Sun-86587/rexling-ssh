@@ -1,9 +1,9 @@
 {
-  "apk": "dist/Rexlink-2026.11.03-arm64-release.apk",
+  "apk": "dist/Rexlink-2026.11.03-build3-92e0abac39-arm64-release.apk",
   "application_label": "Rexlink",
   "version_name": "2026.11.03",
-  "version_code": 2,
-  "sha256": "9576ea6a20fcb251cf01ba1beec4c171a17a9b0a4fa002f8afb851d6a0637596",
+  "version_code": 3,
+  "sha256": "c74349f0dc6c6fa30cd07170847d0440324536622cc97df3598994f4e05a0500",
   "bytes": 16983661,
   "signature_verified": true,
   "debuggable": false,
