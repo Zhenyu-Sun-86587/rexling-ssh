@@ -51,13 +51,16 @@ internal fun openPortside(context: Context): Boolean {
             }
             Text("Upload images to the machine running Codex or Claude, then paste their server paths automatically.",fontSize=13.sp)
             Text("Portside checks your Tailscale identity. Keep Tailscale connected with the same account as the server.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Rex connections",fontSize=14.sp,fontWeight=FontWeight.SemiBold)
+            Text("Choose a Rex connection below, then set its Portside upload address. Portside may use a different tailnet address on the same machine.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(model.servers.isEmpty()) Text("Add a Rex server first.")
             model.servers.forEach {server->
                 val config=model.portside[server.id]
                 Row(Modifier.fillMaxWidth().clickable {editing=server}.padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically) {
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                         Text(server.label,fontWeight=FontWeight.SemiBold)
-                        Text(config?.endpoint ?: "Set up image uploads",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Rex: ${server.endpoint}",fontSize=11.sp,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(config?.endpoint ?: "Choose Portside upload server",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         if(!config?.folder.isNullOrBlank()) Text(config!!.folder,fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     ChromeSymbol(ChromeIcon.RIGHT)
@@ -70,7 +73,7 @@ internal fun openPortside(context: Context): Boolean {
 }
 
 @Composable internal fun PortsideEditor(server: ServerProfile,saved: PortsideConfig?,network: (()->Unit)->Unit,onSave: (String,String)->String?,onClose: ()->Unit) {
-    var endpoint by remember {mutableStateOf(saved?.endpoint ?: runCatching {"http://${java.net.URI(server.endpoint).host.let {if(':' in it && !it.startsWith('[')) "[$it]" else it}}:9417"}.getOrDefault(""))}
+    var endpoint by remember {mutableStateOf(saved?.endpoint.orEmpty())}
     var folder by remember {mutableStateOf(saved?.folder.orEmpty())}
     var error by remember {mutableStateOf<String?>(null)}
     var checked by remember {mutableStateOf("")}
@@ -78,14 +81,14 @@ internal fun openPortside(context: Context): Boolean {
     val scope=rememberCoroutineScope()
     AlertDialog(onDismissRequest=onClose,title={Text("Image uploads · ${server.label}")},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            OutlinedTextField(endpoint,{endpoint=it;error=null;checked=""},Modifier.fillMaxWidth(),singleLine=true,enabled=!checking,label={Text("Portside server URL")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri))
+            OutlinedTextField(endpoint,{endpoint=it;error=null;checked=""},Modifier.fillMaxWidth(),singleLine=true,enabled=!checking,label={Text("Portside address")},placeholder={Text("mac.tailnet.ts.net:9417")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri))
             OutlinedTextField(folder,{folder=it;error=null;checked=""},Modifier.fillMaxWidth(),singleLine=true,enabled=!checking,label={Text("Upload folder (optional)")},placeholder={Text("project/screenshots")})
-            Text("Use Portside on the same machine/filesystem as this Rex server. Enable an upload directory in Portside.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Enter Portside's address, not the Rex service address. A hostname alone uses port 9417. Both services must access the same filesystem, and Portside needs an upload directory.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(enabled=!checking,onClick={
                 val config=runCatching {PortsideConfig.create(endpoint,folder)}.getOrElse {error=it.message;return@TextButton}
                 network {scope.launch {
                     checking=true;error=null;checked=""
-                    try {val info=PortsideClient().info(config);if(config.endpoint==endpoint.trim().removeSuffix("/") && config.folder==folder.trim()) checked="Connected · up to ${info.maxBytes/(1024*1024)} MiB\n${info.directory}"}
+                    try {val info=PortsideClient().info(config);if(runCatching {PortsideConfig.create(endpoint,folder)}.getOrNull()==config) checked="Connected · up to ${info.maxBytes/(1024*1024)} MiB\n${info.directory}"}
                     catch(e: CancellationException) {throw e} catch(e: Exception) {error=e.message ?: "Could not connect"} finally {checking=false}
                 }}
             }) {Text(if(checking) "Checking…" else "Check connection")}

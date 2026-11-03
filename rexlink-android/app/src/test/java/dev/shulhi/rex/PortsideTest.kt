@@ -23,6 +23,19 @@ class PortsideTest {
         assertFalse(PortsideAddress.allowed(InetAddress.getByName("192.168.1.2")))
         assertTrue(PortsideConfig.decode("broken").isEmpty())
     }
+    @Test fun barePortsideHostsUseItsOwnDefaultPortWithoutInheritingRexServiceAddresses() {
+        assertEquals("http://mac.tailnet.ts.net:9417",PortsideConfig.create("mac.tailnet.ts.net").endpoint)
+        assertEquals("http://100.64.0.10:9417",PortsideConfig.create("100.64.0.10").endpoint)
+        assertEquals("http://mac:9000",PortsideConfig.create("mac:9000").endpoint)
+        assertEquals("http://[fd7a:115c:a1e0::1]:9417",PortsideConfig.create("fd7a:115c:a1e0::1").endpoint)
+        assertEquals("https://mac.tailnet.ts.net",PortsideConfig.create("https://mac.tailnet.ts.net").endpoint)
+    }
+    @Test fun connectionErrorsIdentifyTheFailingHostAndSeparateConnectionRefusalFromDns() {
+        val url=PortsideConfig.create("mac.tailnet.ts.net").url("/v1/info")
+        val refused=portsideConnectionError(url,java.net.ConnectException("refused"))
+        assertTrue(refused.contains("mac.tailnet.ts.net:9417"));assertTrue(refused.contains("differ from Rex"))
+        assertTrue(portsideConnectionError(url,java.net.UnknownHostException()).contains("Cannot resolve"))
+    }
     @Test fun uploadedPathsCannotInjectTerminalControlsAndAreQuotedWhenNeeded() {
         assertEquals("/home/me/image.png ",imagePathText("/home/me/image.png"))
         assertEquals("'/home/my files/image.png' ",imagePathText("/home/my files/image.png"))

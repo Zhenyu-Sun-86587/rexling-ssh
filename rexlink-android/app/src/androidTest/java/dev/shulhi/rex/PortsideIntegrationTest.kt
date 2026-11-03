@@ -102,10 +102,12 @@ class PortsidePreferencesTest {
     @Test fun preferencesOpenPortsideAndEditorRejectsInvalidFolders() {
         var opened=0;var saved="";var editing by mutableStateOf(false)
         ui.setContent {MaterialTheme {
-            if(editing) PortsideEditor(ServerProfile("mac","Mac","https://mac"),null,{it()},{url,folder->runCatching {PortsideConfig.create(url,folder);saved=url;null}.getOrElse {it.message}},{editing=false})
+            if(editing) PortsideEditor(ServerProfile("mac","Mac","https://mac"),null,{it()},{url,folder->runCatching {saved=PortsideConfig.create(url,folder).endpoint;null}.getOrElse {it.message}},{editing=false})
             else PreferencesSheet({},{},{},{opened++;editing=true},{},{})
         }}
         ui.onNodeWithText("Portside · Image uploads").performClick();ui.runOnIdle {assertEquals(1,opened)}
+        ui.onNodeWithText("Save").assertIsNotEnabled()
+        ui.onNode(hasSetTextAction() and hasText("Portside address")).performTextReplacement("mac")
         ui.onNode(hasSetTextAction() and hasText("Upload folder (optional)")).performTextReplacement("../bad")
         ui.onNodeWithText("Save").performClick();ui.onNodeWithText("Use a relative folder such as project/screenshots").assertExists()
         ui.onNode(hasSetTextAction() and hasText("Upload folder (optional)")).performTextReplacement("screenshots")

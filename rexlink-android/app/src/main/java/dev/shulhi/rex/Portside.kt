@@ -20,7 +20,14 @@ import kotlin.coroutines.resumeWithException
 internal data class PortsideConfig(val endpoint: String,val folder: String="") {
     companion object {
         fun create(endpoint: String,folder: String=""): PortsideConfig {
-            val url=endpoint.trim().toHttpUrlOrNull() ?: error("Enter the Portside server URL, such as http://mac:9417")
+            val supplied=endpoint.trim()
+            require(supplied.isNotEmpty() && supplied.none {it.isISOControl()}) {"Enter the Portside host or URL"}
+            val explicitScheme="://" in supplied
+            val host=if(!explicitScheme && supplied.count {it==':'}>1 && !supplied.startsWith('[')) "[$supplied]" else supplied
+            val candidate=if(explicitScheme) supplied else "http://$host"
+            val parsed=candidate.toHttpUrlOrNull() ?: error("Enter the Portside host or URL, such as mac:9417")
+            val explicitPort=runCatching {java.net.URI(candidate).port}.getOrDefault(-1)
+            val url=if(!explicitScheme && explicitPort==-1) parsed.newBuilder().port(9417).build() else parsed
             require(url.scheme in listOf("http","https") && PortsideAddress.validHost(url.host)) {"Use a Tailscale IP or MagicDNS address"}
             require(url.username.isEmpty() && url.password.isEmpty() && url.encodedPath=="/" && url.query==null && url.fragment==null) {"Use the server's root URL without credentials or query parameters"}
             val subfolder=folder.trim()
@@ -105,7 +112,7 @@ internal class PortsideClient {
     private suspend fun request(request: Request,expected: Int): JSONObject = withContext(Dispatchers.IO) {suspendCancellableCoroutine<JSONObject> {continuation->
         val call=http.newCall(request);continuation.invokeOnCancellation {call.cancel()}
         call.enqueue(object: Callback {
-            override fun onFailure(call: Call,e: IOException) {if(continuation.isActive) continuation.resumeWithException(IOException("Could not reach Portside. Check Tailscale and the server address."))}
+            override fun onFailure(call: Call,e: IOException) {if(continuation.isActive) continuation.resumeWithException(IOException(portsideConnectionError(request.url,e)))}
             override fun onResponse(call: Call,response: Response) {
                 try {
                     val result=response.use {r->
@@ -126,4 +133,15 @@ internal class PortsideClient {
             }
         })
     }}
+}
+
+internal fun portsideConnectionError(url: HttpUrl,error: IOException): String {
+    val address="${url.host}:${url.port}"
+    return when(error) {
+        is java.net.UnknownHostException->"Cannot resolve ${url.host}. Check the Portside address and Tailscale."
+        is java.net.ConnectException->"Portside is not accepting connections at $address. Its address can differ from Rex's, even on the same machine."
+        is javax.net.ssl.SSLException->"Could not establish HTTPS to $address. Check whether Portside uses http or https."
+        is java.io.InterruptedIOException->"Connection to $address timed out. Check Portside and Tailscale."
+        else->"Connection to $address failed. Check the Portside address and server."
+    }
 }
