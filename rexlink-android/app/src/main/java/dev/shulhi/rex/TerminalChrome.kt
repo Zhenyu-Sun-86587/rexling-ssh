@@ -263,10 +263,6 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     val edge=with(LocalDensity.current) {36.dp.toPx()}
     val speed=with(LocalDensity.current) {420.dp.toPx()}
     val index=windows.indexOfFirst {it.id==selectedId}
-    LaunchedEffect(selectedId,reorderKey) {if(index>=0 && drag.id==null) {
-        val item=list.layoutInfo.visibleItemsInfo.firstOrNull {it.index==index}
-        if(item==null || item.offset<0 || item.offset+item.size>list.layoutInfo.viewportEndOffset) list.animateScrollToItem(index)
-    }}
     // Remote changes cancel a local gesture; animated titles do not.
     LaunchedEffect(ids,enabled) {drag.cancel();menuId=null}
     LaunchedEffect(drag.id) {
@@ -285,88 +281,97 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         }
     }
     Row(Modifier.fillMaxWidth().height(49.dp).padding(start=11.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
-        LazyRow(Modifier.weight(1f).fillMaxHeight().clipToBounds().semantics {contentDescription="Tabs"}
-            .pointerInput(enabled,reorderKey,ids,sign) {
-                if(enabled) detectTabDrag(
-                    start={point->
-                        val x=if(sign>0) point.x else size.width-point.x
-                        if(drag.start(currentWindows.map {it.id},list,x)) {menuId=null;haptic.performHapticFeedback(HapticFeedbackType.LongPress)}
-                    },
-                    move={amount->drag.move(amount.x*sign,viewConfiguration.touchSlop,list)},
-                    cancel={drag.cancel()},
-                    end={
-                        val id=drag.id
-                        if(id!=null) {
-                            if(drag.changed()) {val i=drag.order.indexOf(id);move(id,drag.order.getOrNull(i+1))}
-                            else if(!drag.moved) menuId=id
-                        }
-                        drag.cancel()
-                    })
-            },state=list,userScrollEnabled=drag.id==null,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-            val displayed=if(drag.id==null) windows else drag.order.mapNotNull {id->windows.firstOrNull {it.id==id}}
-            itemsIndexed(displayed,key={_,w->w.id}) {i,w ->
-                val windowIndex=windows.indexOfFirst {it.id==w.id}
-                fun moveBy(delta: Int): Boolean {
-                    val target=windowIndex+delta
-                    if(target !in windows.indices) return false
-                    val reordered=ids.toMutableList().apply {removeAt(windowIndex);add(target,w.id)}
-                    return onMove(w.id,reordered.getOrNull(target+1))
-                }
-                val leftLabel=if(sign>0) "Move left" else "Move right"
-                val rightLabel=if(sign>0) "Move right" else "Move left"
-                val active=w.id==selectedId
-                val indicatorColor=MaterialTheme.colorScheme.primary
-                val busy=paneWorking(w)
-                val workPhase=rememberWorkingPhase(active && busy && animateWorking)
-                val programs=panePrograms(w)
-                val pane=selectedPane(w)
-                val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
-                val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
-                Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
-                    .zIndex(if(drag.id==w.id) 1f else 0f)
-                    .graphicsLayer {translationX=drag.translation(w.id,list)*sign}) {
-                Column(Modifier.height(44.dp).width(IntrinsicSize.Max).widthIn(min=70.dp,max=185.dp)
-                    .drawWithContent {
-                        drawContent()
-                        if(active) {
-                            val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
-                            drawRect(indicatorColor,origin,bar)
-                            if(busy && animateWorking) {
-                                val x=(workPhase.value*1.5f-.5f)*size.width
-                                drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                    listOf(Color.Transparent,Color.White.copy(alpha=.85f),Color.Transparent),x,x+size.width*.5f),origin,bar)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+            val density=LocalDensity.current.density
+            val widths=remember(maxWidth,windows.size,index>=0,density) {tabWidths(maxWidth.value,windows.size,index>=0,density)}
+            LaunchedEffect(selectedId,reorderKey,index,widths,maxWidth) {
+                if(index>=0 && drag.id==null) list.animateScrollToItem(index)
+            }
+            LazyRow(Modifier.fillMaxSize().clipToBounds().semantics {contentDescription="Tabs"}
+                .pointerInput(enabled,reorderKey,ids,sign) {
+                    if(enabled) detectTabDrag(
+                        start={point->
+                            val x=if(sign>0) point.x else size.width-point.x
+                            if(drag.start(currentWindows.map {it.id},list,x)) {menuId=null;haptic.performHapticFeedback(HapticFeedbackType.LongPress)}
+                        },
+                        move={amount->drag.move(amount.x*sign,viewConfiguration.touchSlop,list)},
+                        cancel={drag.cancel()},
+                        end={
+                            val id=drag.id
+                            if(id!=null) {
+                                if(drag.changed()) {val i=drag.order.indexOf(id);move(id,drag.order.getOrNull(i+1))}
+                                else if(!drag.moved) menuId=id
+                            }
+                            drag.cancel()
+                        })
+                },state=list,userScrollEnabled=drag.id==null,verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                val displayed=if(drag.id==null) windows else drag.order.mapNotNull {id->windows.firstOrNull {it.id==id}}
+                itemsIndexed(displayed,key={_,w->w.id}) {i,w ->
+                    val windowIndex=windows.indexOfFirst {it.id==w.id}
+                    fun moveBy(delta: Int): Boolean {
+                        val target=windowIndex+delta
+                        if(target !in windows.indices) return false
+                        val reordered=ids.toMutableList().apply {removeAt(windowIndex);add(target,w.id)}
+                        return onMove(w.id,reordered.getOrNull(target+1))
+                    }
+                    val leftLabel=if(sign>0) "Move left" else "Move right"
+                    val rightLabel=if(sign>0) "Move right" else "Move left"
+                    val active=w.id==selectedId
+                    val width=if(active) widths.active.dp else widths.inactive.dp
+                    val showTitle=active || width>=80.dp
+                    val indicatorColor=MaterialTheme.colorScheme.primary
+                    val busy=paneWorking(w)
+                    val workPhase=rememberWorkingPhase(active && busy && animateWorking)
+                    val programs=panePrograms(w)
+                    val pane=selectedPane(w)
+                    val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
+                    val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
+                    Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
+                        .zIndex(if(drag.id==w.id) 1f else 0f)
+                        .graphicsLayer {translationX=drag.translation(w.id,list)*sign}) {
+                    Column(Modifier.height(48.dp).width(width)
+                        .drawWithContent {
+                            drawContent()
+                            if(active) {
+                                val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
+                                drawRect(indicatorColor,origin,bar)
+                                if(busy && animateWorking) {
+                                    val x=(workPhase.value*1.5f-.5f)*size.width
+                                    drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                        listOf(Color.Transparent,Color.White.copy(alpha=.85f),Color.Transparent),x,x+size.width*.5f),origin,bar)
+                                }
                             }
                         }
-                    }
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if(drag.id==w.id && drag.moved) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
-                    .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(if(busy) ", working" else "")}
-                    .semantics {
-                        selected=active
-                        if(enabled) {
-                            onLongClick("Tab options") {menuId=w.id;true}
-                            customActions=buildList {
-                                if(windowIndex>0) add(CustomAccessibilityAction(leftLabel) {moveBy(-1)})
-                                if(windowIndex<windows.lastIndex) add(CustomAccessibilityAction(rightLabel) {moveBy(1)})
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if(drag.id==w.id && drag.moved) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                        .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(if(busy) ", working" else "")}
+                        .semantics {
+                            selected=active
+                            if(enabled) {
+                                onLongClick("Tab options") {menuId=w.id;true}
+                                customActions=buildList {
+                                    if(windowIndex>0) add(CustomAccessibilityAction(leftLabel) {moveBy(-1)})
+                                    if(windowIndex<windows.lastIndex) add(CustomAccessibilityAction(rightLabel) {moveBy(1)})
+                                }
                             }
                         }
+                        .clickable(enabled=enabled,role=Role.Tab,onClick={onSelect(w.id)}),horizontalAlignment=Alignment.CenterHorizontally) {
+                        Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal=6.dp),
+                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(showTitle) Arrangement.spacedBy(2.dp) else Arrangement.Center) {
+                            ProgramStack(programs,pane,fixedSlot=true)
+                            if(showTitle) Text(title,Modifier.weight(1f),fontSize=12.sp,lineHeight=18.sp,
+                                style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
+                                color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
+                        }
+                        Spacer(Modifier.height(2.dp))
                     }
-                    .clickable(enabled=enabled,role=Role.Tab,onClick={onSelect(w.id)}),horizontalAlignment=Alignment.CenterHorizontally) {
-                    Row(Modifier.weight(1f).padding(horizontal=10.dp),
-                        verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp)) {
-                        ProgramStack(programs,pane)
-                        Text(title,Modifier.widthIn(max=125.dp),fontSize=12.sp,lineHeight=18.sp,
-                            style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
-                            color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
+                    androidx.compose.material3.DropdownMenu(menuId==w.id,{menuId=null},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
+                        androidx.compose.material3.DropdownMenuItem(text={Text(leftLabel)},enabled=enabled && windowIndex>0,onClick={menuId=null;moveBy(-1)})
+                        androidx.compose.material3.DropdownMenuItem(text={Text(rightLabel)},enabled=enabled && windowIndex<windows.lastIndex,onClick={menuId=null;moveBy(1)})
+                        androidx.compose.material3.DropdownMenuItem(text={Text("Close tab")},enabled=enabled,onClick={menuId=null;onClose(w)})
                     }
-                    Spacer(Modifier.height(2.dp))
-                }
-                androidx.compose.material3.DropdownMenu(menuId==w.id,{menuId=null},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                    androidx.compose.material3.DropdownMenuItem(text={Text(leftLabel)},enabled=enabled && windowIndex>0,onClick={menuId=null;moveBy(-1)})
-                    androidx.compose.material3.DropdownMenuItem(text={Text(rightLabel)},enabled=enabled && windowIndex<windows.lastIndex,onClick={menuId=null;moveBy(1)})
-                    androidx.compose.material3.DropdownMenuItem(text={Text("Close tab")},enabled=enabled,onClick={menuId=null;onClose(w)})
-                }
+                    }
                 }
             }
         }

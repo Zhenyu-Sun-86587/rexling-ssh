@@ -103,6 +103,9 @@ The bottom dock switches tabs and opens Activity. Its tab/pane button opens a
 switcher directly: tap **Tabs** or **Panes**, or swipe between them. Select a row
 to switch, use **New tab** or **New pane** in its section, or close an item with
 its × button and confirmation. Panes lists the panes in the current tab.
+The tab strip gives the active title priority and shortens inactive tabs to
+icons when space is tight. It scrolls when the tabs cannot fit; the switcher
+keeps their longer titles available.
 Hold a tab and drag it left or right to
 rearrange it; hold near an edge to scroll farther. The order syncs with other Rex
 clients. Hold and release without dragging for **Move left**, **Move right** and
