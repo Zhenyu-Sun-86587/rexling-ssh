@@ -125,6 +125,11 @@ uncertain input is never replayed.
 
 ### Image attachments through Portside
 
+Image uploads use [Portside](https://github.com/shulhi/portside), a separate
+project for Tailscale port forwarding and file uploads. Install Portside 0.3+
+on the same machine or filesystem where Codex/Claude runs, and enable uploads
+on its server. See the Portside repository for installation and hosting setup.
+
 Open **⋮ → Preferences → Portside**, select a Rex server, and enter the Portside
 address and optional relative upload folder. The **Use image uploads** switch
 turns uploads on or off while keeping the address and folder; tap **Save** to apply.
@@ -132,9 +137,7 @@ These rows are Rex connections,
 not an imported Portside server list. Enter the actual Portside address: a bare
 hostname defaults to port 9417. Rex's service tailnet address may differ from the
 Mac's Portside address even when both run on the same machine.
-Use Portside 0.3+ on the same machine
-or filesystem where Codex/Claude runs, with uploads enabled. **Check connection**
-shows the destination and size limit. Portside authenticates your Tailscale
+**Check connection** shows the destination and size limit. Portside authenticates your Tailscale
 identity; no upload token is stored. **Open Portside** launches its Android app
 if installed; Rexlink uploads directly to the server and does not need that app.
 
