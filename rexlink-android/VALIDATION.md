@@ -1497,3 +1497,24 @@ forwards, enabled ~/PortsideUploads and verified live /v1/info advertises it wit
 the 100 MiB limit. Portside's pre-existing staged changes were preserved; our four
 Portside source/doc/test edits remain in that working tree. See
 `validation/portside-address-fix-2026-11-03.json` for results and APK identity.
+
+## Preferences and Portside UI polish — 2026-11-03
+
+Preferences now groups display, connection and app settings into rounded cards
+with consistent headings, body text, icons, dividers and navigation rows.
+Portside uses the same components and separates its upload editor title from
+the server name. Uploads have a switch that saves the address and folder while
+disabled. Existing configurations remain enabled; disabled uploads release
+image permissions and show a setup notice without starting an upload.
+
+Validation: 103 JVM tests passed and one optional benchmark skipped; release
+lint passed. Sixteen focused UI checks passed across runs, covering settings,
+model recreation, image input/upload, clipboard, appearance and About. Reviewed
+light/dark screenshots and repeated settings previews at Android system font
+scale 150%, restoring normal scaling afterward. Emulator-only test selectors
+and dialog preview setup were corrected before the passing rechecks.
+
+Installed optimized release build 6, source fc0be50f23, on S22+ with data
+preserved and the installed base APK SHA-256 matching the shareable release.
+The headless emulator was closed after testing. Details are in
+validation/preferences-polish-2026-11-03.json and validation/apk.json.

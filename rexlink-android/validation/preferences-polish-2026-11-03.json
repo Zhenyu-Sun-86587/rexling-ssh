@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-03",
+  "change": "Polish Preferences and Portside settings",
+  "source_revision": "fc0be50f23",
+  "version_code": 6,
+  "apk": "dist/Rexlink-2026.11.03-build6-fc0be50f23-arm64-release.apk",
+  "release_sha256": "aa94af72af97e4bc6c1ad0990b13f73d805ec344e65b4f00b6c6c848c754cce9",
+  "checks": {
+    "jvm_passed": 103,
+    "optional_benchmark_skipped": 1,
+    "focused_ui_checks_passed_across_runs": 16,
+    "release_lint_passed": true,
+    "light_and_dark_visual_review_passed": true,
+    "android_system_font_scale_150_percent_passed": true,
+    "upload_toggle_persists_address_folder_and_enabled_state": true,
+    "legacy_upload_settings_remain_enabled": true,
+    "disabled_uploads_reject_image_input_without_starting_upload": true,
+    "existing_image_upload_input_and_clipboard_checks_passed": true,
+    "static_release_apk_checks_passed": true,
+    "s22_plus_installed_hash_verified": true,
+    "headless_emulator_closed": true
+  },
+  "scope": "Settings UI and per-server upload enablement; no Rex/native transport or Mac Portside changes",
+  "notes": "Focused UI checks ran on an isolated emulator. Disabled-field selectors and font-scale preview setup were corrected before passing rechecks. Actual 150% scaling was tested through the emulator system setting, then restored."
+}
