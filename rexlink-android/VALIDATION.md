@@ -1518,3 +1518,25 @@ Installed optimized release build 6, source fc0be50f23, on S22+ with data
 preserved and the installed base APK SHA-256 matching the shareable release.
 The headless emulator was closed after testing. Details are in
 validation/preferences-polish-2026-11-03.json and validation/apk.json.
+
+## Direct tab and pane switcher — 2026-11-03
+
+The dock button opens a compact bottom sheet directly, replacing the switch/new
+operation dropdown. Tabs and Panes can be selected by tapping their headings or
+swiping horizontally. Tabs preserve the focused program stack and title; Panes
+shows the current tab's program icons, titles and directories. Active rows have
+a blue marker. Each section has its own create button and close actions reuse
+the existing confirmation dialog. The terminal pane indicator opens the same
+sheet directly on Panes.
+
+Validation: 103 JVM tests passed and one optional benchmark skipped; release
+lint passed. Twenty-three focused emulator UI tests passed, covering the direct
+button, six switcher scenarios, existing Activity behavior, tab reorder and
+looping pane gestures. The six switcher tests passed again after final compact
+height and inactive-heading color adjustments. Reviewed light/dark screenshots.
+No user terminal sessions were modified by the fixture tests.
+
+Built and installed release build 7, source 4696ec49eb, on S22+ with app data
+preserved. Signature, alignment, profiles and release checks passed; installed
+base APK SHA-256 matches the shareable release. The headless emulator was closed.
+See validation/tab-pane-switcher-2026-11-03.json and validation/apk.json.

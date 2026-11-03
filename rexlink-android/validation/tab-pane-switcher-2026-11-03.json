@@ -1,0 +1,31 @@
+{
+  "date": "2026-11-03",
+  "change": "Direct swipeable tab and pane switcher",
+  "source_revision": "4696ec49eb",
+  "version_code": 7,
+  "apk": "dist/Rexlink-2026.11.03-build7-4696ec49eb-arm64-release.apk",
+  "release_sha256": "a8ea1c11562d88f6aa367dee4a99fa40bb55a106cb3e8dda906aea7ceaf5b25a",
+  "checks": {
+    "jvm_passed": 103,
+    "optional_benchmark_skipped": 1,
+    "focused_ui_passed": 23,
+    "final_switcher_ui_recheck_passed": 6,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "s22_plus_installed_hash_verified": true,
+    "light_and_dark_visual_review_passed": true,
+    "headless_emulator_closed": true
+  },
+  "coverage": [
+    "Dock button opens switcher directly without dropdown",
+    "Tap and swipe between Tabs and Panes",
+    "Tab labels use the remembered focused pane title",
+    "Pane list belongs to the current tab",
+    "Selection callbacks preserve tab and pane IDs",
+    "Section-specific new and close callbacks",
+    "Busy and empty-session states",
+    "Direct pane section from the pane indicator",
+    "Existing tab reorder and looping pane gestures"
+  ],
+  "scope": "Android UI only; existing Rex navigation/create/close commands and confirmation dialog reused"
+}
