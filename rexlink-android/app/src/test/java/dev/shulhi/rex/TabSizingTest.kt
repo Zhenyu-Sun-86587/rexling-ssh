@@ -9,6 +9,7 @@ class TabSizingTest {
         val widths=tabWidths(262f,listOf(74f,120f,120f),0)
         assertEquals(74f,widths[0].width,0f)
         assertTrue(widths.all {it.showTitle})
+        assertTrue(widths[1].width>widths[2].width)
         assertEquals(262f,widths.sumOf {it.width.toDouble()}.toFloat()+8f,0f)
     }
     @Test fun roomyTabsStopAtTheirActualContentWidths() {
@@ -52,5 +53,17 @@ class TabSizingTest {
         assertEquals(TabWidth(74f,true),tabWidths(500f,listOf(74f),0).single())
         assertEquals(TabWidth(160f,true),tabWidths(500f,listOf(300f),0).single())
         assertEquals(TabWidth(48f,true),tabWidths(20f,listOf(20f),0).single())
+    }
+    @Test fun adjacentCaptionsWinAtEitherEndOfTheStrip() {
+        val right=tabWidths(296f,List(3){220f},2)
+        assertEquals(listOf(TabWidth(48f,false),TabWidth(80f,true),TabWidth(160f,true)),right)
+        assertEquals(right.reversed(),tabWidths(296f,List(3){220f},0))
+    }
+    @Test fun equallyCloseNeighborsShareSpaceBeforeDistantTabs() {
+        assertEquals(listOf(TabWidth(48f,false),TabWidth(74f,true),TabWidth(160f,true),TabWidth(74f,true),TabWidth(48f,false)),
+            tabWidths(420f,List(5){220f},2))
+    }
+    @Test fun aShortDistantCaptionCannotStealAnAdjacentCaptionsBudget() {
+        assertEquals(listOf(TabWidth(48f,false),TabWidth(80f,true),TabWidth(160f,true)),tabWidths(296f,listOf(58f,120f,220f),2))
     }
 }

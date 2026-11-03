@@ -1,6 +1,7 @@
 package dev.shulhi.rex
 
 import kotlin.math.roundToInt
+import kotlin.math.abs
 
 internal data class TabWidth(val width: Float,val showTitle: Boolean)
 
@@ -18,7 +19,8 @@ internal fun tabWidths(available: Float,contentWidths: List<Float>,activeIndex: 
         val leastTitle=minOf(full,(104f*density).roundToInt())
         widths[activeIndex]=if(afterIcons>=leastTitle) minOf(full,afterIcons) else full
     }
-    val inactive=widths.indices.filter {it!=activeIndex}
+    fun distance(i: Int)=if(activeIndex in widths.indices) abs(i-activeIndex) else 0
+    val inactive=widths.indices.filter {it!=activeIndex}.sortedBy(::distance)
     fun grow(indices: List<Int>,budget: Int): Int {
         var remaining=budget
         var candidates=indices.filter {widths[it]<preferred[it]}
@@ -32,16 +34,15 @@ internal fun tabWidths(available: Float,contentWidths: List<Float>,activeIndex: 
         }
         return remaining
     }
-    var spare=grow(inactive,(space-widths.sum()).coerceAtLeast(0))
+    var spare=(space-widths.sum()).coerceAtLeast(0)
     val labelMinimum=preferred.map {minOf(it,(74f*density).roundToInt())}
-    // A hidden label must not leave an oversized, empty icon slot. Reuse that
-    // space for labels that can actually show a few characters.
-    for(i in inactive) if(widths[i]<labelMinimum[i]) {
-        spare+=widths[i]-minimum;widths[i]=minimum
-    }
+    // Reveal useful captions outward from the active tab before spending the
+    // rest on longer captions. Equal-distance neighbors share their space.
     for(i in inactive) if(widths[i]<labelMinimum[i] && spare>=labelMinimum[i]-minimum) {
         spare-=labelMinimum[i]-minimum;widths[i]=labelMinimum[i]
     }
-    grow(inactive.filter {widths[it]>=labelMinimum[it]},spare)
+    for(group in inactive.groupBy(::distance).values) {
+        spare=grow(group.filter {widths[it]>=labelMinimum[it]},spare)
+    }
     return widths.indices.map {TabWidth(widths[it]/density,it==activeIndex || widths[it]>=labelMinimum[it])}
 }

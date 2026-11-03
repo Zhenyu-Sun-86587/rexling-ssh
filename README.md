@@ -107,6 +107,8 @@ Tabs fit their icon and title up to a width cap, giving the active title
 priority. Short titles leave room for others; inactive tabs become compact
 icons when space is tight. It scrolls when the tabs cannot fit; the switcher
 keeps their longer titles available.
+When space is limited, titles nearest the active tab take priority, with more
+distant tabs collapsing to icons first.
 Hold a tab and drag it left or right to
 rearrange it; hold near an edge to scroll farther. The order syncs with other Rex
 clients. Hold and release without dragging for **Move left**, **Move right** and

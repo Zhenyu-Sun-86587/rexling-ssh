@@ -113,6 +113,20 @@ class AdaptiveTabsTest {
         repeat(3) {assertTrue(bounds(it).width<100*density)}
         ui.onNodeWithText("vi").assertIsDisplayed();ui.onNodeWithText("sh").assertIsDisplayed()
     }
+    @Test fun captionsFollowTheActiveTabLikeAnAccordion() {
+        count.intValue=3;selected.value="2";width.floatValue=400f
+        names.value=listOf("Distant Codex task","Adjacent Codex task","Identify the image | rexlink")
+        show(programOrder=List(3){programs[0]})
+        ui.onNodeWithText(names.value[0]).assertDoesNotExist()
+        ui.onNodeWithText(names.value[1]).assertIsDisplayed()
+        tab(2).assertIsSelected();repeat(3) {assertInside(it)}
+        capture("accordion-right")
+        tab(0).performClick().assertIsSelected()
+        ui.onNodeWithText(names.value[1]).assertIsDisplayed()
+        ui.onNodeWithText(names.value[2]).assertDoesNotExist()
+        repeat(3) {assertInside(it)}
+        capture("accordion-left")
+    }
     private fun capture(name: String) {
         ui.mainClock.advanceTimeBy(400)
         ui.waitForIdle()
