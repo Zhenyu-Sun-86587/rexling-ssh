@@ -2,7 +2,7 @@
   "source": "https://icons.superlogical.com/",
   "catalog_version": "1.8.30",
   "provided_by": "User download from the signed-in catalog",
-  "rendering": "Local WebKit SVG renderer; Android packages pre-rendered transparent tiles. SVG sources are retained here.",
+  "rendering": "SVG subset compiled to cached native Canvas vector paths; gradients, alpha-mask logos and transforms are preserved. The PNGs are retained as visual references.",
   "notice": "All trademarks and logos are the property of their respective owners. Their use does not imply affiliation or endorsement.",
   "sha256": {
     "codex": "527936ebb208640f9b95dbf75c8088657fd53a926ac6780b0e339c99329f82cc",
@@ -15,5 +15,6 @@
     "shell": "60b56767373c1e5b43869aa88c80545aef898991e3bd22adb8da607492b6bc92",
     "htop": "81465bd2580e4853e86cd3c29467ed40368d6e2e6c6dfb0e7c1b79af7e9a31e0",
     "btop": "87179932ff8a218b55e453f079726eca47152ef83c7fbf2466511cbd5d9857f2"
-  }
+  },
+  "generator": "scripts/build_program_vectors.py"
 }

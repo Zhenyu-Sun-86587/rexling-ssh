@@ -136,3 +136,19 @@ The runner creates/removes one disposable session and rejects non-emulator
 serials. It verifies an actual blocked report travels through native decoding,
 RexModel and the eye's visible blue pixels, then disappears after Mark seen.
 The screenshot is written to ignored `rexlink-android/.build/activity-attention.png`.
+
+
+## Program icon artwork
+
+Program tiles use retained catalog SVG geometry compiled to native Canvas vector
+commands. To update them after changing the SVG sources:
+
+```sh
+python3 rexlink-android/scripts/build_program_vectors.py
+```
+
+Commit `app/src/main/assets/program_tiles.json` under `rexlink-android/` with the
+source changes. The converter supports the catalog's paths, gradients, transforms
+and monochrome alpha masks; unsupported SVG features fail generation. Original
+PNG renders are retained for visual regression comparisons. No browser or network
+is needed to regenerate the native commands.

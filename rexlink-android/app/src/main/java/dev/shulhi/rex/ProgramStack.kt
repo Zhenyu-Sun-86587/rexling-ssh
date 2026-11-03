@@ -1,8 +1,9 @@
 package dev.shulhi.rex
 
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -41,30 +42,30 @@ import androidx.compose.ui.unit.dp
         for((layer,index) in others.reversed().withIndex()) {
             val shift=step*(others.size-layer)
             PaneProgramTile(items[index],Modifier.offset(x=start+shift,y=frontY+1.dp)
-                .graphicsLayer {rotationZ=3f+(others.size-layer-1)*3f}
-                .size(if(framed) 32.dp else 21.dp,if(framed) 25.dp else 16.dp),framed)
+                .size(if(framed) 32.dp else 21.dp,if(framed) 25.dp else 16.dp),framed,3f+(others.size-layer-1)*3f)
         }
         PaneProgramTile(active,Modifier.offset(x=start,y=frontY)
-            .graphicsLayer {rotationZ=if(others.isNotEmpty()) -6f else 0f}
-            .size(if(framed) 34.dp else 22.dp,if(framed) 27.dp else 18.dp),framed)
+            .size(if(framed) 34.dp else 22.dp,if(framed) 27.dp else 18.dp),framed,if(others.isNotEmpty()) -6f else 0f)
     }
 }
 
-@Composable private fun PaneProgramTile(program: ProgramIdentity, modifier: Modifier, large: Boolean) {
+@Composable private fun PaneProgramTile(program: ProgramIdentity, modifier: Modifier, large: Boolean,rotation: Float) {
     val catalog=when(program.kind) {
-        ProgramKind.CLAUDE -> R.drawable.catalog_claude_code
-        ProgramKind.CODEX -> R.drawable.catalog_codex
-        ProgramKind.NEOVIM -> R.drawable.catalog_neovim
-        ProgramKind.VIM -> R.drawable.catalog_vim
-        ProgramKind.GIT -> R.drawable.catalog_git
-        ProgramKind.PYTHON -> R.drawable.catalog_python
-        ProgramKind.NODE -> R.drawable.catalog_node
-        ProgramKind.TERMINAL -> R.drawable.catalog_shell
-        ProgramKind.MONITOR -> if(program.executable=="btop") R.drawable.catalog_btop else R.drawable.catalog_htop
+        ProgramKind.CLAUDE -> "claude_code"
+        ProgramKind.CODEX -> "codex"
+        ProgramKind.NEOVIM -> "neovim"
+        ProgramKind.VIM -> "vim"
+        ProgramKind.GIT -> "git"
+        ProgramKind.PYTHON -> "python"
+        ProgramKind.NODE -> "node"
+        ProgramKind.TERMINAL -> "shell"
+        ProgramKind.MONITOR -> if(program.executable=="btop") "btop" else "htop"
         else -> null
     }
     if(catalog!=null) {
-        Image(painterResource(catalog),program.label,modifier.shadow(if(large) 2.dp else 1.dp,RoundedCornerShape(if(large) 7.dp else 5.dp)),contentScale=ContentScale.FillBounds)
+        val assets=LocalContext.current.assets
+        val picture=remember(assets,catalog) {ProgramTilePicture.load(assets,catalog)}
+        Canvas(modifier) {picture.draw(drawContext.canvas.nativeCanvas,size.width,size.height,rotation)}
         return
     }
     val dark=LocalTerminalPalette.current.dark
@@ -84,7 +85,7 @@ import androidx.compose.ui.unit.dp
     val shape=RoundedCornerShape(radius)
     val reflection=Brush.verticalGradient(0f to Color.White.copy(alpha=.34f),.22f to Color.White.copy(alpha=.08f),
         .5f to Color.Transparent,1f to Color.Black.copy(alpha=.06f))
-    Box(modifier.shadow(if(large) 3.dp else 1.dp,shape).clip(shape)
+    Box(modifier.graphicsLayer {rotationZ=rotation}.shadow(if(large) 3.dp else 1.dp,shape).clip(shape)
         .background(Brush.verticalGradient(colors)).background(reflection)
         .border(1.dp,Color.White.copy(alpha=if(dark) .85f else 1f),shape)
         .drawWithContent {

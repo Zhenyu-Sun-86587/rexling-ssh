@@ -1324,3 +1324,32 @@ visible. Release signature, ART profiles and native-library alignment checks pas
 Installed on S22+ RFCT21390SD with data preserved and verified the installed base
 APK hash against the shareable release. See
 `validation/logo-paper-2026-11-03.json`.
+
+
+## Sharper header and tab program icons — 2026-11-03
+
+Catalog program tiles now replay native Canvas vector paths from the retained
+SVG sources at their actual display size and rotation. This removes bitmap
+downscaling and the added fuzzy shadow around the catalog tiles. Original colors,
+alpha-mask logos, gradient bevels, stack angles, compact sizes and fixed header
+slot are preserved. Fallback icons already use native/vector drawing. Paths and
+shaders are parsed once and cached as Android Pictures; drawing does not parse
+JSON or allocate a new bitmap per frame. The offline generator is documented in
+BUILDING.md and rejects unsupported SVG effects.
+
+All ten tiles were compared against the retained 488×384 PNG references using
+visible premultiplied RGBA. Mean absolute channel difference ranges from 0.35 to
+7.19 on a 0–255 scale; small native and raster renders were visually compared at
+34×27dp and 22×18dp, including rotated stacks at density 3. The native borders and
+logos avoid the raster reference's jagged/soft edges. This is a visual rendering
+change; no whole-app speed or battery improvement is claimed. Fixed slot checks
+cover one, two and three panes.
+
+All 85 non-fixture emulator UI checks pass, including new vector/color/layout
+coverage and the existing pane/header, typography and launcher checks. JVM tests
+and release lint pass. Release signature, ART profiles and 16KiB packaging checks
+pass. Installed on S22+ RFCT21390SD with data preserved and verified its base APK
+hash against the shareable release. The latest user-supplied app icon is included;
+its opaque checkerboard was removed with the built-in image tool and its original,
+prepared-image hashes and exact edit prompt are retained under artwork/rexlink.
+See `validation/program-icons-2026-11-03.json` for checks and comparison values.

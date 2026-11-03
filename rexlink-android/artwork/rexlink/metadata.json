@@ -1,8 +1,8 @@
 {
-  "source": "User-selected close-up blue paper dinosaur with baked-in checkerboard",
+  "source": "Latest user-selected close-up blue paper dinosaur from Downloads, with baked-in checkerboard",
   "preparation": "Checkerboard removed using the built-in image tool in background-extraction edit mode. Transparent alpha is retained; Android supplies a white adaptive launcher background. Existing monochrome notification/themed mark retained.",
-  "source_sha256": "dbcb9d8a56abfabb238d34dbd06bcc0227ebbcf238a8dbb713b606b128768ef0",
-  "foreground_sha256": "cb613f0add3d7db0b188ecc4943542f784ba08a5f18360b1cd2b02dced16e2bb",
+  "source_sha256": "1a09a066347ac359a726a287249cda2615056cea209440d1a509a7d8ff16979a",
+  "foreground_sha256": "9725dd5e209e7f8f728d381515f931af38e48c257ca8ab3e99ea0a7a2a2660b5",
   "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
   "notification": "app/src/main/res/drawable/ic_notification.xml",
   "tool": "built-in image_gen",

@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-03",
+  "change": "Native vector catalog tiles in header, tabs and pane indicators",
+  "catalog_tiles": 10,
+  "source": "retained Superlogical SVG catalog",
+  "renderer": "Cached Android Picture path commands replayed at final size and rotation; no catalog bitmap rescaling or extra shadow layer",
+  "layout": "Existing sizes, fixed header slot and stack rotation angles preserved",
+  "pixel_comparison": {
+    "premultiplied_rgba_mean_absolute_error_0_to_255_against_488x384_original_png": {
+      "codex": 7.18473173881489,
+      "claude_code": 0.9990514536372951,
+      "neovim": 1.5743508260758197,
+      "vim": 2.086061571465164,
+      "git": 1.4085166389173498,
+      "python": 1.687989615351776,
+      "node": 1.6569303919057377,
+      "shell": 0.752534793374317,
+      "htop": 0.347441459614071,
+      "btop": 0.3711431117657104
+    },
+    "small_sizes_reviewed": "34x27dp and 22x18dp at density 3, 0 and -6 degrees"
+  },
+  "checks": {
+    "emulator_ui_passed": 85,
+    "jvm": {
+      "tests": 94,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "release_lint_passed": true,
+    "static_release_verified": true,
+    "source_generator_rerun_successful": true
+  },
+  "latest_app_icon": {
+    "source": "User-provided Downloads PNG",
+    "preparation": "Built-in image tool removed opaque checkerboard; white adaptive background",
+    "prompt": "artwork/rexlink/preparation-prompt.txt",
+    "launcher_draw_passed": true,
+    "launcher_render_visually_reviewed": true
+  },
+  "release_sha256": "89ab3cbfde224216a076ea9ee1ecf9143cca0c544e525cb97d4410501f42d8a6",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true,
+  "phone_frame_time_or_battery_benchmark": "not performed"
+}
