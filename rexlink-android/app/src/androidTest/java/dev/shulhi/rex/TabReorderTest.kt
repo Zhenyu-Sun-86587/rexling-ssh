@@ -26,7 +26,7 @@ class TabReorderTest {
     private val selections=mutableListOf<String>()
     private val closed=mutableListOf<String>()
     private fun show() {
-        ui.setContent {MaterialTheme {Box(Modifier.width(360.dp)) {
+        ui.setContent {MaterialTheme {Box(Modifier.width(300.dp)) {
             TerminalTabs(order.value.map {WindowItem(it,it,listOf(BlockItem(it,"fish")))},"One",enabled.value,
                 onSelect={selections.add(it)},reorderKey=session.value,panePrograms={listOf(ProgramIdentity.Terminal)},selectedPane={0},
                 onMove={id,before->moves.add(id to before);order.value=moveTabBefore(order.value,id,before)!!;true},onClose={closed.add(it.id)},actions={})

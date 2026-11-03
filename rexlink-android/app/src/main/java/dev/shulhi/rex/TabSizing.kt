@@ -2,23 +2,46 @@ package dev.shulhi.rex
 
 import kotlin.math.roundToInt
 
-internal data class TabWidths(val active: Float,val inactive: Float)
+internal data class TabWidth(val width: Float,val showTitle: Boolean)
 
-/** Widths depend on space and tab count, never on changing task titles. Values are dp. */
-internal fun tabWidths(available: Float,count: Int,hasActive: Boolean,density: Float=1f): TabWidths {
-    if(count<=0) return TabWidths(0f,0f)
-    // Compose rounds each item and gap separately. Allocate whole pixels first
-    // so accumulated rounding cannot clip the last tab in an otherwise full strip.
-    val viewport=(available.coerceAtLeast(0f)*density).roundToInt()
+/** Content widths include the icon, text and padding. Allocation uses whole pixels. */
+internal fun tabWidths(available: Float,contentWidths: List<Float>,activeIndex: Int,density: Float=1f): List<TabWidth> {
+    if(contentWidths.isEmpty()) return emptyList()
     val minimum=(48f*density).roundToInt()
-    val inactiveCap=(120f*density).roundToInt()
-    val space=viewport-(4f*density).roundToInt()*(count-1)
-    if(!hasActive) return TabWidths(0f,(space/count).coerceIn(minimum,inactiveCap)/density)
-    val preferred=viewport.coerceIn(minimum,(160f*density).roundToInt())
-    if(count==1) return TabWidths(preferred/density,0f)
-    // Keep a useful title on the active tab. Beyond this limit, allow scrolling
-    // rather than reducing every tab to an indistinguishable sliver.
-    val afterIcons=space-minimum*(count-1)
-    val active=if(afterIcons>=(104f*density).roundToInt()) minOf(preferred,afterIcons) else preferred
-    return TabWidths(active/density,((space-active)/(count-1)).coerceIn(minimum,inactiveCap)/density)
+    val count=contentWidths.size
+    val space=(available.coerceAtLeast(0f)*density).roundToInt()-(4f*density).roundToInt()*(count-1)
+    val preferred=contentWidths.mapIndexed {i,width->(width*density).roundToInt().coerceIn(minimum,((if(i==activeIndex) 160f else 120f)*density).roundToInt())}
+    val widths=IntArray(count) {minimum}
+    if(activeIndex in widths.indices) {
+        val full=preferred[activeIndex]
+        val afterIcons=space-minimum*(count-1)
+        val leastTitle=minOf(full,(104f*density).roundToInt())
+        widths[activeIndex]=if(afterIcons>=leastTitle) minOf(full,afterIcons) else full
+    }
+    val inactive=widths.indices.filter {it!=activeIndex}
+    fun grow(indices: List<Int>,budget: Int): Int {
+        var remaining=budget
+        var candidates=indices.filter {widths[it]<preferred[it]}
+        while(remaining>0 && candidates.isNotEmpty()) {
+            val share=maxOf(1,remaining/candidates.size)
+            for(i in candidates) {
+                val added=minOf(share,preferred[i]-widths[i],remaining)
+                widths[i]+=added;remaining-=added
+            }
+            candidates=candidates.filter {widths[it]<preferred[it]}
+        }
+        return remaining
+    }
+    var spare=grow(inactive,(space-widths.sum()).coerceAtLeast(0))
+    val labelMinimum=preferred.map {minOf(it,(74f*density).roundToInt())}
+    // A hidden label must not leave an oversized, empty icon slot. Reuse that
+    // space for labels that can actually show a few characters.
+    for(i in inactive) if(widths[i]<labelMinimum[i]) {
+        spare+=widths[i]-minimum;widths[i]=minimum
+    }
+    for(i in inactive) if(widths[i]<labelMinimum[i] && spare>=labelMinimum[i]-minimum) {
+        spare-=labelMinimum[i]-minimum;widths[i]=labelMinimum[i]
+    }
+    grow(inactive.filter {widths[it]>=labelMinimum[it]},spare)
+    return widths.indices.map {TabWidth(widths[it]/density,it==activeIndex || widths[it]>=labelMinimum[it])}
 }

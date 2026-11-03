@@ -5,49 +5,52 @@ import org.junit.Test
 import kotlin.math.roundToInt
 
 class TabSizingTest {
-    @Test fun activeGetsPriorityAndFourTabsFitInAPhoneStrip() {
-        val widths=tabWidths(262f,4,true)
-        assertEquals(106f,widths.active,0.01f)
-        assertEquals(48f,widths.inactive,0.01f)
-        assertEquals(262f,widths.active+3*widths.inactive+12f,0.01f)
+    @Test fun aShortActiveTitleFreesSpaceForBothInactiveLabels() {
+        val widths=tabWidths(262f,listOf(74f,120f,120f),0)
+        assertEquals(74f,widths[0].width,0f)
+        assertTrue(widths.all {it.showTitle})
+        assertEquals(262f,widths.sumOf {it.width.toDouble()}.toFloat()+8f,0f)
     }
-    @Test fun roomyStripsKeepTheActiveCapAndReadableInactiveTitles() {
-        val widths=tabWidths(500f,4,true)
-        assertEquals(160f,widths.active,0.01f)
-        assertTrue(widths.inactive>=80f)
-        assertTrue(widths.active+3*widths.inactive+12f<=500.01f)
+    @Test fun roomyTabsStopAtTheirActualContentWidths() {
+        val widths=tabWidths(500f,listOf(74f,80f,90f),0)
+        assertEquals(listOf(74f,80f,90f),widths.map {it.width})
+        assertTrue(widths.all {it.showTitle})
     }
-    @Test fun overflowKeepsTouchTargetsAndAnActiveTitle() {
-        val widths=tabWidths(262f,6,true)
-        assertEquals(160f,widths.active,0.01f)
-        assertEquals(48f,widths.inactive,0.01f)
-        assertTrue(widths.active+5*widths.inactive+20f>262f)
+    @Test fun activeGetsPriorityWhenFourLongTabsNeedToFit() {
+        val widths=tabWidths(262f,List(4){200f},0)
+        assertEquals(106f,widths[0].width,0f)
+        assertTrue(widths[0].showTitle)
+        assertTrue(widths.drop(1).all {it==TabWidth(48f,false)})
     }
-    @Test fun allTabsFitWheneverTheActiveTitleAndIconTargetsHaveRoom() {
-        for(count in 2..12) for(space in listOf(200f,262f,320f,500f,900f)) {
-            val widths=tabWidths(space,count,true)
-            assertTrue(widths.active in 48f..160f);assertTrue(widths.inactive>=48f)
-            if(104f+(count-1)*52f<=space) assertTrue(widths.active+(count-1)*(widths.inactive+4f)<=space+.01f)
-        }
+    @Test fun overflowPreservesTheActiveTitleAndMinimumTouchTargets() {
+        val widths=tabWidths(262f,List(6){200f},0)
+        assertEquals(TabWidth(160f,true),widths[0])
+        assertTrue(widths.drop(1).all {it==TabWidth(48f,false)})
+        assertTrue(widths.sumOf {it.width.toDouble()}+20>262)
     }
-    @Test fun anUnselectedStripSharesSpaceAndEmptyListsNeedNone() {
-        val widths=tabWidths(300f,5,false)
-        assertEquals(0f,widths.active,0f)
-        assertTrue(5*widths.inactive+16f<=300f)
-        assertTrue(300f-(5*widths.inactive+16f)<5f)
-        assertEquals(TabWidths(0f,0f),tabWidths(300f,0,false))
+    @Test fun hiddenLabelsDoNotLeaveWideGapsAndRecoveredSpaceShowsAnotherTitle() {
+        val widths=tabWidths(262f,listOf(74f,120f,120f,120f),0)
+        assertEquals(listOf(TabWidth(74f,true),TabWidth(80f,true),TabWidth(48f,false),TabWidth(48f,false)),widths)
     }
-    @Test fun aSingleTabIsCappedAndTinyWindowsPreserveATouchTarget() {
-        assertEquals(160f,tabWidths(500f,1,true).active,0f)
-        assertEquals(48f,tabWidths(20f,1,true).active,0f)
-    }
-    @Test fun fractionalPixelDensitiesDoNotClipTheLastTouchTarget() {
+    @Test fun fractionalDensitiesKeepAllTargetsInsideAPackedStrip() {
         for(density in listOf(1.2f,1.5f,2.625f,2.75f,3.5f)) for(count in 2..6) {
-            val available=104f+(count-1)*52f+4f
-            val widths=tabWidths(available,count,true,density)
-            val used=(widths.active*density).roundToInt()+(count-1)*((widths.inactive*density).roundToInt()+(4*density).roundToInt())
+            val available=74f+(count-1)*52f+8f
+            val widths=tabWidths(available,List(count){if(it==0) 74f else 220f},0,density)
+            val used=widths.sumOf {(it.width*density).roundToInt()}+(count-1)*(4*density).roundToInt()
             assertTrue("$density: $used",used<=(available*density).roundToInt())
-            assertTrue((widths.inactive*density).roundToInt()>=(48*density).roundToInt())
+            widths.forEach {
+                assertTrue((it.width*density).roundToInt()>=(48*density).roundToInt())
+                if(!it.showTitle) assertEquals((48*density).roundToInt(),(it.width*density).roundToInt())
+            }
         }
+    }
+    @Test fun unselectedAndEmptyStripsDoNotReserveActiveSpace() {
+        assertEquals(listOf(TabWidth(74f,true),TabWidth(80f,true)),tabWidths(300f,listOf(74f,80f),-1))
+        assertTrue(tabWidths(300f,emptyList(),-1).isEmpty())
+    }
+    @Test fun aSingleTabFitsItsTitleUpToTheCapAndKeepsATouchTarget() {
+        assertEquals(TabWidth(74f,true),tabWidths(500f,listOf(74f),0).single())
+        assertEquals(TabWidth(160f,true),tabWidths(500f,listOf(300f),0).single())
+        assertEquals(TabWidth(48f,true),tabWidths(20f,listOf(20f),0).single())
     }
 }

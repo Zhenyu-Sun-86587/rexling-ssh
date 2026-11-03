@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -263,6 +264,22 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     val edge=with(LocalDensity.current) {36.dp.toPx()}
     val speed=with(LocalDensity.current) {420.dp.toPx()}
     val index=windows.indexOfFirst {it.id==selectedId}
+    val measurer=rememberTextMeasurer()
+    val textDensity=LocalDensity.current
+    val labels=windows.mapIndexed {i,w->
+        val pane=selectedPane(w)
+        val program=panePrograms(w).getOrNull(pane) ?: ProgramIdentity.Terminal
+        program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
+    }
+    val contentWidths=remember(labels,index,measurer,textDensity) {
+        val chrome=with(textDensity) {36.dp.roundToPx()+2*6.dp.roundToPx()+2.dp.roundToPx()}
+        labels.mapIndexed {i,title->
+            val style=androidx.compose.ui.text.TextStyle(fontSize=12.sp,lineHeight=18.sp,letterSpacing=0.sp,
+                fontWeight=if(i==index) FontWeight.Bold else FontWeight.Normal,
+                platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false))
+            (chrome+measurer.measure(title,style,maxLines=1,softWrap=false).size.width)/textDensity.density
+        }
+    }
     // Remote changes cancel a local gesture; animated titles do not.
     LaunchedEffect(ids,enabled) {drag.cancel();menuId=null}
     LaunchedEffect(drag.id) {
@@ -283,7 +300,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     Row(Modifier.fillMaxWidth().height(49.dp).padding(start=11.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
             val density=LocalDensity.current.density
-            val widths=remember(maxWidth,windows.size,index>=0,density) {tabWidths(maxWidth.value,windows.size,index>=0,density)}
+            val widths=remember(maxWidth,contentWidths,index,density) {tabWidths(maxWidth.value,contentWidths,index,density)}
             LaunchedEffect(selectedId,reorderKey,index,widths,maxWidth) {
                 if(index>=0 && drag.id==null) list.animateScrollToItem(index)
             }
@@ -317,8 +334,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     val leftLabel=if(sign>0) "Move left" else "Move right"
                     val rightLabel=if(sign>0) "Move right" else "Move left"
                     val active=w.id==selectedId
-                    val width=if(active) widths.active.dp else widths.inactive.dp
-                    val showTitle=active || width>=80.dp
+                    val allocation=widths[windowIndex]
+                    val width=allocation.width.dp
+                    val showTitle=allocation.showTitle
                     val indicatorColor=MaterialTheme.colorScheme.primary
                     val busy=paneWorking(w)
                     val workPhase=rememberWorkingPhase(active && busy && animateWorking)

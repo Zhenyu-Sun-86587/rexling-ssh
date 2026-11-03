@@ -29,11 +29,11 @@ class AdaptiveTabsTest {
     private val names=mutableStateOf(listOf("Investigate Rex protocol","Claude","fish","nvim","Five","Six","Seven","Eight"))
     private val stacked=mutableStateOf(false)
     private val programs=listOf("codex","claude","fish","nvim").map {ProgramIdentity.resolve(listOf(it))}
-    private fun show(dark: Boolean=false) {
+    private fun show(dark: Boolean=false,programOrder: List<ProgramIdentity> = programs) {
         ui.setContent {RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
             Box(Modifier.width(width.floatValue.dp).background(MaterialTheme.colorScheme.surface).testTag("Test dock")) {
                 TerminalTabs(List(count.intValue) {WindowItem(it.toString(),names.value[it],listOf(BlockItem("pane-$it","Terminal")))},selected.value,true,
-                    onSelect={selected.value=it},panePrograms={tab->val i=tab.id.toInt();List(if(i==0 && stacked.value) 3 else 1) {offset->programs[(i+offset)%programs.size]}},selectedPane={0},
+                    onSelect={selected.value=it},panePrograms={tab->val i=tab.id.toInt();List(if(i==0 && stacked.value) 3 else 1) {offset->programOrder[(i+offset)%programOrder.size]}},selectedPane={0},
                     actions={TerminalActions(true,true,{},{})})
             }
         }}
@@ -67,10 +67,10 @@ class AdaptiveTabsTest {
         ui.runOnIdle {count.intValue=2}
         ui.onNodeWithText("Claude").assertIsDisplayed()
     }
-    @Test fun animatedTitlesKeepWidthsAndPositionsStable() {
+    @Test fun longAnimatedTitlesStayAtTheirWidthCap() {
         count.intValue=3;show()
         val before=List(3) {bounds(it)}
-        for(title in listOf("Working ·","Working ··","A much longer task title that will be truncated")) {
+        for(title in listOf("Investigate Rex protocol ·","Investigate Rex protocol ··","Investigate Rex protocol with a much longer task title")) {
             ui.runOnIdle {names.value=names.value.toMutableList().apply {set(0,title)}}
             repeat(3) {assertEquals(before[it],bounds(it))}
         }
@@ -95,6 +95,23 @@ class AdaptiveTabsTest {
         tab(7).assertIsSelected();assertInside(7)
         ui.runOnIdle {width.floatValue=300f}
         tab(7).assertIsSelected();assertInside(7)
+    }
+    @Test fun shortActiveTitlesGiveTheirUnusedSpaceToOtherLabels() {
+        count.intValue=3;names.value=listOf("nvim","Investigate protocol","Review changes")
+        show(programOrder=listOf(programs[3],programs[0],programs[0]))
+        val density=InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+        assertTrue(bounds(0).width<90*density)
+        ui.onNodeWithText("Investigate protocol").assertIsDisplayed()
+        ui.onNodeWithText("Review changes").assertIsDisplayed()
+        repeat(3) {assertInside(it)}
+        capture("short-active-title")
+    }
+    @Test fun shortTitlesUseContentWidthWithoutStretching() {
+        count.intValue=3;names.value=listOf("nvim","vi","sh")
+        show()
+        val density=InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+        repeat(3) {assertTrue(bounds(it).width<100*density)}
+        ui.onNodeWithText("vi").assertIsDisplayed();ui.onNodeWithText("sh").assertIsDisplayed()
     }
     private fun capture(name: String) {
         ui.mainClock.advanceTimeBy(400)

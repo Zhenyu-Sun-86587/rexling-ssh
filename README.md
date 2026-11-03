@@ -103,7 +103,8 @@ The bottom dock switches tabs and opens Activity. Its tab/pane button opens a
 switcher directly: tap **Tabs** or **Panes**, or swipe between them. Select a row
 to switch, use **New tab** or **New pane** in its section, or close an item with
 its × button and confirmation. Panes lists the panes in the current tab.
-The tab strip gives the active title priority and shortens inactive tabs to
+Tabs fit their icon and title up to a width cap, giving the active title
+priority. Short titles leave room for others; inactive tabs become compact
 icons when space is tight. It scrolls when the tabs cannot fit; the switcher
 keeps their longer titles available.
 Hold a tab and drag it left or right to
