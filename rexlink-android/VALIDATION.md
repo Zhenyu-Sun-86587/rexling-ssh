@@ -1540,3 +1540,26 @@ Built and installed release build 7, source 4696ec49eb, on S22+ with app data
 preserved. Signature, alignment, profiles and release checks passed; installed
 base APK SHA-256 matches the shareable release. The headless emulator was closed.
 See validation/tab-pane-switcher-2026-11-03.json and validation/apk.json.
+
+## Adaptive active-priority tabs — 2026-11-03
+
+The tab strip measures the space remaining beside its dock controls. The active
+tab receives up to 160 dp, reduced to at least a 104 dp title budget when that
+lets the full set fit. Inactive tabs share the remaining width and show icons
+only below 80 dp. Tabs retain 48 dp minimum touch targets. If these limits cannot
+fit, the strip scrolls and brings the expanded selected tab fully into view,
+including after a viewport resize. Font size is unchanged. Width allocation
+does not depend on animated task titles; fixed icon slots avoid title shifts
+when a tab gains panes. Existing reorder and close interactions remain.
+
+Validation: 110 JVM tests passed and one optional benchmark skipped; release
+lint passed. Twelve focused UI checks passed across runs: six adaptive-tab
+scenarios plus six existing reorder scenarios. The adaptive checks passed again
+after whole-pixel allocation fixed the packed strip's one-pixel edge clipping.
+Density coverage includes fractional pixel ratios; visual checks cover a packed
+light strip, roomy dark strip and selected overflow tab.
+
+Installed optimized release build 8, source 4e08a0fe42, on S22+ with data
+preserved. Static release checks pass and the installed base APK SHA-256 matches
+the shareable release. The headless emulator was closed after testing. See
+validation/adaptive-tabs-2026-11-03.json and validation/apk.json.
