@@ -1,25 +1,26 @@
 {
-  "apk": "dist/Rexlink-2026.11.03-build3-92e0abac39-arm64-release.apk",
+  "apk": "dist/Rexlink-2026.11.03-build4-1664c0c724-arm64-release.apk",
   "application_label": "Rexlink",
   "version_name": "2026.11.03",
-  "version_code": 3,
-  "sha256": "c74349f0dc6c6fa30cd07170847d0440324536622cc97df3598994f4e05a0500",
-  "bytes": 16983661,
+  "version_code": 4,
+  "sha256": "7703a2cd066d7bac89962eceb40ef356412895aa7f86ea71be5ae278e88e4ca4",
+  "bytes": 17254984,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [
     {
       "name": "assets/dexopt/baseline.prof",
-      "bytes": 6544
+      "bytes": 7088
     },
     {
       "name": "assets/dexopt/baseline.profm",
-      "bytes": 709
+      "bytes": 792
     }
   ],
   "zip_alignment_16k": true,
   "permissions": [
     "android.permission.INTERNET",
+    "android.permission.ACCESS_LOCAL_NETWORK",
     "android.permission.ACCESS_NETWORK_STATE",
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.FOREGROUND_SERVICE",

@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-03",
+  "change": "Portside image upload integration",
+  "checks": {
+    "jvm_passed": 100,
+    "optional_benchmark_skipped": 1,
+    "non_fixture_emulator_ui_passed": 102,
+    "focused_image_and_settings_checks": 8,
+    "real_portside_rust_fixture_passed": true,
+    "fixture_identity_denial_checked": true,
+    "uploaded_png_bytes_verified_on_server": true,
+    "returned_path_and_insertion_handoff_verified": true,
+    "keyboard_uri_permissions_and_cancellation_checked": true,
+    "stale_pane_input_rejected": true,
+    "normal_clipboard_text_paste_preserved": true,
+    "per_server_settings_persist_and_clear_on_forget": true,
+    "release_lint_passed": true,
+    "release_signature_profiles_and_16k_checks_passed": true,
+    "temporary_emulator_stopped": true
+  },
+  "auth": "Portside 0.3+ Tailscale owner identity; no upload tokens stored",
+  "limits": "PNG/JPEG/GIF/WebP; minimum of server limit and 100 MiB",
+  "server_changes": "None; only an owned temporary loopback test instance used",
+  "portside_checkout_modified": false,
+  "apk": "Rexlink-2026.11.03-build4-1664c0c724-arm64-release.apk",
+  "version_name": "2026.11.03",
+  "version_code": 4,
+  "source_revision": "1664c0c724",
+  "release_sha256": "7703a2cd066d7bac89962eceb40ef356412895aa7f86ea71be5ae278e88e4ca4",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true
+}

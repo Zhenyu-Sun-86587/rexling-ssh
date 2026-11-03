@@ -1435,3 +1435,39 @@ its checksum sidecar verifies. Static release signature, baseline-profile and
 16KiB packaging checks pass. The prior installed build 2 was also copied under
 its original eefb173ac4 identity with unchanged bytes. No app UI/native changes
 were made; no additional device or emulator tests were needed for this task.
+
+
+## Portside image integration — 2026-11-03
+
+Added Preferences with per-Rex-server Portside URL/folder settings, a connection
+check and an Open Portside shortcut. The small upload client uses Portside 0.3+'s
+Tailscale-owner authentication; it stores no tokens and embeds no forwarding
+engine. Existing Appearance, Font size, Background alerts and About are grouped
+under Preferences. Clipboard images, IME rich content and the system photo picker
+feed a bounded streaming upload. Progress is an overlay and leaves terminal grid
+geometry unchanged. HTTP initialization, file I/O and cleanup run off the UI
+thread. Redirects, proxies and automatic mutation retries are disabled; resolved
+addresses are restricted to Tailscale/loopback.
+
+Completed paths are pasted without Enter into the same active Codex/Claude pane.
+Navigation invalidates automatic insertion; the result remains ready for explicit
+insertion into its original controlled pane or copying. Image URI grants are
+released once, cancelled/failed work cannot insert into a new target, and local
+staged files are cleaned up. Size limits, file signatures and returned paths are
+validated. No broad media/storage permissions are required; API 37 requests local
+network access when the feature is used.
+
+All 102 non-fixture emulator UI checks pass, including eight keyboard, clipboard,
+provider-URI, cancellation, pane-switch and saved-settings checks. JVM checks: 100
+passed, one optional benchmark skipped. The opt-in fixture test passed against
+Portside's real Rust binary, with an owned temporary loopback listener and test
+Tailscale identity responses. It verifies denied identities, exact PNG bytes
+written to disk, returned absolute paths, insertion handoff and cleanup. No
+running Portside service, real Rex session or sibling checkout was changed.
+
+Release lint, signature, ART-profile and 16KiB packaging checks pass. Built from
+clean source revision 1664c0c724, installed build 4 on S22+ RFCT21390SD with data
+preserved, and matched the installed base APK hash to the shareable APK. The
+temporary test emulator was stopped. Native Rex transport/rendering code was
+unchanged; no additional performance work was done. See
+`validation/portside-integration-2026-11-03.json` for results and release identity.
