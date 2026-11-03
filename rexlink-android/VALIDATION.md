@@ -1396,3 +1396,25 @@ host JNI smoke, release lint and APK signature/profile/16KiB checks pass.
 Installed the release on S22+ RFCT21390SD with app data preserved, reopened it and
 verified its base APK hash matches the shareable release. See
 `validation/tab-reorder-2026-11-03.json` for results and the release hash.
+
+
+## About and date-based versions — 2026-11-03
+
+Added **⋮ → About Rexlink** with the app's UTC date version, numeric build code,
+build type, Git revision and Copy build info. It also provides repository, Apache
+2.0 license and third-party notice links, credits and the best-effort notice. The
+version is generated at build time as YYYY.MM.DD; SOURCE_DATE_EPOCH can preserve a
+release's version date. Android's versionCode advances to 2. Builds with tracked
+local edits are marked; source exports without Git display an unknown revision.
+
+Both focused emulator tests pass: displayed values match the installed APK's
+PackageManager metadata, copy includes version/build/type/revision, and project
+links and close actions work. The actual optimized release's About screen was
+visually inspected and its version/build/source revision verified in UI. Release
+lint and signature, baseline-profile and 16KiB packaging checks pass.
+
+Built the release from clean source revision eefb173ac4: version 2026.11.03, build
+2. Installed it on S22+ RFCT21390SD with data preserved, reopened it, and verified
+its installed version/code and base APK hash against the shareable dated APK.
+See `validation/about-2026-11-03.json` for results and the release hash. Native
+terminal code was unchanged; no additional network or performance work was done.
