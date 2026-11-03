@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-03",
+  "change": "Fit tab widths to actual icon/title content",
+  "source_revision": "2482e7fa3d",
+  "version_code": 9,
+  "apk": "dist/Rexlink-2026.11.03-build9-2482e7fa3d-arm64-release.apk",
+  "release_sha256": "3a75491ea6e4dcb5b612d7250e9581162685eec71bcd2bf700068a8de090283b",
+  "policy": {
+    "active_width_cap_dp": 160,
+    "inactive_width_cap_dp": 120,
+    "icon_only_width_dp": 48,
+    "measurement": "Cached text measurement with matching font weight, icon slot and padding",
+    "allocation": "Short titles stop at natural width; spare width goes to other labels; hidden labels collapse to compact icon slots"
+  },
+  "checks": {
+    "jvm_passed": 111,
+    "optional_benchmark_skipped": 1,
+    "focused_ui_passed": 14,
+    "release_lint_passed": true,
+    "short_nvim_and_two_codex_titles_visual_review_passed": true,
+    "light_and_dark_visual_review_passed": true,
+    "static_release_apk_checks_passed": true,
+    "s22_plus_installed_hash_verified": true,
+    "headless_emulator_closed": true
+  },
+  "coverage": [
+    "Short active title frees room for both inactive captions",
+    "Short inactive captions fit below the old fixed title threshold",
+    "Roomy tabs do not stretch beyond actual content",
+    "Hidden labels never leave oversized icon slots",
+    "Long animated titles stay capped",
+    "Whole-pixel layout preserves touch targets",
+    "Overflow selection, viewport resize, stacked icons and drag reorder"
+  ],
+  "scope": "Android tab layout only; no terminal font sizing, native transport or server changes"
+}

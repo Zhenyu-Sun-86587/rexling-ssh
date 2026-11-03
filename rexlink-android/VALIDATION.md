@@ -1563,3 +1563,26 @@ Installed optimized release build 8, source 4e08a0fe42, on S22+ with data
 preserved. Static release checks pass and the installed base APK SHA-256 matches
 the shareable release. The headless emulator was closed after testing. See
 validation/adaptive-tabs-2026-11-03.json and validation/apk.json.
+
+## Content-sized tab widths — 2026-11-03
+
+Corrected build 8's oversized active allowance and empty inactive icon slots.
+Tab sizing now uses cached text measurements with the displayed font weight,
+icon slot and padding. Active and inactive widths stop at actual content, capped
+at 160 and 120 dp respectively. A short title such as nvim therefore releases
+space to inactive captions. If a caption cannot show useful text, its tab
+collapses to the 48 dp icon target and that spare width is reused for labels
+that can. Whole-pixel allocation, active-tab visibility and drag reorder remain.
+
+Validation: 111 JVM tests passed and one optional benchmark skipped; release
+lint passed. Fourteen focused UI tests passed, including the supplied nvim plus
+two Codex tabs scenario, naturally short labels, packed strips, capped animated
+titles, stable stacked icons, overflow selection, viewport resize and reorder.
+The reorder fixture was narrowed so its edge-scroll test still overflows under
+the tighter layout. Reviewed the corrected short-title preview and light/dark
+docks. No user terminal session was modified by the fixture tests.
+
+Installed optimized release build 9, source 2482e7fa3d, on S22+ with data
+preserved; the installed base APK SHA-256 matches the shareable release. Static
+release checks pass. The headless emulator was closed after testing. Details
+are in validation/content-sized-tabs-2026-11-03.json and validation/apk.json.
