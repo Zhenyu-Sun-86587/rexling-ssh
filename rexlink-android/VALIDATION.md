@@ -1607,3 +1607,31 @@ Installed optimized release build 10, source a4dd17cc4e, on S22+ with data
 preserved. Static release checks pass and installed base APK SHA-256 matches
 the shareable release. Headless emulator closed after testing. See
 validation/adjacent-tab-priority-2026-11-03.json and validation/apk.json.
+
+## Last workspace restoration and closer tabs — 2026-11-03
+
+Workspace history was previously memory-only. SavedWorkspace now persists the
+last session and pane per endpoint, plus each session's last tab and each tab's
+last pane. Explicit selections are saved before acknowledgement, so immediately
+backgrounding does not lose the requested destination. Resume/new connection
+epochs resolve the saved location before recording native defaults or claiming
+control. Stale requests from the old connection are replaced by the durable
+intent. Saved IDs are checked against current sessions/windows; closed panes
+and tabs fall back to an existing terminal. Unchanged metadata does not rewrite
+history. The tab gap is now 2 dp, shared by pixel allocation and rendering.
+
+Validation: 120 JVM tests passed and one optional benchmark skipped; release
+lint passed. An initial nine-test persistence/settings recreation run passed,
+and the final eighteen-test combined run passed for persisted workspaces,
+adaptive tabs and reorder. Persistence checks verify an actual preferences
+file, fresh history objects, per-server isolation, pending requests, planning
+without overwriting saved state and deleted-pane fallback. JVM tests also cover
+serialization, saved-session selection, transient states and redundant writes.
+Fixtures use isolated settings/state snapshots and do not alter user sessions.
+The accordion fixture remains constrained after the smaller gap allows more
+caption space.
+
+Installed optimized release build 11, source 66d1313382, on S22+ with data
+preserved. Static release checks pass and installed base APK SHA-256 matches
+the shareable release. Headless emulator closed after testing. Details are in
+validation/workspace-restore-2026-11-03.json and validation/apk.json.

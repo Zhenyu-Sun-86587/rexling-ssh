@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-03",
+  "change": "Persist last workspace and reduce inter-tab gap",
+  "source_revision": "66d1313382",
+  "version_code": 11,
+  "apk": "dist/Rexlink-2026.11.03-build11-66d1313382-arm64-release.apk",
+  "release_sha256": "86b7f3f8a4db8b35e0d48c8736361c7871ff2147abcdb8dd120dc5c36e073a63",
+  "behavior": [
+    "Persist last session and requested pane per server endpoint",
+    "Remember each tabs last pane across app recreation",
+    "Restore before recording reconnect defaults or automatic takeover",
+    "Resume pending user selection after a new connection epoch",
+    "Validate saved IDs and fall back to an existing terminal",
+    "Only write changed history, not each metadata snapshot",
+    "Reduce tab gap from 4 dp to 2 dp using the same layout/allocation constant"
+  ],
+  "checks": {
+    "jvm_passed": 120,
+    "optional_benchmark_skipped": 1,
+    "final_focused_android_passed": 18,
+    "earlier_settings_recreation_run_passed": 9,
+    "disk_history_and_per_server_isolation_passed": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "s22_plus_installed_hash_verified": true,
+    "headless_emulator_closed": true
+  },
+  "scope": "Emulator persistence/recreation checks use isolated preferences and state snapshots. No production Rex session was altered by tests; Rust transport is unchanged."
+}
