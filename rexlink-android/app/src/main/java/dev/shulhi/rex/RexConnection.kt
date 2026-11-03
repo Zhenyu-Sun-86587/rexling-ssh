@@ -107,6 +107,8 @@ internal class RexConnection(application: Application, private val scope: Corout
     private var navigationSerial = 0L
     private var keyEpoch by mutableStateOf(0L)
     fun cancelKeyRepeats() {keyEpoch++}
+    internal val selectionVersion: Long get()=navigationSerial
+    internal fun imageInputTarget(): String = "$navigationSerial:${state.value.connectionEpoch}:${state.value.selectedSession}:${state.value.selectedBlock}"
     fun keyTarget(): String = "$keyEpoch:$navigationSerial:${state.value.selectedSession}:${state.value.selectedBlock}"
     fun keyForTarget(name: String,target: String) {if(target==keyTarget()) key(name)}
     fun activity(open: Boolean) = command("activity","open" to open)
@@ -192,8 +194,8 @@ internal class RexConnection(application: Application, private val scope: Corout
         }
     }
     private fun setState(next: AppState) {mutableState.value=next;mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())}
-    private fun command(type: String, vararg args: Pair<String, Any>) {
-        if (handle == 0L) return
+    private fun command(type: String, vararg args: Pair<String, Any>): Boolean {
+        if (handle == 0L) return false
         val request = JSONObject().put("type", type)
         args.forEach { (key, value) -> request.put(key, value) }
         val error = NativeBridge.command(handle, request.toString())
@@ -201,7 +203,9 @@ internal class RexConnection(application: Application, private val scope: Corout
             navigationRequest = NavigationRequest()
             pendingTabOrder=null
             setState(state.value.copy(error=error))
+            return false
         }
+        return true
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
@@ -382,6 +386,13 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}
     fun scrollToBottom() {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"bottom" to true)}
     fun key(name: String) = type(TerminalInput.key(name))
+    internal fun pasteImagePath(session: String,block: String,path: String): Boolean {
+        val current=state.value
+        if(!visible || !foreground || !current.connected || !current.controlled || current.creating || navigationRequest.pending || current.selectedSession!=session || current.selectedBlock!=block) return false
+        val text=imagePathText(path)
+        resetModifiers()
+        return command("paste","text" to text,"session" to session,"block" to block,"navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch)
+    }
     fun paste(text: String) { if (visible && state.value.controlled && !navigationRequest.pending) command("paste", "text" to text,"session" to state.value.selectedSession,"block" to state.value.selectedBlock,"navigationId" to state.value.navigationId,"connectionEpoch" to state.value.connectionEpoch) }
     fun resize(columns: Int, rows: Int) {
         val size = columns.coerceIn(1, 512) to rows.coerceIn(1, 256)

@@ -68,3 +68,13 @@ tile and opposing back tilts. The active program stays in front; single-pane
 icons remain upright. Both header and tab icons use the same treatment. The
 header reserves the same width for one, two or three tiles and centers the
 visible stack, keeping the title and directory aligned when pane counts change.
+
+## Image uploads
+
+Configure each Rex server under **⋮ → Preferences → Portside**. Rexlink calls
+Portside 0.3+'s Tailscale-authenticated upload API directly. Keyboard image paste,
+menu Paste and Attach image upload PNG/JPEG/GIF/WebP files and insert the returned
+server path without submitting the prompt. Uploaded images remain ready for the
+original pane if you navigate away. The separate Portside app can be opened from
+settings but is not required for transfers. See the root README for setup and
+BUILDING.md for the optional real-server fixture test.

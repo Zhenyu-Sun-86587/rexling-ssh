@@ -35,7 +35,7 @@ import kotlin.math.roundToInt
     liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
-    onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""}) {
+    onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""},onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imageTarget: ()->String=mouseTarget) {
     val palette=LocalTerminalPalette.current
     val backdrop=MaterialTheme.colorScheme.background
     val scope=rememberCoroutineScope()
@@ -117,6 +117,9 @@ import kotlin.math.roundToInt
                                 if(block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
+                                view.imageInputTarget=imageTarget
+                                view.onImage=if(center && block.id==liveBlock) onImage else {_,release->release();false}
+                                view.onPaste=if(center && block.id==liveBlock) onPaste else ({false})
                                 view.onInput=onInput
                                 view.onMouseClick=if(center && block.id==liveBlock) onMouseClick else ({_,_,_,_->})
                                 view.mouseTarget=mouseTarget

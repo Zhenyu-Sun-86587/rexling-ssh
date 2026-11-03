@@ -58,6 +58,9 @@ class TerminalView(context: Context) : View(context) {
     private var lastFlingY=0
     private val scrollFling=OverScroller(context)
     private var touchVelocity: VelocityTracker?=null
+    internal var imageInputTarget: ()->String = {mouseTarget()}
+    internal var onImage: (Uri,()->Unit)->Boolean = {_,release->release();false}
+    internal var onPaste: ()->Boolean = {false}
     var onInput: (String) -> Unit = {}
     var onScroll: (Int) -> Unit = {}
     var onWheel: (Int,Int,Int,Int,Int) -> Unit = {lines,_,_,_,_->onScroll(lines)}
@@ -512,7 +515,18 @@ class TerminalView(context: Context) : View(context) {
         if (!controlled) return null
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
+        outAttrs.contentMimeTypes=imageMimeTypes.copyOf()
+        val imageTarget=imageInputTarget()
         return object : BaseInputConnection(this, false) {
+            override fun commitContent(info: android.view.inputmethod.InputContentInfo,flags: Int,opts: android.os.Bundle?): Boolean {
+                if(!controlled || !interactive || imageTarget!=imageInputTarget() || imageMimeTypes.none {info.description.hasMimeType(it)}) return false
+                val granted=flags and InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION!=0
+                try {if(granted) info.requestPermission()} catch(_: Exception) {return false}
+                val released=java.util.concurrent.atomic.AtomicBoolean(false)
+                val release={if(granted && released.compareAndSet(false,true)) runCatching {info.releasePermission()};Unit}
+                return try {onImage(info.contentUri,release).also {if(!it) release()}} catch(_: Exception) {release();false}
+            }
+            override fun performContextMenuAction(id: Int): Boolean = if(id==android.R.id.paste || id==android.R.id.pasteAsPlainText) controlled && interactive && imageTarget==imageInputTarget() && onPaste() else super.performContextMenuAction(id)
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean { composing = ""; if (text != null) onInput(text.toString()); invalidate(); return true }
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean { composing = text?.toString().orEmpty(); invalidate(); return true }
             override fun finishComposingText(): Boolean { if (composing.isNotEmpty()) onInput(composing); composing = ""; invalidate(); return true }

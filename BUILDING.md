@@ -60,7 +60,7 @@ with a matching `.apk.sha256` file. Version, build code and commit match About.
 Tracked local edits add `-modified` after the commit; source archives use `unknown`.
 The standard Gradle output remains available at `app-release.apk`.
 
-The visible app version uses the build's UTC date (`YYYY.MM.DD`). **⋮ → About
+The visible app version uses the build's UTC date (`YYYY.MM.DD`). **⋮ → Preferences → About
 Rexlink** shows that version, Android's numeric build code, build type and Git
 revision, with **Copy build info** for bug reports. Tracked local edits are marked
 as local changes; source archives without Git show `unknown` for the revision.
@@ -172,3 +172,24 @@ source changes. The converter supports the catalog's paths, gradients, transform
 and monochrome alpha masks; unsupported SVG features fail generation. Original
 PNG renders are retained for visual regression comparisons. No browser or network
 is needed to regenerate the native commands.
+
+## Optional Portside upload integration check
+
+Normal app builds do not depend on a Portside checkout. To test against its real
+Rust upload server, first build Portside 0.3+ in a separate checkout. With the
+Rexlink debug and Android test APKs installed on an API 28+ arm64 emulator:
+
+```sh
+python3 rexlink-android/scripts/test_portside_upload.py \
+  --server-binary ../portside/server/target/release/portside-server \
+  --serial emulator-5554
+```
+
+On API 37, grant the app's local network permission before this fixture test.
+The script starts a disposable loopback-only Portside instance with test identity
+responses, temporarily forwards its port through ADB, verifies actual uploaded
+image bytes and path insertion handoff, then removes the mapping, process and
+files. It never changes a running Portside service, Tailscale configuration or
+Rex session. No simulated identity provider is used by the app or production
+Portside service. Other Portside/keyboard/clipboard/settings checks run in the
+normal JVM and non-fixture emulator suites.

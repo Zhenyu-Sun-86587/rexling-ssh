@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.ui.platform.LocalContext
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -121,11 +122,46 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var menu by remember {mutableStateOf(false)}
     var appearance by remember {mutableStateOf(false)}
     var about by remember {mutableStateOf(false)}
+    var preferencesOpen by remember {mutableStateOf(false)}
+    var portsideOpen by remember {mutableStateOf(false)}
     var alerts by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
     val fontSize=model.fontSize
     var fontPicker by remember {mutableStateOf(false)}
     var terminalView by remember {mutableStateOf<TerminalView?>(null)}
+    val context=LocalContext.current
+    var networkAction by remember {mutableStateOf<(() ->Unit)?>(null)}
+    var networkDenied by remember {mutableStateOf<(() ->Unit)?>(null)}
+    val localNetwork=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted->
+        val action=networkAction;val denied=networkDenied;networkAction=null;networkDenied=null
+        if(granted) action?.invoke() else {denied?.invoke();model.images.notice="Allow local network access to connect to Portside."}
+    }
+    DisposableEffect(Unit) {onDispose {networkDenied?.invoke();networkAction=null;networkDenied=null}}
+    fun withPortsideNetwork(action: ()->Unit,onDenied: ()->Unit={}) {
+        if(Build.VERSION.SDK_INT>=37 && context.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")!=android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if(networkAction!=null) {onDenied();return}
+            networkAction=action;networkDenied=onDenied;localNetwork.launch("android.permission.ACCESS_LOCAL_NETWORK")
+        } else action()
+    }
+    val imageCommit: (android.net.Uri,()->Unit)->Boolean={uri,release->
+        val target=model.imageTarget()
+        if(target==null || model.portside[target.server]==null) model.attachImage(uri,target,release)
+        else {withPortsideNetwork({model.attachImage(uri,target,release)},release);true}
+    }
+    fun pasteClipboard(): Boolean = runCatching {
+        pasteTerminalClipboard(context,{uri->imageCommit(uri,{})},client::paste)
+    }.getOrElse {model.images.notice="Could not read the clipboard image. Try Attach image instead.";false}
+    val photoPicker=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {uri->
+        val target=model.pendingImageTarget;model.pendingImageTarget=null
+        if(uri!=null) withPortsideNetwork({model.attachImage(uri,target)})
+    }
+    fun chooseImage() {
+        val target=model.imageTarget()
+        if(target==null) {model.images.notice="Take control of a pane before attaching an image.";return}
+        if(model.portside[target.server]==null) {model.images.notice="Set up image uploads in Preferences → Portside for this Rex server.";return}
+        model.pendingImageTarget=target
+        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
     val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
@@ -170,18 +206,16 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
                             OwnershipMenuItem(controlled,ready&&client.hasScreen) {menu=false;if(controlled) client.releaseControl() else client.takeControl()}
-                            DropdownMenuItem(text={Text("Background alerts" + if(model.backgroundAlerts) " · On" else "")},onClick={menu=false;alerts=true})
-                            DropdownMenuItem(text={Text("Appearance")},onClick={menu=false;appearance=true})
-                            DropdownMenuItem(text={Text("Font size · $fontSize sp")},onClick={menu=false;fontPicker=true})
+                            DropdownMenuItem(text={Text("Preferences")},onClick={menu=false;preferencesOpen=true})
                             DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
                                 menu=false;client.terminal.value?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
                             })
                             DropdownMenuItem(text={Text("Paste")},enabled=controlled,onClick={
-                                menu=false;(getClipboard(model.getApplication()) as ClipboardManager).primaryClip?.getItemAt(0)?.coerceToText(model.getApplication())?.toString()?.let(client::paste)
+                                menu=false;pasteClipboard()
                             })
+                            DropdownMenuItem(text={Text("Attach image")},enabled=controlled && model.images.state==null,onClick={menu=false;chooseImage()})
                             DropdownMenuItem(text={Text("Servers · ${model.connectedCount} connected")},onClick={menu=false;servers=true})
                             DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;client.refresh()})
-                            DropdownMenuItem(text={Text("About Rexlink")},onClick={menu=false;about=true})
                         }
                     }
                 })
@@ -213,7 +247,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         Box(Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=7.dp)) {
                         LiveTerminal(client,blocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,client::selectBlock,{picker="panes"},{terminalView=it},
-                            Modifier.fillMaxSize())
+                            Modifier.fillMaxSize(),onImage=imageCommit,onPaste=::pasteClipboard)
                         ConnectionNotice(state.phase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.TopEnd).padding(10.dp))
@@ -235,6 +269,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         }
                     }
                 }
+                model.images.state?.let {status->ImageUploadOverlay(status,model.canInsertImage(status.target),model.images::insertReady,model.images::retry,
+                    onCopy={(getClipboard(context) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Uploaded image path",status.path))},onCancel=model.images::cancel,
+                    modifier=Modifier.align(Alignment.BottomCenter).padding(horizontal=12.dp).padding(bottom=if(state.connected) 112.dp else 12.dp),retryable=model.images.retryable)}
                 // Loading feedback must not resize the terminal grid during navigation.
                 if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
                     LinearProgressIndicator(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp))
@@ -244,6 +281,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         }
     }
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
+    if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;portsideOpen=true},{preferencesOpen=false;about=true}) {preferencesOpen=false}
+    if(portsideOpen) PortsideSettingsSheet(model,{action->withPortsideNetwork(action)}) {portsideOpen=false}
+    if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("Image upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}},dismissButton={TextButton(onClick={model.images.notice="";portsideOpen=true}) {Text("Portside settings")}})
     if(about) AboutSheet {about=false}
     if(alerts) BackgroundAlertsDialog(model) {alerts=false}
     if(servers) ServersSheet(model){servers=false}
@@ -345,11 +385,12 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
 @Composable private fun LiveTerminal(client: RexConnection,blocks: List<BlockItem>,chosen: String,liveBlock: String,
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
-    onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier) {
+    onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
+    onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false}) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
-        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget)
+        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,onClose: ()->Unit) {

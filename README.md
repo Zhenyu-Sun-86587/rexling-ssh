@@ -97,7 +97,7 @@ the development signing identity; see the build guide before publishing a releas
 Keep Tailscale connected on the phone and enter your Rex server's private HTTPS
 address. Add hosts under **⋮ → Servers**. The header cycles through sessions
 across connected hosts; the terminal card switches panes. Both loop at the ends.
-Check **⋮ → About Rexlink** for the date-based app version, build number and
+Check **⋮ → Preferences → About Rexlink** for the date-based app version, build number and
 commit; **Copy build info** copies these details for bug reports.
 The bottom dock switches
 tabs and opens pane options or Activity. Hold a tab and drag it left or right to
@@ -111,7 +111,31 @@ ready; viewing another client's pane shows a contextual takeover notice. Manual
 Take/Release remain in the overflow menu. Input is paused during reconnection and
 uncertain input is never replayed.
 
-Enable **⋮ → Background alerts** to receive attention notifications while the app
+### Image attachments through Portside
+
+Open **⋮ → Preferences → Portside**, select a Rex server, and enter the Portside
+URL and optional relative upload folder. Use Portside 0.3+ on the same machine
+or filesystem where Codex/Claude runs, with uploads enabled. **Check connection**
+shows the destination and size limit. Portside authenticates your Tailscale
+identity; no upload token is stored. **Open Portside** launches its Android app
+if installed; Rexlink uploads directly to the server and does not need that app.
+
+Copy an image and use **Paste** from your keyboard or Rexlink's menu, or choose
+**⋮ → Attach image** to open the system photo picker. PNG, JPEG, GIF and WebP
+images are streamed, up to the server's limit or 100 MiB, whichever is smaller.
+The returned server path is inserted into the active Codex/Claude prompt without
+pressing Enter. If you switch panes or servers, the result stays ready for
+explicit insertion into the original pane. Other programs also require explicit
+insertion. Upload progress overlays the terminal without changing its grid size.
+You can cancel, retry a failed transfer, or copy the completed server path.
+
+Keep Tailscale connected. On Android 17+, allow local network access when asked.
+The feature does not change Rex or the Portside server, configure port forwards,
+or share settings with the separate Portside app.
+
+### Background alerts
+
+Enable **⋮ → Preferences → Background alerts** to receive attention notifications while the app
 is backgrounded or the phone is locked. Allow notifications when Android asks.
 A quiet ongoing notification shows monitoring status and a **Stop** action.
 Only input/approval/sign-in requests and errors alert; running and finished tasks
