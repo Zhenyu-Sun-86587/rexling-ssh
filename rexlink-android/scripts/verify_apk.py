@@ -32,6 +32,8 @@ def main():
     run([build_tools / "apksigner", "verify", "--verbose", apk])
     run([build_tools / "zipalign", "-c", "-P", "16", "-v", "4", apk])
     badging = run([build_tools / "aapt", "dump", "badging", apk])
+    version_name = re.search(r"(?m)^package: .*versionName='([^']*)'", badging).group(1)
+    version_code = int(re.search(r"(?m)^package: .*versionCode='([0-9]+)'", badging).group(1))
     label = re.search(r"(?m)^application-label:'([^']*)'$", badging).group(1)
     assert label == "Rexlink", label
     expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "awaitUpdate", "readUpdate", "destroy"]}
@@ -64,7 +66,7 @@ def main():
     permissions = re.findall(r'<uses-permission[^>]*android:name="([^"]+)"', manifest)
     assert "android.permission.INTERNET" in permissions
     assert "android.permission.ACCESS_FINE_LOCATION" not in permissions
-    print(json.dumps({"apk": str(apk.relative_to(ROOT)), "application_label": label, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size, "signature_verified": True, "debuggable": debuggable, "art_profiles": profiles, "zip_alignment_16k": True, "permissions": permissions, "native_libraries": libraries, "runtime_execution": "not performed by this static APK check"}, indent=2))
+    print(json.dumps({"apk": str(apk.relative_to(ROOT)), "application_label": label, "version_name": version_name, "version_code": version_code, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(), "bytes": apk.stat().st_size, "signature_verified": True, "debuggable": debuggable, "art_profiles": profiles, "zip_alignment_16k": True, "permissions": permissions, "native_libraries": libraries, "runtime_execution": "not performed by this static APK check"}, indent=2))
 
 
 if __name__ == "__main__":

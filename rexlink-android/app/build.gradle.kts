@@ -1,7 +1,24 @@
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+// SOURCE_DATE_EPOCH allows rebuilding an older release with its original UTC date.
+val buildInstant=providers.environmentVariable("SOURCE_DATE_EPOCH").orNull?.let {Instant.ofEpochSecond(it.toLong())} ?: Instant.now()
+val dateVersion=DateTimeFormatter.ofPattern("yyyy.MM.dd").withZone(ZoneOffset.UTC).format(buildInstant)
+fun gitOutput(vararg args: String): String = runCatching {
+    providers.exec {
+        workingDir(rootProject.projectDir)
+        commandLine("git",*args)
+        isIgnoreExitValue=true
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("")
+val revision=gitOutput("rev-parse","--short=10","HEAD").takeIf {it.matches(Regex("[0-9a-f]{7,40}"))} ?: "unknown"
+val modified=gitOutput("status","--porcelain","--untracked-files=no").isNotBlank()
+
 android {
     namespace = "dev.shulhi.rex"
     ndkVersion = "30.0.16248370"
@@ -10,12 +27,14 @@ android {
         applicationId = "dev.shulhi.rex"
         minSdk = 28
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = dateVersion
+        buildConfigField("String","GIT_REVISION","\"$revision\"")
+        buildConfigField("boolean","LOCAL_CHANGES",modified.toString())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

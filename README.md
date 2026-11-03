@@ -39,7 +39,7 @@ then install with Android SDK platform-tools:
 
 ```sh
 adb devices -l
-adb -s <your-device-serial> install -r Rexlink-0.1.0-arm64-release.apk
+adb -s <your-device-serial> install -r "Rexlink-<version>-arm64-release.apk"
 ```
 
 Open **Rexlink**, enter your Rex server's authenticated private HTTPS URL, and
@@ -93,6 +93,8 @@ the development signing identity; see the build guide before publishing a releas
 Keep Tailscale connected on the phone and enter your Rex server's private HTTPS
 address. Add hosts under **⋮ → Servers**. The header cycles through sessions
 across connected hosts; the terminal card switches panes. Both loop at the ends.
+Check **⋮ → About Rexlink** for the date-based app version, build number and
+commit; **Copy build info** copies these details for bug reports.
 The bottom dock switches
 tabs and opens pane options or Activity. Hold a tab and drag it left or right to
 rearrange it; hold near an edge to scroll farther. The order syncs with other Rex

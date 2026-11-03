@@ -48,6 +48,14 @@ remain pinned by the Android project.
 Release output: `rexlink-android/app/build/outputs/apk/release/app-release.apk`.
 Debug output: `rexlink-android/app/build/outputs/apk/debug/app-debug.apk`.
 
+The visible app version uses the build's UTC date (`YYYY.MM.DD`). **⋮ → About
+Rexlink** shows that version, Android's numeric build code, build type and Git
+revision, with **Copy build info** for bug reports. Tracked local edits are marked
+as local changes; source archives without Git show `unknown` for the revision.
+Increase `versionCode` in `rexlink-android/app/build.gradle.kts` for each distributed
+update, including multiple releases on the same day. For reproducible version
+dates, set `SOURCE_DATE_EPOCH` to the release's Unix timestamp before building.
+
 Release uses R8, resource shrinking and packaged ART profiles. It currently signs
 with the existing local development key so it can update this prototype without
 clearing data. For Play Store or long-term public distribution, configure a

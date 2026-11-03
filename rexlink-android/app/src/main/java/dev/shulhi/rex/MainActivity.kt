@@ -120,6 +120,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var newName by rememberSaveable {mutableStateOf("")}
     var menu by remember {mutableStateOf(false)}
     var appearance by remember {mutableStateOf(false)}
+    var about by remember {mutableStateOf(false)}
     var alerts by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
     val fontSize=model.fontSize
@@ -180,6 +181,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             })
                             DropdownMenuItem(text={Text("Servers · ${model.connectedCount} connected")},onClick={menu=false;servers=true})
                             DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;client.refresh()})
+                            DropdownMenuItem(text={Text("About Rexlink")},onClick={menu=false;about=true})
                         }
                     }
                 })
@@ -242,6 +244,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         }
     }
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
+    if(about) AboutSheet {about=false}
     if(alerts) BackgroundAlertsDialog(model) {alerts=false}
     if(servers) ServersSheet(model){servers=false}
     if(picker=="panes") ModalBottomSheet(onDismissRequest={picker=""}) {
