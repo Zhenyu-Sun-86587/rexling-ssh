@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-03",
+  "change": "Portrait launcher framing fills bottom edge",
+  "artwork_unchanged": true,
+  "source": "User-confirmed Downloads image retained",
+  "background": "white",
+  "insets_percent": {
+    "left": 18,
+    "top": 22,
+    "right": 18,
+    "bottom": 14
+  },
+  "framing": "Larger square artwork shifted down; side cropping allowed; head remains visible; body reaches lower mask boundary",
+  "checks": {
+    "launcher_draw_passed": true,
+    "bottom_mask_pixels_have_artwork_without_white_gap": true,
+    "portrait_render_visually_reviewed": true,
+    "release_lint_passed": true,
+    "static_apk_checks_passed": true
+  },
+  "release_sha256": "7b1b02d4b23e5784081cc25f7d081edbb30deab55de7b33e738656877f67c19b",
+  "installed_on_s22_plus": true,
+  "installed_base_hash_matches": true,
+  "reopened_after_update": true
+}

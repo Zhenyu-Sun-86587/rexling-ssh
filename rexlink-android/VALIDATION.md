@@ -1353,3 +1353,19 @@ hash against the shareable release. The latest user-supplied app icon is include
 its opaque checkerboard was removed with the built-in image tool and its original,
 prepared-image hashes and exact edit prompt are retained under artwork/rexlink.
 See `validation/program-icons-2026-11-03.json` for checks and comparison values.
+
+
+## Bottom-filled launcher portrait — 2026-11-03
+
+Kept the user-confirmed artwork unchanged and adjusted only Android launcher
+framing. Insets are left/right 18%, top 22%, bottom 14%: the portrait is larger
+and lower, with matching horizontal/vertical scale. The body extends through the
+bottom of the icon mask, so its flat source-image edge no longer leaves a white
+gap underneath. Side cropping is intentional; the rendered head remains visible.
+
+Both focused launcher checks pass, including a regression check that samples
+foreground coverage immediately inside the bottom-center mask boundary. The
+384-pixel adaptive render was visually reviewed. Release lint, signature, ART
+profile and 16KiB packaging checks pass. Installed on S22+ RFCT21390SD with data
+preserved and verified the installed base APK hash against the shareable release.
+See `validation/launcher-framing-2026-11-03.json`.

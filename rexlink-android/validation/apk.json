@@ -1,8 +1,8 @@
 {
   "apk": "dist/Rexlink-0.1.0-arm64-release.apk",
   "application_label": "Rexlink",
-  "sha256": "89ab3cbfde224216a076ea9ee1ecf9143cca0c544e525cb97d4410501f42d8a6",
-  "bytes": 16936397,
+  "sha256": "7b1b02d4b23e5784081cc25f7d081edbb30deab55de7b33e738656877f67c19b",
+  "bytes": 16936409,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [

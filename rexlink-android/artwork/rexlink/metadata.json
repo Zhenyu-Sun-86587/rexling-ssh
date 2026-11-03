@@ -6,5 +6,15 @@
   "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
   "notification": "app/src/main/res/drawable/ic_notification.xml",
   "tool": "built-in image_gen",
-  "prompt": "artwork/rexlink/preparation-prompt.txt"
+  "prompt": "artwork/rexlink/preparation-prompt.txt",
+  "launcher_layout": {
+    "background": "white",
+    "insets_percent": {
+      "left": 18,
+      "top": 22,
+      "right": 18,
+      "bottom": 14
+    },
+    "framing": "Portrait fills the bottom edge; side cropping is intentional; artwork keeps its square aspect ratio."
+  }
 }
