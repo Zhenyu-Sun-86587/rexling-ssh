@@ -55,9 +55,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private var serverSwitchSerial=0L
     internal var pendingImageTarget: ImageTarget?=null
     internal val images=ImageUploads(application,viewModelScope,::autoInsertImage,::insertImage)
-    internal fun savePortside(id: String,endpoint: String,folder: String): String? = runCatching {
+    internal fun savePortside(id: String,endpoint: String,folder: String,enabled: Boolean=true): String? = runCatching {
         require(servers.any {it.id==id}) {"This Rex server is no longer saved"}
-        val value=if(endpoint.isBlank()) null else PortsideConfig.create(endpoint,folder)
+        val value=if(endpoint.isBlank()) null else PortsideConfig.create(endpoint,folder,enabled)
         images.forget(id)
         portside=if(value==null) portside-id else portside+(id to value)
         preferences.edit {putString("portside_uploads",PortsideConfig.encode(portside))}
@@ -73,6 +73,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint}
         val config=portside[target.server]
         if(profile==null || config==null) {onCopied();images.notice="Set up image uploads in Preferences → Portside for this Rex server.";return false}
+        if(!config.enabled) {onCopied();images.notice="Image uploads are turned off for this Rex server. Enable them in Preferences → Portside.";return false}
         return images.start(uri,target,config,onCopied)
     }
     internal fun canInsertImage(target: ImageTarget): Boolean {

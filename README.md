@@ -114,7 +114,9 @@ uncertain input is never replayed.
 ### Image attachments through Portside
 
 Open **⋮ → Preferences → Portside**, select a Rex server, and enter the Portside
-address and optional relative upload folder. These rows are Rex connections,
+address and optional relative upload folder. The **Use image uploads** switch
+turns uploads on or off while keeping the address and folder; tap **Save** to apply.
+These rows are Rex connections,
 not an imported Portside server list. Enter the actual Portside address: a bare
 hostname defaults to port 9417. Rex's service tailnet address may differ from the
 Mac's Portside address even when both run on the same machine.

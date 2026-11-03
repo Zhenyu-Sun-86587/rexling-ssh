@@ -79,7 +79,7 @@ import kotlin.math.roundToInt
 }
 
 @Composable internal fun FontSizeDialog(size: Int,onSize: (Int)->Unit,onClose: ()->Unit) {
-    AlertDialog(onDismissRequest=onClose,title={Text("Font size")},text={
+    AlertDialog(onDismissRequest=onClose,title={Text("Font size",style=SettingsType.title)},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
                 IconButton(onClick={onSize(size-1)},enabled=size>8,modifier=Modifier.semantics {contentDescription="Decrease font size"}) {Text("−",fontSize=24.sp)}

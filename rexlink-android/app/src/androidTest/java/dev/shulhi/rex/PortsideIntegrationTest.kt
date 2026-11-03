@@ -102,10 +102,10 @@ class PortsidePreferencesTest {
     @Test fun preferencesOpenPortsideAndEditorRejectsInvalidFolders() {
         var opened=0;var saved="";var editing by mutableStateOf(false)
         ui.setContent {MaterialTheme {
-            if(editing) PortsideEditor(ServerProfile("mac","Mac","https://mac"),null,{it()},{url,folder->runCatching {saved=PortsideConfig.create(url,folder).endpoint;null}.getOrElse {it.message}},{editing=false})
+            if(editing) PortsideEditor(ServerProfile("mac","Mac","https://mac"),null,{it()},{url,folder,enabled->runCatching {saved=PortsideConfig.create(url,folder,enabled).endpoint;null}.getOrElse {it.message}},{editing=false})
             else PreferencesSheet({},{},{},{opened++;editing=true},{},{})
         }}
-        ui.onNodeWithText("Portside · Image uploads").performClick();ui.runOnIdle {assertEquals(1,opened)}
+        ui.onNodeWithText("Portside").performClick();ui.runOnIdle {assertEquals(1,opened)}
         ui.onNodeWithText("Save").assertIsNotEnabled()
         ui.onNode(hasSetTextAction() and hasText("Portside address")).performTextReplacement("mac")
         ui.onNode(hasSetTextAction() and hasText("Upload folder (optional)")).performTextReplacement("../bad")
@@ -113,6 +113,20 @@ class PortsidePreferencesTest {
         ui.onNode(hasSetTextAction() and hasText("Upload folder (optional)")).performTextReplacement("screenshots")
         ui.onNodeWithText("Save").performClick();ui.runOnIdle {assertEquals("http://mac:9417",saved)}
     }
+    @Test fun uploadSwitchKeepsTheAddressAndFolderWhenTurnedOff() {
+        var result: PortsideConfig?=null
+        val config=PortsideConfig.create("mac","screenshots")
+        ui.setContent {MaterialTheme {PortsideEditor(ServerProfile("mac","Shulhi MBP","https://mac"),config,{it()},{url,folder,enabled->result=PortsideConfig.create(url,folder,enabled);null},{})}}
+        ui.onNodeWithText("Use image uploads").assertIsOn().performClick().assertIsOff()
+        ui.onNodeWithText("Portside address").assertIsNotEnabled().assertTextContains(config.endpoint)
+        ui.onNodeWithText("Save").performClick()
+        ui.runOnIdle {assertEquals(config.copy(enabled=false),result)}
+        ui.onNodeWithText("Use image uploads").performClick().assertIsOn()
+        ui.onNodeWithText("Portside address").assertIsEnabled().assertTextContains(config.endpoint)
+        ui.onNodeWithText("Save").performClick()
+        ui.runOnIdle {assertEquals(config,result)}
+    }
+
 }
 
 /** Explicit opt-in fixture test against the real Portside Rust server. */
@@ -184,10 +198,20 @@ class PortsideSavedSettingsTest {
                 val restored=RexModel(app,name);store.put("restored",restored)
                 assertEquals("mac/images",restored.portside["a"]!!.folder)
                 assertEquals("http://linux:9417",restored.portside["b"]!!.endpoint)
+                assertNull(restored.savePortside("a",restored.portside["a"]!!.endpoint,restored.portside["a"]!!.folder,false))
                 restored.forgetServer("b")
                 assertFalse(restored.portside.containsKey("b"));assertTrue(restored.portside.containsKey("a"))
                 val again=RexModel(app,name);store.put("again",again)
                 assertEquals(setOf("a"),again.portside.keys)
+                assertFalse(again.portside["a"]!!.enabled)
+                assertEquals("mac/images",again.portside["a"]!!.folder)
+                assertEquals("http://mac:9417",again.portside["a"]!!.endpoint)
+                val uri=TestImageProvider.uri
+                var released=0
+                val target=ImageTarget("a","https://mac","s","b",0,0,ProgramKind.CODEX,"Mac")
+                assertFalse(again.attachImage(uri,target) {released++})
+                assertEquals(1,released);assertNull(again.images.state)
+                assertTrue(again.images.notice.contains("turned off"))
             }
         } finally {InstrumentationRegistry.getInstrumentation().runOnMainSync {store.clear()};app.deleteSharedPreferences(name)}
     }

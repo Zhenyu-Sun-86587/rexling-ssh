@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop(){if(!isChangingConfigurations) BackgroundAlerts.foreground.value=false;model.pause();super.onStop()}
 }
 
-@Composable private fun RexTheme(dark: Boolean,theme: AppTheme,content: @Composable ()->Unit) {
+@Composable internal fun RexTheme(dark: Boolean,theme: AppTheme,content: @Composable ()->Unit) {
     val base=if(dark) darkColorScheme(primary=Color(0xff315cf4),onPrimary=Color.White,
         background=Color(0xff090c11),surface=Color(0xff141922),onSurface=Color(0xffe5e9f2),
         surfaceVariant=Color(0xff232934),onSurfaceVariant=Color(0xff969fb1),outline=Color(0xff2b3341))
@@ -399,22 +399,22 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted->
         if(granted) {model.setBackgroundAlerts(true);denied=false} else denied=true
     }
-    AlertDialog(onDismissRequest=onClose,title={Text("Background alerts")},text={
+    AlertDialog(onDismissRequest=onClose,title={Text("Background alerts",style=SettingsType.title)},text={
         Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Get notified when a task needs input, approval, sign-in, or fails while Rexlink is in the background or your phone is locked.")
-            Text("A quiet monitoring notification stays visible. Stop it there, or turn this off. Closing Rexlink stops monitoring.")
-            Text("Your phone may delay alerts while sleeping.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Get notified when a task needs input, approval, sign-in, or fails while Rexlink is in the background or your phone is locked.",style=SettingsType.body)
+            Text("A quiet monitoring notification stays visible. Stop it there, or turn this off. Closing Rexlink stops monitoring.",style=SettingsType.body)
+            Text("Your phone may delay alerts while sleeping.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                Text("Notify when I’m needed",Modifier.weight(1f))
+                Text("Notify when I’m needed",Modifier.weight(1f),style=SettingsType.row)
                 Switch(checked=model.backgroundAlerts,onCheckedChange={enabled->
                     if(!enabled) model.setBackgroundAlerts(false)
                     else if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                     else if(BackgroundAlerts.allowed(context)) {model.setBackgroundAlerts(true);denied=false} else denied=true
                 },enabled=model.servers.any {model.serverStatuses[it.id]?.maintained==true})
             }
-            if(model.servers.none {model.serverStatuses[it.id]?.maintained==true}) Text("Connect a server to enable alerts.")
+            if(model.servers.none {model.serverStatuses[it.id]?.maintained==true}) Text("Connect a server to enable alerts.",style=SettingsType.detail)
             if(denied || (model.backgroundAlerts && !BackgroundAlerts.allowed(context))) {
-                Text("Allow notifications in Android settings to receive alerts.")
+                Text("Allow notifications in Android settings to receive alerts.",style=SettingsType.detail)
                 TextButton(onClick={context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))}) {Text("Notification settings")}
             }
         }

@@ -17,9 +17,9 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-internal data class PortsideConfig(val endpoint: String,val folder: String="") {
+internal data class PortsideConfig(val endpoint: String,val folder: String="",val enabled: Boolean=true) {
     companion object {
-        fun create(endpoint: String,folder: String=""): PortsideConfig {
+        fun create(endpoint: String,folder: String="",enabled: Boolean=true): PortsideConfig {
             val supplied=endpoint.trim()
             require(supplied.isNotEmpty() && supplied.none {it.isISOControl()}) {"Enter the Portside host or URL"}
             val explicitScheme="://" in supplied
@@ -33,13 +33,13 @@ internal data class PortsideConfig(val endpoint: String,val folder: String="") {
             val subfolder=folder.trim()
             require(subfolder.toByteArray().size<=1024 && '\\' !in subfolder && subfolder.none {it.isISOControl()} &&
                 (subfolder.isEmpty() || subfolder.split('/').all {it.isNotEmpty() && it!="." && it!=".."})) {"Use a relative folder such as project/screenshots"}
-            return PortsideConfig(url.toString().removeSuffix("/"),subfolder)
+            return PortsideConfig(url.toString().removeSuffix("/"),subfolder,enabled)
         }
         fun decode(value: String?): Map<String,PortsideConfig> = runCatching {
             val root=JSONObject(value ?: "{}")
-            root.keys().asSequence().mapNotNull {id->runCatching {val item=root.getJSONObject(id);id to create(item.getString("endpoint"),item.optString("folder"))}.getOrNull()}.toMap()
+            root.keys().asSequence().mapNotNull {id->runCatching {val item=root.getJSONObject(id);id to create(item.getString("endpoint"),item.optString("folder"),item.optBoolean("enabled",true))}.getOrNull()}.toMap()
         }.getOrDefault(emptyMap())
-        fun encode(values: Map<String,PortsideConfig>): String = JSONObject().apply {values.forEach {(id,value)->put(id,JSONObject().put("endpoint",value.endpoint).put("folder",value.folder))}}.toString()
+        fun encode(values: Map<String,PortsideConfig>): String = JSONObject().apply {values.forEach {(id,value)->put(id,JSONObject().put("endpoint",value.endpoint).put("folder",value.folder).put("enabled",value.enabled))}}.toString()
     }
     fun url(path: String): HttpUrl = endpoint.toHttpUrlOrNull()!!.newBuilder().encodedPath(path).build()
 }

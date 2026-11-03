@@ -23,6 +23,11 @@ class PortsideTest {
         assertFalse(PortsideAddress.allowed(InetAddress.getByName("192.168.1.2")))
         assertTrue(PortsideConfig.decode("broken").isEmpty())
     }
+    @Test fun disabledUploadSettingsRoundTripAndLegacyMappingsStayEnabled() {
+        val disabled=PortsideConfig.create("mac","images",false)
+        assertEquals(disabled,PortsideConfig.decode(PortsideConfig.encode(mapOf("mac" to disabled)))["mac"])
+        assertTrue(PortsideConfig.decode("""{"mac":{"endpoint":"http://mac:9417","folder":"images"}}""")["mac"]!!.enabled)
+    }
     @Test fun barePortsideHostsUseItsOwnDefaultPortWithoutInheritingRexServiceAddresses() {
         assertEquals("http://mac.tailnet.ts.net:9417",PortsideConfig.create("mac.tailnet.ts.net").endpoint)
         assertEquals("http://100.64.0.10:9417",PortsideConfig.create("100.64.0.10").endpoint)
