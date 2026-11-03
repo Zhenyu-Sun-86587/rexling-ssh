@@ -83,6 +83,13 @@ internal class RexConnection(application: Application, private val scope: Corout
         val current=state.value
         val live=current.selectedBlock.ifBlank {if(current.phase=="preview") "preview" else ""}
         if(block!=live) return false
+        view.onCursorTap={
+            val active=state.value
+            // Program identity must be live, not the last-known chrome cache.
+            val kind=active.programs[block]?.kind
+            if(visible && foreground && active.connected && active.controlled && !active.creating && !navigationRequest.pending &&
+                active.selectedBlock==block && (kind==ProgramKind.CODEX || kind==ProgramKind.CLAUDE)) view.keyboard()
+        }
         boundTarget=frameTarget(current);boundView=java.lang.ref.WeakReference(view)
         val latest=mutableTerminal.value.takeIf {displayedTarget==boundTarget} ?: return false
         view.presentFrame(latest,displayedToken)
@@ -103,6 +110,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     var navigationRequest by mutableStateOf(NavigationRequest())
         private set
     private val workspace=SavedWorkspace(preferences,savedEndpoint)
+    private val presentation=SavedWorkspacePresentation(preferences,savedEndpoint)
     private val navigation=workspace.navigation
     private var restoreWorkspace=true
     private val activation=PaneActivation()
@@ -161,6 +169,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 navigationRequest = navigationRequest.acknowledge(next)
                                 pendingTabOrder=pendingTabOrder?.keepFor(next)
                                 val old=state.value
+                                if(old.selectedSession!=next.selectedSession) presentation.flush()
                                 if(old.connectionEpoch!=next.connectionEpoch) {
                                     activation.resume();cancelKeyRepeats();resetModifiers()
                                     navigationRequest=NavigationRequest();restoreWorkspace=true
@@ -182,7 +191,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 queueDisplay(next)
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
-                                mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())
+                                mutableChrome.value=presentation.chrome(next).copy(revision=0,screen=null,previewFrames=emptyMap())
                                 openPreferredTerminal();rememberCurrentTerminal();claimActivePane()
                             }
                         } catch (error: Exception) {
@@ -199,7 +208,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             setState(AppState(phase = "error", error = "Native terminal could not start: ${error.message}"))
         }
     }
-    private fun setState(next: AppState) {mutableState.value=next;mutableChrome.value=next.copy(revision=0,screen=null,previewFrames=emptyMap())}
+    private fun setState(next: AppState) {mutableState.value=next;mutableChrome.value=presentation.chrome(next).copy(revision=0,screen=null,previewFrames=emptyMap())}
     private fun command(type: String, vararg args: Pair<String, Any>): Boolean {
         if (handle == 0L) return false
         val request = JSONObject().put("type", type)
@@ -230,6 +239,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun disconnect() { pendingTabOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
+        presentation.flush()
         if(id.isBlank()) return
         workspace.selectSession(id)
         if(!state.value.connected) {navigationRequest=NavigationRequest();restoreWorkspace=true;return}
@@ -259,6 +269,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun openActivity(session: String,block: String) {
+        presentation.flush()
         val current=state.value
         if(!visible || !current.connected || current.creating) return
         if(current.selectedSession.isNotBlank() && current.selectedSession!=session) {
@@ -269,7 +280,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
         command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
     }
-    fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {state.value.programs[it.id] ?: ProgramIdentity.Terminal}
+    fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {chromeState.value.programs[it.id] ?: ProgramIdentity.Loading}
     fun tabPaneIndex(window: WindowItem): Int = window.blocks.indexOfFirst {it.id==navigation.pane(state.value.selectedSession,window)}.coerceAtLeast(0)
     fun selectWindow(id: String) {
         val current = state.value
@@ -375,6 +386,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun releaseControl() { activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
+        presentation.flush()
         pendingTabOrder=null
         cancelDisplay();cancelKeyRepeats()
         navigationRequest = NavigationRequest()
@@ -424,6 +436,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun applySize() = resize(lastSize.first.coerceAtLeast(1), lastSize.second.coerceAtLeast(1))
     fun close() {
+        presentation.flush()
         cancelDisplay()
         closed=true;pollJob?.cancel();resizeJob?.cancel()
         if (handle != 0L) NativeBridge.destroy(handle)

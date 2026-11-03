@@ -46,6 +46,7 @@ data class AppState(
     val sessions: List<SessionItem> = emptyList(), val windows: List<WindowItem> = emptyList(),
     val selectedSession: String = "", val selectedBlock: String = "", val controlled: Boolean = false,
     val screen: TerminalScreen? = null, val creating: Boolean = false, val navigationId: Long = 0,val tabMoveId: Long=0,val connectionEpoch: Long=0,val otherOwner: Boolean=false,val attentionCount: Int=0,
+    internal val cachedPrograms: Set<String> = emptySet(),
 ) {
     val connected: Boolean get() = phase == "connected"
     companion object {

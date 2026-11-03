@@ -12,6 +12,7 @@ internal fun tabWidths(available: Float,contentWidths: List<Float>,activeIndex: 
     val minimum=(48f*density).roundToInt()
     val count=contentWidths.size
     val space=(available.coerceAtLeast(0f)*density).roundToInt()-(TAB_GAP_DP*density).roundToInt()*(count-1)
+    if(count==1) return listOf(TabWidth((contentWidths.single()*density).roundToInt().coerceAtMost(space).coerceAtLeast(minimum)/density,true))
     val preferred=contentWidths.mapIndexed {i,width->(width*density).roundToInt().coerceIn(minimum,((if(i==activeIndex) 160f else 120f)*density).roundToInt())}
     val widths=IntArray(count) {minimum}
     if(activeIndex in widths.indices) {

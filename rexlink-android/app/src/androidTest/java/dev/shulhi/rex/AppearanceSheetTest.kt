@@ -46,11 +46,33 @@ class AppearanceSheetTest {
             main {
                 val first=RexModel(app,name);store.put("theme",first)
                 first.chooseTheme("merino-dark");first.chooseTheme("merino-light");first.changeFontSize(11)
+                first.changeAppearance(Appearance.DARK)
+                assertEquals(ControlShortcutGesture.HOLD,first.shortcutGesture)
+                first.changeShortcutGesture(ControlShortcutGesture.DOUBLE_TAP)
                 val second=RexModel(app,name);store.put("theme2",second)
                 assertEquals("merino-dark",second.theme(true).id);assertEquals("merino-light",second.theme(false).id);assertEquals(11,second.fontSize)
+                assertEquals(Appearance.DARK,second.appearance)
+                assertEquals(ControlShortcutGesture.DOUBLE_TAP,second.shortcutGesture)
                 second.chooseTheme("rexlink-default-dark");assertSame(TerminalPalette.Dark,second.theme(true).terminal)
             }
         } finally {main {store.clear()};app.deleteSharedPreferences(name)}
+    }
+    @Test fun quickMenuSwitchUsesCurrentAppearanceAndSupportsBothDirections() {
+        val dark=mutableStateOf(false)
+        ui.setContent {MaterialTheme {QuickThemeMenuItem(dark.value) {dark.value=it}}}
+        ui.onNodeWithText("Toggle Dark theme").performClick()
+        ui.runOnIdle {assertTrue(dark.value)}
+        ui.onNodeWithText("Toggle Light theme").performClick()
+        ui.runOnIdle {assertFalse(dark.value)}
+    }
+    @Test fun preferencesChooseTheCtrlShortcutGesture() {
+        val gesture=mutableStateOf(ControlShortcutGesture.HOLD)
+        ui.setContent {MaterialTheme {PreferencesSheet({},{},{},{},{},{},gesture.value,{gesture.value=it})}}
+        ui.onNodeWithText("Hold").performScrollTo().assertIsSelected()
+        ui.onNodeWithText("Double tap").performClick().assertIsSelected()
+        ui.runOnIdle {assertEquals(ControlShortcutGesture.DOUBLE_TAP,gesture.value)}
+        ui.onNodeWithText("Hold").performClick().assertIsSelected()
+        ui.runOnIdle {assertEquals(ControlShortcutGesture.HOLD,gesture.value)}
     }
     @Test fun themedSheetsRenderInLightAndDark() {
         val selected=mutableStateOf(themes.first {it.id=="abyssal-trench"})

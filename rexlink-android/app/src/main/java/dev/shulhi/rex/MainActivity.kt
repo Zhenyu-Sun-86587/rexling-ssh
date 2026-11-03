@@ -167,10 +167,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
     val liveBlock=state.selectedBlock.ifBlank {if(state.phase=="preview") "preview" else ""}
     fun closePaneTarget(block: BlockItem)=TerminalCloseTarget(state.selectedSession,block.id,
-        (state.programs[block.id] ?: ProgramIdentity.Terminal).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
+        (state.programs[block.id] ?: ProgramIdentity.Loading).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
     fun closeTabTarget(tab: WindowItem): TerminalCloseTarget {
         val pane=client.tabPaneIndex(tab);val block=tab.blocks.getOrNull(pane)
-        val program=state.programs[block?.id] ?: ProgramIdentity.Terminal
+        val program=state.programs[block?.id] ?: ProgramIdentity.Loading
         return TerminalCloseTarget(state.selectedSession,tab.id,program.tabTitle(tab.label,block?.label.orEmpty(),1,state.titles[block?.id].orEmpty()),true,tab.blocks.map {it.id})
     }
     LaunchedEffect(state.selectedSession) {closeTarget=null}
@@ -195,8 +195,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
-                blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
-                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Terminal).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),expanded=picker=="sessions",menu={
+                blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
+                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),expanded=picker=="sessions",menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
@@ -206,6 +206,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
                             OwnershipMenuItem(controlled,ready&&client.hasScreen) {menu=false;if(controlled) client.releaseControl() else client.takeControl()}
+                            QuickThemeMenuItem(palette.dark) {dark->menu=false;model.changeAppearance(if(dark) Appearance.DARK else Appearance.LIGHT)}
                             DropdownMenuItem(text={Text("Preferences")},onClick={menu=false;preferencesOpen=true})
                             DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
                                 menu=false;client.terminal.value?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
@@ -258,12 +259,16 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
-                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=state.selectedSession,animateWorking=!model.activityVisible,actions={
+                            TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,animateWorking=!model.activityVisible,
+                                contentReady=client.hasScreen && !state.creating && !changingSession && windows.isNotEmpty() && windows.all {w->
+                                    val block=w.blocks.getOrNull(client.tabPaneIndex(w))
+                                    block!=null && state.programs[block.id]?.pending==false
+                                },actions={
                                 TerminalActions(state.connected && state.selectedSession.isNotBlank(),model.connectedCount>0,
                                     {model.showActivity(true)},{picker="tabs"},attentionCount=model.attentionCount)
                             })
                             KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
-                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget) {
+                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget,shortcutGesture=model.shortcutGesture) {
                                 if(!controlled) client.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
                             }
                         }
@@ -281,7 +286,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         }
     }
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
-    if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;portsideOpen=true},{preferencesOpen=false;about=true}) {preferencesOpen=false}
+    if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;portsideOpen=true},{preferencesOpen=false;about=true},
+        onClose={preferencesOpen=false},shortcutGesture=model.shortcutGesture,onShortcutGesture=model::changeShortcutGesture)
     if(portsideOpen) PortsideSettingsSheet(model,{action->withPortsideNetwork(action)}) {portsideOpen=false}
     if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("Image upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}},dismissButton={TextButton(onClick={model.images.notice="";portsideOpen=true}) {Text("Portside settings")}})
     if(about) AboutSheet {about=false}

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +51,13 @@ import androidx.compose.ui.unit.dp
 }
 
 @Composable private fun PaneProgramTile(program: ProgramIdentity, modifier: Modifier, large: Boolean,rotation: Float) {
+    if(program.pending) {
+        val shape=RoundedCornerShape(if(large) 7.dp else 5.dp)
+        Box(modifier.graphicsLayer {rotationZ=rotation}.clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(1.dp,MaterialTheme.colorScheme.outline.copy(alpha=.5f),shape))
+        return
+    }
     val catalog=when(program.kind) {
         ProgramKind.CLAUDE -> "claude_code"
         ProgramKind.CODEX -> "codex"

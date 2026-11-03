@@ -61,7 +61,7 @@ class ModelsTest {
     }
 
     @Test fun controlPopupShortcutsProduceTheExpectedTerminalBytes() {
-        val expected=listOf(3,4,26,18,12,1,5,23,10)
+        val expected=listOf(3,4,26,18,12,1,5,23,10,29)
         assertEquals(expected,controlShortcuts.map {TerminalInput.modified(it,true,false).single().code})
     }
 

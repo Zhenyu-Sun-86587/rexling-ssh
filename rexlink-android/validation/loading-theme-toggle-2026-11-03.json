@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-03",
+  "change": "Hide initial tab loading and add quick appearance switch",
+  "base_revision": "918f9265ae",
+  "local_changes": true,
+  "version_code": 16,
+  "apk": "dist/Rexlink-2026.11.03-build16-918f9265ae-modified-arm64-release.apk",
+  "release_sha256": "470d8df9edb009cb691247ec751ac6c87dbc147920892b8de929888ba464a8a8",
+  "checks": {
+    "focused_android_passed": 16,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true
+  },
+  "behavior": "Reserve the tab dock while the first terminal and focused tab identities load. Reveal per session; subsequent metadata refreshes do not hide it. Keep actions available with unchanged bounds. Overflow Dark theme switch selects persisted Light/Dark appearance and preserves both theme presets. System appearance remains in Preferences.",
+  "phone_install": "Pending: S22+ not connected to ADB",
+  "source_commit": "Pending existing 1Password signer; no unsigned commit created"
+}

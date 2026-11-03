@@ -66,4 +66,16 @@ class ProgramIdentityTest {
         assertEquals("Custom task",ProgramIdentity.resolve(listOf("my-agent")).paneTitle("shell","Custom task"))
     }
 
+    @Test fun generatedIdsNeverBecomeProgramOrTabTitles() {
+        val codex=ProgramIdentity.resolve(listOf("codex"))
+        val ids=listOf("window-123abc","window:01a190c9-ccc5-767c-90bd-2343aee8b5ad","Tab abc123","block-abc-123","01a190c9-ccc5-767c-90bd-2343aee8b5ad")
+        for(id in ids) {
+            assertEquals("codex",codex.tabTitle(id,id,1,id))
+            assertEquals("Loading…",ProgramIdentity.Loading.tabTitle(id,id,1,id))
+            assertEquals("Terminal 1",ProgramIdentity.Terminal.tabTitle(id,id,1,id))
+        }
+        assertEquals("Window management",codex.tabTitle("Window management","shell",1))
+        assertEquals("Task title",ProgramIdentity.Loading.paneTitle("shell","Task title"))
+    }
+
 }

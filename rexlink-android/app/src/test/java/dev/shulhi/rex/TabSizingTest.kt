@@ -49,9 +49,10 @@ class TabSizingTest {
         assertEquals(listOf(TabWidth(74f,true),TabWidth(80f,true)),tabWidths(300f,listOf(74f,80f),-1))
         assertTrue(tabWidths(300f,emptyList(),-1).isEmpty())
     }
-    @Test fun aSingleTabFitsItsTitleUpToTheCapAndKeepsATouchTarget() {
+    @Test fun aSingleTabFitsItsTitleUpToTheAvailableSpaceAndKeepsATouchTarget() {
         assertEquals(TabWidth(74f,true),tabWidths(500f,listOf(74f),0).single())
-        assertEquals(TabWidth(160f,true),tabWidths(500f,listOf(300f),0).single())
+        assertEquals(TabWidth(300f,true),tabWidths(500f,listOf(300f),0).single())
+        assertEquals(TabWidth(262f,true),tabWidths(262f,listOf(300f),0).single())
         assertEquals(TabWidth(48f,true),tabWidths(20f,listOf(20f),0).single())
     }
     @Test fun adjacentCaptionsWinAtEitherEndOfTheStrip() {

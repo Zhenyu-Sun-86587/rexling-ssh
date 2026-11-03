@@ -25,7 +25,8 @@ internal fun openPortside(context: Context): Boolean {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onPortside: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit) {
+@Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onPortside: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
+    shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={}) {
     ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max=680.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             SettingsHeader("Preferences","Close preferences",onClose)
@@ -33,6 +34,18 @@ internal fun openPortside(context: Context): Boolean {
                 SettingsRow("Appearance","Themes and light or dark mode",SettingsGlyph.APPEARANCE,onAppearance)
                 SettingsDivider()
                 SettingsRow("Font size","Terminal text size",SettingsGlyph.FONT,onFont)
+            }
+            SettingsSection("Keyboard") {
+                Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("Ctrl shortcuts",style=SettingsType.row)
+                    Text("Open the ^ shortcut list with",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        ControlShortcutGesture.entries.forEach {gesture->
+                            FilterChip(selected=shortcutGesture==gesture,onClick={onShortcutGesture(gesture)},
+                                label={Text(if(gesture==ControlShortcutGesture.HOLD) "Hold" else "Double tap",style=SettingsType.row)})
+                        }
+                    }
+                }
             }
             SettingsSection("Connections") {
                 SettingsRow("Background alerts","Know when a task needs your attention",SettingsGlyph.ALERTS,onAlerts)

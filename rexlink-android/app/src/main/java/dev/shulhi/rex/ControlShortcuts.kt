@@ -33,10 +33,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-internal val controlShortcuts=listOf("c","d","z","r","l","a","e","w","j")
+internal val controlShortcuts=listOf("c","d","z","r","l","a","e","w","j","]")
+internal enum class ControlShortcutGesture { HOLD, DOUBLE_TAP }
+private const val CONTROL_SHORTCUT_COLUMNS=3
+private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-1)/CONTROL_SHORTCUT_COLUMNS
 
 @Composable internal fun ControlDockKey(enabled: Boolean,active: Boolean,readable: Boolean,modifier: Modifier,
-    onToggle: ()->Unit,onShortcut: (String)->Unit) {
+    onToggle: ()->Unit,onShortcut: (String)->Unit,gesture: ControlShortcutGesture=ControlShortcutGesture.HOLD) {
     var visible by remember {mutableStateOf(false)}
     var pressed by remember {mutableStateOf(false)}
     var highlighted by remember {mutableIntStateOf(-1)}
@@ -51,13 +54,16 @@ internal val controlShortcuts=listOf("c","d","z","r","l","a","e","w","j")
     val configuration=LocalViewConfiguration.current
     val haptics=LocalHapticFeedback.current
     fun dismiss() {visible=false;highlighted=-1}
+    LaunchedEffect(enabled,gesture) {dismiss();pressed=false}
     fun choose(index: Int) {if(enabled) send(controlShortcuts[index]);dismiss()}
     fun hit(x: Float,y: Float): Int {
         val px=x-popup.left-padding;val py=y-popup.top-padding
-        val w=(popup.width-2*padding-2*gap)/3;val h=(popup.height-2*padding-2*gap)/3
+        val w=(popup.width-2*padding-(CONTROL_SHORTCUT_COLUMNS-1)*gap)/CONTROL_SHORTCUT_COLUMNS
+        val h=(popup.height-2*padding-(controlShortcutRows-1)*gap)/controlShortcutRows
         if(w<=0 || h<=0 || px<0 || py<0) return -1
         val col=(px/(w+gap)).toInt();val row=(py/(h+gap)).toInt()
-        return if(col in 0..2 && row in 0..2 && px-col*(w+gap)<w && py-row*(h+gap)<h) row*3+col else -1
+        val index=row*CONTROL_SHORTCUT_COLUMNS+col
+        return if(col in 0 until CONTROL_SHORTCUT_COLUMNS && row in 0 until controlShortcutRows && index in controlShortcuts.indices && px-col*(w+gap)<w && py-row*(h+gap)<h) index else -1
     }
     BackHandler(visible) {dismiss()}
     val provider=remember(padding) {object: PopupPositionProvider {
@@ -75,27 +81,40 @@ internal val controlShortcuts=listOf("c","d","z","r","l","a","e","w","j")
         .semantics {
             contentDescription="Control";this.selected=active;role=Role.Button
             if(enabled) {onClick {toggle();true};onLongClick(label="Control shortcuts") {visible=true;true}} else disabled()
-        }.pointerInput(enabled) {
+        }.pointerInput(enabled,gesture) {
             if(!enabled) return@pointerInput
+            var lastTap: Long?=null
             awaitEachGesture {
                 val down=awaitFirstDown();down.consume();pressed=true
+                val doubleTap=gesture==ControlShortcutGesture.DOUBLE_TAP && lastTap?.let {
+                    down.uptimeMillis-it in configuration.doubleTapMinTimeMillis..configuration.doubleTapTimeoutMillis
+                }==true
+                lastTap=null
                 var opened=false;var released=false;var moved=false
-                val timer=scope.launch {delay(configuration.longPressTimeoutMillis);opened=true;visible=true;haptics.performHapticFeedback(HapticFeedbackType.LongPress)}
+                val timer=if(gesture==ControlShortcutGesture.HOLD) scope.launch {delay(configuration.longPressTimeoutMillis);opened=true;visible=true;haptics.performHapticFeedback(HapticFeedbackType.LongPress)} else null
                 try {
                     while(true) {
                         val change=awaitPointerEvent().changes.firstOrNull {it.id==down.id} ?: break
                         if(change.isConsumed) break
                         change.consume()
-                        if(abs(change.position.x-down.position.x)>configuration.touchSlop || abs(change.position.y-down.position.y)>configuration.touchSlop) {moved=true;if(!opened) timer.cancel()}
+                        if(abs(change.position.x-down.position.x)>configuration.touchSlop || abs(change.position.y-down.position.y)>configuration.touchSlop) {moved=true;if(!opened) timer?.cancel()}
                         if(opened && visible) highlighted=hit(change.position.x+anchor.left,change.position.y+anchor.top)
                         if(!change.pressed) {
-                            released=true;timer.cancel()
+                            released=true;timer?.cancel()
                             if(opened) {if(visible && highlighted>=0) choose(highlighted)}
-                            else if(!moved && change.position.x in 0f..size.width.toFloat() && change.position.y in 0f..size.height.toFloat()) toggle()
+                            else if(!moved && change.position.x in 0f..size.width.toFloat() && change.position.y in 0f..size.height.toFloat()) {
+                                // Each tap toggles immediately; the second restores the first toggle.
+                                toggle()
+                                if(doubleTap && change.uptimeMillis-down.uptimeMillis<configuration.longPressTimeoutMillis) {
+                                    visible=true;haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                } else {
+                                    if(gesture==ControlShortcutGesture.DOUBLE_TAP && change.uptimeMillis-down.uptimeMillis<configuration.longPressTimeoutMillis) lastTap=change.uptimeMillis
+                                }
+                            }
                             break
                         }
                     }
-                } finally {timer.cancel();pressed=false;if(!released || opened) dismiss()}
+                } finally {timer?.cancel();pressed=false;if(!released || opened) dismiss()}
             }
         },contentAlignment=Alignment.Center) {
         ChromeSymbol(ChromeIcon.CONTROL,Modifier.size(20.dp),
@@ -106,11 +125,12 @@ internal val controlShortcuts=listOf("c","d","z","r","l","a","e","w","j")
                 .clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .border(1.dp,MaterialTheme.colorScheme.outline,RoundedCornerShape(18.dp)).padding(8.dp)
                 .semantics {contentDescription="Control shortcuts"},verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                repeat(3) {row->
+                repeat(controlShortcutRows) {row->
                     Row(Modifier.fillMaxWidth().height(44.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                        repeat(3) {col->
-                            val index=row*3+col;val letter=controlShortcuts[index];val current=highlighted==index
-                            Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(11.dp))
+                        repeat(CONTROL_SHORTCUT_COLUMNS) {col->
+                            val index=row*CONTROL_SHORTCUT_COLUMNS+col;val letter=controlShortcuts.getOrNull(index);val current=highlighted==index
+                            if(letter==null) Spacer(Modifier.weight(1f).fillMaxHeight())
+                            else Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(11.dp))
                                 .background(if(current) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent)
                                 .semantics {contentDescription="Control ${letter.uppercase()}";this.selected=current}
                                 .clickable(enabled=enabled,role=Role.Button) {choose(index)},contentAlignment=Alignment.Center) {

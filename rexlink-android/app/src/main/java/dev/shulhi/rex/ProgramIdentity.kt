@@ -3,7 +3,7 @@ package dev.shulhi.rex
 import java.util.Locale
 
 enum class ProgramKind { TERMINAL, CLAUDE, CODEX, NEOVIM, VIM, GIT, PYTHON, NODE, SSH, TMUX, MONITOR }
-data class ProgramIdentity(val kind: ProgramKind, val label: String, val executable: String="") {
+data class ProgramIdentity(val kind: ProgramKind, val label: String, val executable: String="",val pending: Boolean=false) {
     val title: String get() = when(kind) {
         ProgramKind.CLAUDE -> "claude"; ProgramKind.CODEX -> "codex"; ProgramKind.NEOVIM -> "nvim"
         ProgramKind.VIM -> "vim"; ProgramKind.GIT -> "git"; ProgramKind.PYTHON -> "python"
@@ -16,21 +16,22 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String, val executa
 
     /** A task title is presentation only; executable identity still chooses the icon. */
     fun paneTitle(paneLabel: String, reportedTitle: String = ""): String =
-        if (isShell) title else reportedTitle.takeIf { it.isNotBlank() } ?: paneLabel.takeUnless(::genericTitle) ?: title
+        if (isShell) title else reportedTitle.takeUnless(::genericTitle) ?: paneLabel.takeUnless(::genericTitle) ?: title
 
     /** Explicit tab names stay put; defaults follow the remembered focused pane. */
     fun tabTitle(windowLabel: String, paneLabel: String, number: Int, reportedTitle: String = ""): String {
         if (!genericTitle(windowLabel)) return windowLabel
         val focused=paneTitle(paneLabel,reportedTitle)
-        return if (focused != Terminal.title) focused else windowLabel.takeIf { it.isNotBlank() } ?: "Terminal $number"
+        return if (focused != Terminal.title) focused else windowLabel.takeIf { it.isNotBlank() && !defaultTitle.matches(it) } ?: "Terminal $number"
     }
 
     companion object {
         private val shellNames = setOf("fish", "zsh", "bash", "sh", "dash", "ash", "ksh", "mksh", "tcsh", "csh", "nu", "nushell", "pwsh", "powershell", "cmd")
-        private val defaultTitle = Regex("(?:Window [0-9a-f]+|Terminal \\d+)", RegexOption.IGNORE_CASE)
+        private val defaultTitle = Regex("(?:(?:Window|Tab|Block)[ _:-]+[0-9a-f]+(?:-[0-9a-f]+)*|Terminal \\d+|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})", RegexOption.IGNORE_CASE)
         private fun genericTitle(value: String): Boolean = value.isBlank() ||
             value.lowercase(Locale.ROOT) in setOf("shell", "terminal", "window") || defaultTitle.matches(value)
         val Terminal = ProgramIdentity(ProgramKind.TERMINAL, "Terminal")
+        val Loading = ProgramIdentity(ProgramKind.TERMINAL,"Loading…",pending=true)
         fun resolve(candidates: List<String>): ProgramIdentity {
             for (candidate in candidates) {
                 val path = candidate.replace('\\', '/').lowercase(Locale.ROOT)

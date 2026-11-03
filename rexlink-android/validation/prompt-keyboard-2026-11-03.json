@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-03",
+  "change": "Open keyboard on Codex/Claude input cursor row tap",
+  "base_revision": "918f9265ae",
+  "local_changes": true,
+  "version_code": 17,
+  "apk": "dist/Rexlink-2026.11.03-build17-918f9265ae-modified-arm64-release.apk",
+  "release_sha256": "09e1bf9604bf90b11d2eace4945bbe79d46515c8e62a47034c29ef09eaf06827",
+  "checks": {
+    "focused_android_passed": 19,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "For a valid controlled mouse-reporting tap on the visible cursor row, forward the mouse click and request the existing keyboard action only when live program metadata identifies Codex or Claude. Navigation, ownership, grid, scrollback, link and gesture guards remain active. Ordinary non-mouse taps retain existing keyboard behavior.",
+  "limitations": "Terminal snapshots expose a cursor rather than text-field bounds; this targets the visible cursor row. The focused tests exercise tap dispatch and cancellation, not a live Codex/Claude phone session.",
+  "phone_install": "Installed release 17 on S22+ RFCT21390SD; installed base.apk SHA-256 matches the release artifact; app data preserved",
+  "source_commit": "Pending existing 1Password signer; no unsigned commit created"
+}

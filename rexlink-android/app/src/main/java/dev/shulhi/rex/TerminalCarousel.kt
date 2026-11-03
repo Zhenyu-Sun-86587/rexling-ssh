@@ -142,32 +142,32 @@ import kotlin.math.roundToInt
                         }
                     }
                     if(center && (frame?.scroll?.below ?: 0)>0) {
-                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=if(blocks.size>1) 19.dp else 10.dp)
+                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=if(blocks.size>1) 64.dp else 10.dp)
                             .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
                             .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
                             fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
                     }
-                    if(blocks.size>1) Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(14.dp).clickable(role=Role.Button,onClick=onPanes)
-                        .semantics {contentDescription="Pane ${i+1} of ${blocks.size}. Switch pane"},
-                        verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.Center) {
-                        if(blocks.size>1) {
-                            PositionDots(i,blocks.size)
-                        }
-                    }
+
                 }
             }
         }
+        if(blocks.size>1) {
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(14.dp)
+                .clickable(role=Role.Button,onClick=onPanes)
+                .semantics {contentDescription="Pane position indicator";stateDescription="Pane ${candidate+1} of ${blocks.size}"},contentAlignment=Alignment.Center) {
+                PanePositionIndicator(index,blocks.size,offset={-drag/stride})
+            }
+        }
         if((dragging || settling || toast) && blocks.size>1 && blocks.getOrNull(candidate)!=null) {
-            Column(Modifier.align(Alignment.BottomCenter).padding(bottom=58.dp)
-                .semantics {contentDescription="Pane switch indicator";stateDescription=blocks[candidate].id},horizontalAlignment=Alignment.CenterHorizontally) {
-                Row(Modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surface)
-                    .padding(horizontal=15.dp,vertical=11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                    val program=programs[blocks[candidate].id] ?: ProgramIdentity.Terminal
+            Row(Modifier.align(Alignment.BottomCenter).padding(bottom=20.dp)
+                .widthIn(max=(maxWidth-32.dp).coerceIn(80.dp,240.dp)).heightIn(min=36.dp)
+                .clip(RoundedCornerShape(13.dp)).background(MaterialTheme.colorScheme.surface)
+                .semantics {contentDescription="Pane switch indicator";stateDescription=blocks[candidate].id}
+                .padding(horizontal=12.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    val program=programs[blocks[candidate].id] ?: ProgramIdentity.Loading
                     ProgramStack(listOf(program),0)
-                    Text(blocks[candidate].label.takeUnless {it=="shell" || it=="Terminal"} ?: program.title,
-                        fontWeight=FontWeight.SemiBold,fontSize=13.sp)
-                }
-                Spacer(Modifier.height(9.dp));PositionDots(candidate,blocks.size)
+                    Text(program.paneTitle(blocks[candidate].label),
+                        fontWeight=FontWeight.SemiBold,fontSize=13.sp,lineHeight=18.sp,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
     }

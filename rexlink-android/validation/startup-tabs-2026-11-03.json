@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-03",
+  "change": "Startup titles and program icons",
+  "base_revision": "918f9265ae",
+  "local_changes": true,
+  "version_code": 14,
+  "apk": "dist/Rexlink-2026.11.03-build14-918f9265ae-modified-arm64-release.apk",
+  "release_sha256": "a09d1cd2f5d63fdf277a8b9434821a23577bf84f496be01faa43434960b1870d",
+  "checks": {
+    "jvm_passed": 134,
+    "optional_benchmark_skipped": 1,
+    "focused_android_passed": 17,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "headless_emulator_closed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Reuse bounded per-endpoint/per-session metadata for UI only. New panes use neutral loading tiles; generated window/tab/block IDs cannot become titles. Fresh metadata replaces cached identity and title. No cached control, activity, screen or image insertion authority. Save new identities immediately, animated titles on lifecycle/navigation flush, without a periodic writer.",
+  "phone_install": "Installed on S22+ RFCT21390SD; installed base.apk SHA-256 matches the release artifact",
+  "source_commit": "Pending existing 1Password Git signer; no unsigned commits created",
+  "includes": [
+    "Fixed single fluid pane indicator",
+    "Ctrl+] shortcut"
+  ]
+}

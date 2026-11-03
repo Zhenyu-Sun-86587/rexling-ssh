@@ -19,16 +19,17 @@ class PaneChromeTest {
     @get:Rule val ui=createComposeRule()
     private lateinit var terminal: TerminalView
     private val selected=mutableListOf<String>()
-    private fun carousel(initial: String="a",count: Int=3) {
+    private var opened=0
+    private fun carousel(initial: String="a",count: Int=3,history: Boolean=false) {
         val blocks=listOf(BlockItem("a","shell"),BlockItem("b","shell"),BlockItem("c","shell")).take(count)
-        val screen=TerminalScreen(20,10,null,null,-1,0,emptyList())
+        val screen=TerminalScreen(20,10,null,null,-1,0,emptyList(),if(history) TerminalScroll(80,10,10) else TerminalScroll())
         ui.setContent {
             var selected by remember {mutableStateOf(initial)}
             MaterialTheme {
                 TerminalCarousel(blocks,selected,selected,screen,blocks.associate {it.id to screen},
                     mapOf("a" to ProgramIdentity(ProgramKind.TERMINAL,"fish"),
                         "b" to ProgramIdentity(ProgramKind.CODEX,"Codex"),"c" to ProgramIdentity(ProgramKind.NEOVIM,"Neovim")),
-                    false,10f,{},{},{_,_,_,_,_->},{},{},{_,_->},{selected=it;this@PaneChromeTest.selected.add(it)},{},{terminal=it},Modifier.size(320.dp,480.dp))
+                    false,10f,{},{},{_,_,_,_,_->},{},{},{_,_->},{selected=it;this@PaneChromeTest.selected.add(it)},{opened++},{terminal=it},Modifier.size(320.dp,480.dp))
             }
         }
         ui.mainClock.autoAdvance=false
@@ -88,6 +89,45 @@ class PaneChromeTest {
         carousel(count=1);val dx=terminal.width*.55f
         ui.runOnIdle {terminal.onPaneDrag?.invoke(dx,true);terminal.onPaneDragEnd?.invoke(dx,0f)}
         ui.mainClock.advanceTimeBy(500);badge().assertDoesNotExist();ui.runOnIdle {assertTrue(selected.isEmpty())}
+        ui.onNodeWithContentDescription("Pane position indicator").assertDoesNotExist()
+    }
+
+    @Test fun oneFixedIndicatorAndProgramAnchorStayPutThroughoutASwipe() {
+        carousel()
+        val fixed=ui.onNodeWithContentDescription("Pane position indicator")
+        val before=fixed.fetchSemanticsNode().boundsInRoot
+        val dimensions=terminal.width to terminal.height
+        ui.onAllNodesWithContentDescription("Pane position indicator").assertCountEquals(1)
+        val next=-terminal.width*.4f
+        ui.runOnIdle {terminal.onPaneDrag?.invoke(next,true)};ui.mainClock.advanceTimeByFrame()
+        assertEquals(before,fixed.fetchSemanticsNode().boundsInRoot)
+        val program=badge().fetchSemanticsNode().boundsInRoot
+        assertEquals(before.center.x,program.center.x,1f)
+        assertTrue("Short labels should fit their content",program.width<before.width*.5f)
+        ui.runOnIdle {terminal.onPaneDrag?.invoke(-next,true)};ui.mainClock.advanceTimeByFrame()
+        val opposite=badge().fetchSemanticsNode().boundsInRoot
+        assertEquals(program.center.x,opposite.center.x,1f)
+        assertEquals(program.top,opposite.top,1f)
+        assertEquals(program.bottom,opposite.bottom,1f)
+        assertEquals(before,fixed.fetchSemanticsNode().boundsInRoot)
+        assertEquals(dimensions,terminal.width to terminal.height)
+        ui.onAllNodes(hasContentDescription("Switch pane",substring=true)).assertCountEquals(0)
+        ui.runOnIdle {terminal.onPaneDragEnd?.invoke(-next,0f)}
+        ui.mainClock.advanceTimeBy(300)
+        ui.onAllNodesWithContentDescription("Pane position indicator").assertCountEquals(1)
+        assertEquals(before,fixed.fetchSemanticsNode().boundsInRoot)
+    }
+    @Test fun theFixedIndicatorStillOpensPaneSelection() {
+        carousel()
+        ui.onNodeWithContentDescription("Pane position indicator").performClick()
+        ui.runOnIdle {assertEquals(1,opened)}
+    }
+    @Test fun theProgramLabelDoesNotOverlapTheReturnToLatestButton() {
+        carousel(history=true)
+        ui.runOnIdle {terminal.onPaneDrag?.invoke(-terminal.width*.4f,true)};ui.mainClock.advanceTimeByFrame()
+        val latest=ui.onNodeWithText("↓ Latest").fetchSemanticsNode().boundsInRoot
+        val program=badge().fetchSemanticsNode().boundsInRoot
+        assertTrue("$latest overlaps $program",latest.bottom<=program.top)
     }
 
 }

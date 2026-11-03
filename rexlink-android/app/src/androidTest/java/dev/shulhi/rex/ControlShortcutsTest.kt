@@ -24,11 +24,11 @@ import org.junit.runner.RunWith
 class ControlShortcutsTest {
     @get:Rule val ui=createComposeRule()
     private var toggles=0;private val sent=mutableListOf<String>()
-    private fun fixture(enabled: Boolean=true) {
-        ui.setContent {var active by remember {mutableStateOf(false)}
+    private fun fixture(enabled: Boolean=true,gesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,initiallyActive: Boolean=false) {
+        ui.setContent {var active by remember {mutableStateOf(initiallyActive)}
             MaterialTheme {Box(Modifier.size(320.dp,320.dp)) {
                 ControlDockKey(enabled,active,true,Modifier.align(Alignment.BottomCenter).size(36.dp),
-                    {toggles++;active=!active},{sent+=it})
+                    {toggles++;active=!active},{sent+=it},gesture)
             }}
         }
     }
@@ -92,9 +92,61 @@ class ControlShortcutsTest {
         ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
         ui.runOnIdle {assertTrue(sent.isEmpty());assertEquals(0,toggles)}
     }
+    @Test fun holdSlideAndReleaseSendsControlRightBracketExactlyOnce() {
+        fixture();val start=bounds("Control");val down=SystemClock.uptimeMillis();ui.mainClock.autoAdvance=false
+        touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
+        ui.mainClock.advanceTimeBy(650);repeat(3){ui.mainClock.advanceTimeByFrame()};ui.waitForIdle()
+        val target=bounds("Control ]")
+        touch(MotionEvent.ACTION_MOVE,target.exactCenterX(),target.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.onNodeWithContentDescription("Control ]").assertIsSelected()
+        touch(MotionEvent.ACTION_UP,target.exactCenterX(),target.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.runOnIdle {assertEquals(listOf("]"),sent);assertEquals(29,TerminalInput.modified(sent.single(),true,false).single().code);assertEquals(0,toggles)}
+    }
+    @Test fun releasingInAnEmptyGridCellDoesNotSendAShortcut() {
+        fixture();val start=bounds("Control");val down=SystemClock.uptimeMillis();ui.mainClock.autoAdvance=false
+        touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
+        ui.mainClock.advanceTimeBy(650);repeat(3){ui.mainClock.advanceTimeByFrame()};ui.waitForIdle()
+        val last=bounds("Control ]")
+        val density=InstrumentationRegistry.getInstrumentation().targetContext.resources.displayMetrics.density
+        val x=last.exactCenterX()+last.width()+4*density
+        touch(MotionEvent.ACTION_MOVE,x,last.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        touch(MotionEvent.ACTION_UP,x,last.exactCenterY(),down);ui.mainClock.advanceTimeByFrame()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.runOnIdle {assertTrue(sent.isEmpty());assertEquals(0,toggles)}
+    }
     @Test fun readOnlyCtrlCannotOpenOrSendShortcuts() {
         fixture(enabled=false);ui.onNodeWithContentDescription("Control").assertIsNotEnabled().performTouchInput {longClick()}
         ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
         ui.runOnIdle {assertTrue(sent.isEmpty());assertEquals(0,toggles)}
+    }
+    @Test fun doubleTapOpensPersistentPopupWithoutLeavingCtrlLatchedAndCanSendAShortcut() {
+        fixture(gesture=ControlShortcutGesture.DOUBLE_TAP)
+        ui.onNodeWithContentDescription("Control").performTouchInput {doubleClick()}
+        ui.onNodeWithContentDescription("Control shortcuts").assertIsDisplayed()
+        ui.onNodeWithContentDescription("Control").assertIsNotSelected()
+        ui.onNodeWithContentDescription("Control J").performClick()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.runOnIdle {assertEquals(listOf("j"),sent)}
+    }
+    @Test fun doubleTapModeStillTogglesCtrlImmediatelyOnASingleTap() {
+        fixture(gesture=ControlShortcutGesture.DOUBLE_TAP)
+        ui.onNodeWithContentDescription("Control").performTouchInput {click()}
+        ui.onNodeWithContentDescription("Control").assertIsSelected()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.runOnIdle {assertEquals(1,toggles)}
+    }
+    @Test fun doubleTapModeDoesNotOpenThePopupOnHold() {
+        fixture(gesture=ControlShortcutGesture.DOUBLE_TAP)
+        ui.onNodeWithContentDescription("Control").performTouchInput {longClick()}
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.runOnIdle {assertTrue(sent.isEmpty())}
+    }
+    @Test fun doubleTapPreservesAnAlreadyActiveCtrlModifier() {
+        fixture(gesture=ControlShortcutGesture.DOUBLE_TAP,initiallyActive=true)
+        ui.onNodeWithContentDescription("Control").performTouchInput {doubleClick()}
+        ui.onNodeWithContentDescription("Control shortcuts").assertIsDisplayed()
+        ui.onNodeWithContentDescription("Control").assertIsSelected()
+        ui.runOnIdle {assertTrue(sent.isEmpty())}
     }
 }

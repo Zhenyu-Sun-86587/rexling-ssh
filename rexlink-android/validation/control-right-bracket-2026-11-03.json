@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-03",
+  "change": "Ctrl+] shortcut plus fixed liquid pane indicator",
+  "base_revision": "918f9265ae",
+  "local_changes": true,
+  "source_patch_sha256": "db6e75f25876f9075a793e492db4cc7869005835b1a83c5a007767a3b72248cb",
+  "version_code": 13,
+  "apk": "dist/Rexlink-2026.11.03-build13-918f9265ae-modified-arm64-release.apk",
+  "release_sha256": "ebe3b0b4d1b17fccc6f8425fc540b4ecfff87404684c5755cb0da01ead1369bc",
+  "checks": {
+    "jvm_passed": 126,
+    "optional_benchmark_skipped": 1,
+    "control_shortcut_android_passed": 7,
+    "pane_indicator_android_passed_previous_run": 11,
+    "control_right_bracket_byte": 29,
+    "hold_slide_release_sends_once": true,
+    "empty_grid_cell_cancels": true,
+    "existing_ctrl_j_and_ctrl_w_gestures_pass": true,
+    "readonly_and_cancel_checks_pass": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "headless_emulator_closed": true
+  },
+  "behavior": "Long-press Ctrl popup includes ^]. Grid row count and hit testing derive from shortcut count; blank cells are inert. Includes the single fixed fluid pane track and anchored program label from local release 12.",
+  "source_commit": "Pending: existing 1Password Git signer returned failed to fill whole buffer; no unsigned commit created",
+  "phone_install": "Pending: S22+ absent from ADB",
+  "supersedes_local_release": 12
+}

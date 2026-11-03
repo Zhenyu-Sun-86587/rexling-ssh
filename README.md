@@ -97,6 +97,9 @@ the development signing identity; see the build guide before publishing a releas
 Keep Tailscale connected on the phone and enter your Rex server's private HTTPS
 address. Add hosts under **⋮ → Servers**. The header cycles through sessions
 across connected hosts; the terminal card switches panes. Both loop at the ends.
+A single fixed pane indicator stays at the bottom of the terminal card. Its
+active capsule transfers width as you swipe; the pane's icon and program name
+appear directly above it without moving the terminal content.
 Rexlink saves the last session, tab and pane for each server, including the last
 pane used in each tab, and restores them when reopened. Closed terminals fall
 back to an existing pane.
@@ -108,15 +111,29 @@ to switch, use **New tab** or **New pane** in its section, or close an item with
 its × button and confirmation. Panes lists the panes in the current tab.
 Tabs fit their icon and title up to a width cap, giving the active title
 priority. Short titles leave room for others; inactive tabs become compact
-icons when space is tight. It scrolls when the tabs cannot fit; the switcher
+icons when space is tight. A single tab can use all the space before the
+tab/pane menu button, showing its full title when it fits.
+The strip scrolls when the tabs cannot fit; the switcher
 keeps their longer titles available.
 When space is limited, titles nearest the active tab take priority, with more
 distant tabs collapsing to icons first.
+On reconnect, tabs reuse their last known titles and icons while fresh metadata
+loads. The tab strip waits for the terminal and tab metadata before appearing,
+keeping its space reserved while loading. New panes use a neutral loading tile
+instead of temporary window IDs or an assumed shell icon. **⋮ → Toggle Dark theme / Toggle Light theme**
+quickly switches between your saved light and dark presets; **Preferences →
+Appearance** also offers the system setting.
 Hold a tab and drag it left or right to
 rearrange it; hold near an edge to scroll farther. The order syncs with other Rex
 clients. Hold and release without dragging for **Move left**, **Move right** and
 **Close tab**. Rename a session from its row’s
 **⋮ → Rename session** in the session list; changes sync through Rex.
+Long-press Ctrl for common control shortcuts, including **Ctrl+J** and **Ctrl+]**.
+Under **Preferences → Keyboard → Ctrl shortcuts**, choose **Hold** (the default)
+or **Double tap** to open the list. Single taps still toggle Ctrl immediately.
+Tap the input cursor row in Codex or Claude to open the keyboard, including when
+the program uses terminal mouse reporting. Other application clicks keep their
+normal behavior.
 The selected pane streams a Ghostty
 snapshot followed by incremental VT output. Opening a pane claims it once when
 ready; viewing another client's pane shows a contextual takeover notice. Manual

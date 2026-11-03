@@ -1635,3 +1635,166 @@ Installed optimized release build 11, source 66d1313382, on S22+ with data
 preserved. Static release checks pass and installed base APK SHA-256 matches
 the shareable release. Headless emulator closed after testing. Details are in
 validation/workspace-restore-2026-11-03.json and validation/apk.json.
+
+## Single fixed fluid pane indicator — 2026-11-03
+
+Removed the position dots inside each sliding terminal and the duplicate dots
+in the temporary pane badge. A single indicator now stays at the carousel
+bottom. Its capsules exchange active width/color with a subtle connecting neck,
+using the existing swipe/settle progress. The icon/program label uses one fixed
+width and anchor directly above it. Cancel and wrap handoffs retain geometry.
+The indicator still opens pane selection. Return-to-latest sits above the label
+so the two controls do not overlap. The overlay does not change terminal size.
+
+Validation: 126 JVM tests passed and one optional benchmark skipped; release
+lint passed. Eleven focused Android tests passed, including fixed positions,
+one indicator, stable terminal dimensions, pane-picker access, label/latest
+separation, cancellation, looped swipes, motion handoff and existing compositing.
+Reviewed progress 0/25/50/75/100% and the dark-theme midpoint. The animation is
+small Canvas drawing driven by pane motion, with no new idle animation loop.
+
+Built optimized release 12 from base 918f9265ae with local changes. Static APK
+checks pass. Git commit/push remains pending because the existing 1Password
+signer returned “failed to fill whole buffer”; no unsigned commit was created.
+Phone installation remains pending because S22+ disappeared from ADB before
+the install command could run. The headless emulator was closed after testing.
+See validation/fixed-pane-indicator-2026-11-03.json and validation/apk.json.
+
+## Ctrl+] and combined local release — 2026-11-03
+
+Added ^] to the long-press Ctrl popup; it emits terminal byte 0x1D. The popup
+uses three columns and a row count derived from its ten shortcuts. Gesture hit
+testing uses the same dimensions and rejects the two empty cells in its last
+row. The existing Ctrl+J/Ctrl+W, toggle, cancellation and read-only paths remain.
+
+Validation: 126 JVM tests passed and one optional benchmark skipped; the existing
+control-code test now also checks 29. Seven Android shortcut tests passed,
+including hold/slide/release on ^] exactly once and release on an empty cell
+without sending or toggling Ctrl. Release lint and static APK checks pass.
+This build also includes the fixed liquid pane indicator covered by the prior
+eleven-test Android run and its geometry/visual checks.
+
+Built optimized local release 13 from base 918f9265ae, marked modified,
+superseding local release 12 for distribution. No phone was connected to ADB at
+the final device check, so installation remains pending. The source changes
+are staged; commit/push remains pending because the existing 1Password signer
+failed with “failed to fill whole buffer.” No unsigned commit was created.
+Headless emulator closed. See validation/control-right-bracket-2026-11-03.json
+and validation/apk.json for artifact details.
+
+## Startup titles and program icons — 2026-11-03
+
+Tabs, pane picker and header now use a neutral Loading tile until identity is
+known, instead of implying a shell. Generated window/tab/block IDs (including
+UUID formats) are filtered out of both reported and default titles. A bounded
+per-endpoint, per-session presentation cache restores last-known programs, task
+titles and directories while fresh metadata loads. Fresh process changes drop
+old task titles; deleted panes are pruned. The cache never supplies live control,
+activity, screen or image-insertion authority. A freshness marker makes an
+identical newly confirmed identity observable to chrome consumers. New program
+identities save once; animated titles flush on pause/close/session changes,
+without per-frame preference writes or a periodic job.
+
+Validation: 134 JVM tests passed, one optional benchmark skipped, release lint
+passed. Seventeen focused Android tests passed: startup loading and per-endpoint
+persistence, adaptive tab sizing, and tab reorder behavior. Cache tests cover
+round trips, generated labels, stale process titles, raw-state isolation,
+metadata freshness, bounds, malformed JSON and unchanged-frame write avoidance.
+
+Optimized local release 14 was built from base 918f9265ae, marked modified. It
+also includes the fixed liquid pane indicator and Ctrl+] from local releases
+12 and 13. Installed on S22+ RFCT21390SD; the installed APK SHA-256 matches the
+verified shareable artifact. App data was preserved; no phone launch or live Rex
+pane manipulation was performed. Test emulator closed. Signed source commit
+remains pending the existing 1Password signer; no unsigned commit was created.
+See validation/startup-tabs-2026-11-03.json and validation/apk.json.
+
+## Compact swipe program overlay — 2026-11-03
+
+The centered swipe program badge now wraps its icon and label instead of
+reserving 240 dp. Long labels retain the existing maximum width and ellipsis.
+The single-icon stack no longer reserves space for additional stacked icons.
+Its center and vertical anchor stay fixed as label widths change.
+
+Nine focused PaneChrome Android checks passed, including centering, compact
+short-label bounds, unchanged terminal dimensions, swipe handoff, wrapping,
+cancellation and the return-to-latest button. Debug and optimized release builds
+passed, as did static release APK checks. Installed release 15 on S22+
+RFCT21390SD with app data preserved; installed APK checksum matches the
+shareable artifact in validation/apk.json. Source remains based on 918f9265ae
+with local changes; signed commit still awaits the existing 1Password signer.
+
+## Initial tab visibility and quick theme switch — 2026-11-03
+
+The initial tab list waits for a terminal screen and known focused program
+identities. Its 49 dp dock space and action buttons remain in place during
+loading. Once revealed, metadata refreshes within that session do not hide the
+strip; changing sessions resets the reveal state. The overflow menu now has a
+Dark theme switch reflecting the rendered appearance. It selects and persists
+Light or Dark while preserving each selected theme preset; System remains
+available under Preferences → Appearance.
+
+Sixteen focused Android checks passed: startup reveal, refresh/session behavior,
+unchanged action bounds, saved metadata, both quick-toggle directions, saved
+appearance/preset restoration and adaptive tab sizing. Debug and optimized
+release builds, release lint and static release APK checks passed. Release 16
+is ready for sharing; S22+ was absent from ADB, so installation is pending.
+Source is based on 918f9265ae with local changes; signed commit remains pending
+the existing 1Password signer. See validation/loading-theme-toggle-2026-11-03.json
+and validation/apk.json.
+
+## Prompt-row tap opens keyboard — 2026-11-03
+
+For mouse-reporting Codex and Claude panes, tapping the visible cursor row
+forwards the normal mouse click and opens the keyboard through the existing
+TerminalView.keyboard action. The bound connection checks live program metadata,
+selected pane, ownership, foreground visibility and navigation readiness. It
+does not infer behavior from cached program icons. Non-mouse terminal taps keep
+the existing keyboard behavior. Other application mouse clicks are unchanged.
+The terminal snapshot exposes a cursor, not input-field bounds, so this
+recognizes the visible cursor row rather than arbitrary editor areas.
+
+Nineteen focused Android interaction checks passed. The new check covers mouse
+click ordering, cursor-row dispatch, hidden cursor and cancelled navigation;
+existing mouse, selection, swipe and URL/OSC 8 link checks also pass. Debug and
+optimized release builds, release lint and static APK checks passed. This
+verifies dispatch in the emulator; a live Codex/Claude phone IME session was not
+run. Release 17 is ready for sharing; S22+ was absent from ADB. Source remains
+based on 918f9265ae with local changes and the existing signing blocker.
+See validation/prompt-keyboard-2026-11-03.json and validation/apk.json.
+
+Release 17 subsequently installed on S22+ RFCT21390SD after USB reconnection.
+The installed APK checksum matches validation/apk.json. App data preserved; no
+automatic app launch or terminal takeover was performed.
+
+## Shortcut gesture preference and plain theme action — 2026-11-03
+
+The theme overflow action is now a plain menu item alternating “Toggle Dark
+theme” and “Toggle Light theme”, without a switch. Preferences → Keyboard →
+Ctrl shortcuts offers Hold (default) and Double tap, saved in local preferences.
+Single taps toggle Ctrl immediately in either mode; a second tap in Double tap
+mode reverses the first toggle and leaves the popup open for a shortcut tap.
+Hold/slide/release behavior remains unchanged in Hold mode. Mode changes or
+disabling input dismiss the popup and cancel a pending hold.
+
+Eighteen focused Android checks passed: existing hold gestures, cancellation,
+readonly behavior, Ctrl+J and Ctrl+], double-tap popup selection, immediate single
+tap, double-tap mode hold behavior, preservation of an initially active modifier,
+preference controls and restoration, plain theme menu, and both-theme settings
+previews. Debug and optimized release builds, release vital lint and static
+release APK checks passed. Installed release 19 on S22+ RFCT21390SD with data
+preserved; installed APK checksum matches validation/apk.json. Source remains
+based on 918f9265ae with local changes and the existing 1Password signing blocker.
+See validation/shortcut-gesture-2026-11-03.json.
+
+## Single-tab title width — 2026-11-03
+
+A single tab now fits its actual title width up to the available strip boundary
+before the tab/pane menu and Activity buttons, rather than the multi-tab 160 dp
+cap. Long titles retain ellipsis at that boundary, short titles remain compact,
+and multi-tab accordion allocation is unchanged. Eleven existing sizing tests
+and nine adaptive tab Android checks passed. Debug and optimized release builds
+and static release APK checks passed. Installed release 20 on S22+ RFCT21390SD
+with data preserved; installed APK checksum matches validation/apk.json. Source
+remains based on 918f9265ae with local changes and the existing signing blocker.
+See validation/single-tab-title-2026-11-03.json.

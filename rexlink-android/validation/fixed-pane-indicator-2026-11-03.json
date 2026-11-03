@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-03",
+  "change": "Single fixed pane indicator with liquid capsule transfer",
+  "base_revision": "918f9265ae",
+  "local_changes": true,
+  "source_patch_sha256": "536e2fb1d942c0ffb384bea4a8e089f3856bf510414b24ed454a2778f3b0bc15",
+  "version_code": 12,
+  "apk": "dist/Rexlink-2026.11.03-build12-918f9265ae-modified-arm64-release.apk",
+  "release_sha256": "9ffe677aab098f4279f4f1be49e02a3fd69e29ff40c2a1633dde9239217cf826",
+  "checks": {
+    "jvm_passed": 126,
+    "optional_benchmark_skipped": 1,
+    "focused_android_passed": 11,
+    "release_lint_passed": true,
+    "light_and_dark_progress_previews_reviewed": true,
+    "fixed_indicator_and_program_anchor_verified": true,
+    "terminal_dimensions_unchanged_during_swipe": true,
+    "single_indicator_and_pane_picker_action_verified": true,
+    "cancel_wraparound_and_handoff_verified": true,
+    "return_to_latest_button_does_not_overlap_label": true,
+    "static_release_apk_checks_passed": true,
+    "headless_emulator_closed": true
+  },
+  "source_commit": "Pending: existing 1Password Git signer returned failed to fill whole buffer; no unsigned commit created",
+  "phone_install": "Pending: S22+ absent from ADB; install command did not run",
+  "scope": "Android overlay/drawing only. Uses existing pane motion progress and adds no idle animation or full-terminal compositing layer."
+}

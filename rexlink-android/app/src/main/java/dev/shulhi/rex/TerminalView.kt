@@ -66,6 +66,7 @@ class TerminalView(context: Context) : View(context) {
     var onWheel: (Int,Int,Int,Int,Int) -> Unit = {lines,_,_,_,_->onScroll(lines)}
     var onActivate: () -> Unit = {}
     var onMouseClick: (Int,Int,Int,Int) -> Unit = {_,_,_,_->}
+    internal var onCursorTap: ()->Unit = {}
     var mouseTarget: ()->String={""}
     private var pressedMouseTarget=""
     private var pressedMouseGrid: Pair<Int,Int>?=null
@@ -413,6 +414,7 @@ class TerminalView(context: Context) : View(context) {
                 col !in 0 until frame.columns || row !in 0 until frame.rows) return
             super.performClick()
             onMouseClick(col,row,cellWidth.roundToInt().coerceAtLeast(1),cellHeight.roundToInt().coerceAtLeast(1))
+            if(frame.cursorX!=null && row==frame.cursorY) onCursorTap()
         } else performClick()
     }
     private fun clearSelection() {

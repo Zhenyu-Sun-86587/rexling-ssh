@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
     val panelHeight=(260+maxOf(windows.size,panes.size,1).coerceAtMost(5)*76).dp.coerceAtMost(600.dp)
     fun tabTitle(tab: WindowItem): String {
         val block=tab.blocks.getOrNull(selectedPane(tab))
-        val program=programs[block?.id] ?: ProgramIdentity.Terminal
+        val program=programs[block?.id] ?: ProgramIdentity.Loading
         return program.tabTitle(tab.label,block?.label.orEmpty(),windows.indexOf(tab)+1,titles[block?.id].orEmpty())
     }
     ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
@@ -59,7 +59,7 @@ import kotlinx.coroutines.launch
                             items(windows,key={it.id}) {tab->
                                 val focus=selectedPane(tab)
                                 val block=tab.blocks.getOrNull(focus)
-                                val icons=tab.blocks.map {programs[it.id] ?: ProgramIdentity.Terminal}
+                                val icons=tab.blocks.map {programs[it.id] ?: ProgramIdentity.Loading}
                                 val title=tabTitle(tab)
                                 val count="${tab.blocks.size} pane${if(tab.blocks.size==1) "" else "s"}"
                                 val directory=directories[block?.id].orEmpty()
@@ -69,7 +69,7 @@ import kotlinx.coroutines.launch
                         } else {
                             if(panes.isEmpty()) item {SwitcherEmpty("No panes yet","Choose a tab or create a new one.")}
                             items(panes,key={it.id}) {block->
-                                val program=programs[block.id] ?: ProgramIdentity.Terminal
+                                val program=programs[block.id] ?: ProgramIdentity.Loading
                                 val title=program.paneTitle(block.label,titles[block.id].orEmpty())
                                 SwitcherItem(title,directories[block.id].orEmpty().ifBlank {program.label},listOf(program),0,block.id==selectedBlock,
                                     "Pane $title",enabled,{onPane(block.id)},enabled,"Close pane $title",{onClosePane(block)})

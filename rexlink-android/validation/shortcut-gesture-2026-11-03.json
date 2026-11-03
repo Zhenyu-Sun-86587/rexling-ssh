@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-03",
+  "change": "Plain theme action and configurable Ctrl shortcut gesture",
+  "base_revision": "918f9265ae",
+  "local_changes": true,
+  "version_code": 19,
+  "apk": "dist/Rexlink-2026.11.03-build19-918f9265ae-modified-arm64-release.apk",
+  "release_sha256": "9e3625e8a04cde8c3d9fb9607a99cc930428a679ab15ff80e8d6494ffff8dee6",
+  "checks": {
+    "focused_android_passed": 18,
+    "debug_and_release_builds_passed": true,
+    "release_vital_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Preferences > Keyboard > Ctrl shortcuts offers Hold (default) and Double tap. Single taps toggle immediately; double tap toggles back to the prior modifier state and keeps the popup open for shortcut selection. Hold/slide/release is preserved in Hold mode. Preference survives model recreation. Plain overflow action alternates Toggle Dark theme and Toggle Light theme.",
+  "phone_install": "Installed release 19 on S22+ RFCT21390SD with app data preserved; installed base.apk SHA-256 matches the release artifact",
+  "source_commit": "Pending existing 1Password signer; no unsigned commit created"
+}

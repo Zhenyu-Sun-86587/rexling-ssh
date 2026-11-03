@@ -20,6 +20,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
+@Composable internal fun QuickThemeMenuItem(dark: Boolean,onDark: (Boolean)->Unit) {
+    DropdownMenuItem(text={Text(if(dark) "Toggle Light theme" else "Toggle Dark theme")},onClick={onDark(!dark)})
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun AppearanceSheet(appearance: Appearance,themes: List<AppTheme>,light: AppTheme,dark: AppTheme,
     onAppearance: (Appearance)->Unit,onTheme: (String)->Unit,onClose: ()->Unit) {

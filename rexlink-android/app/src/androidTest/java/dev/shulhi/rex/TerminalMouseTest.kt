@@ -70,4 +70,29 @@ class TerminalMouseTest {
             assertEquals(1,opened);assertEquals(0,clicks)
         }
     }
+    @Test fun onlyAValidCursorRowTapOffersKeyboardWhileStillSendingTheMouseClick() {
+        instrumentation.runOnMainSync {
+            val calls=mutableListOf<String>()
+            var target="pane-a"
+            val metrics=TerminalFonts(instrumentation.targetContext).configure(Paint(),10f)
+            val view=view().apply {
+                screen=frame().copy(cursorX=2,cursorY=3)
+                mouseTarget={target}
+                onMouseClick={_,row,_,_->calls+="mouse:$row"}
+                onCursorTap={calls+="cursor"}
+            }
+            fun tap(row: Int,time: Long) {
+                val x=metrics.cellWidth*4.5f;val y=metrics.cellHeight*(row+.5f)
+                event(view,MotionEvent.ACTION_DOWN,x,y,time);event(view,MotionEvent.ACTION_UP,x,y,time+30)
+            }
+            tap(2,0);assertEquals(listOf("mouse:2"),calls)
+            tap(3,100);assertEquals(listOf("mouse:2","mouse:3","cursor"),calls)
+            calls.clear()
+            val y=metrics.cellHeight*3.5f
+            event(view,MotionEvent.ACTION_DOWN,5f,y,200);target="pane-b";event(view,MotionEvent.ACTION_UP,5f,y,230)
+            assertTrue(calls.isEmpty())
+            view.screen=frame();tap(3,300)
+            assertEquals(listOf("mouse:3"),calls)
+        }
+    }
 }
