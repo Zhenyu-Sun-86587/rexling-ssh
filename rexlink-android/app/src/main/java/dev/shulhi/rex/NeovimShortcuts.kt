@@ -5,6 +5,12 @@ import org.json.JSONObject
 import java.util.Locale
 
 internal enum class NeovimShortcutLayout { GRID, CIRCULAR }
+internal enum class NeovimShortcutEffect(val label: String,val openMillis: Int,val closeMillis: Int) {
+    FAN_OUT("Fan out",260,260), SPIN("Spin",280,180), EXPAND("Expand",240,160), NONE("None",0,0);
+    companion object {
+        fun fromPreference(value: String?)=if(value=="SHUTTER") EXPAND else entries.firstOrNull {it.name==value} ?: FAN_OUT
+    }
+}
 
 internal data class NeovimShortcut(val label: String,val keys: String,val group: String="")
 internal sealed interface NeovimShortcutEntry {

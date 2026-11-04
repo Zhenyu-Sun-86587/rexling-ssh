@@ -2244,3 +2244,294 @@ Release build/lint, static APK verification and whitespace checks passed.
 Installed release 38 on S22+ RFCT21390SD via USB, preserving data without launching
 it. Installed APK SHA-256 matches validation/apk.json. Changes remain uncommitted.
 See validation/hidden-keyboard-chevron-2026-11-04.json.
+
+
+## Segmented shortcut wheel — 2026-11-04
+
+Circular mode is now a continuous wheel with up to eight positions per page,
+rotated labels and a highlighted-command preview in the hub. Hold the closed
+button, steer and release to execute exactly once. Returning to the hub or
+cancelling the gesture sends nothing. A tap opens the persistent wheel; center
+presses steer, outer-ring vertical swipes page and wrap. Groups return to the
+remembered root page; center closes at root. The open wheel stays fixed, while
+quick closed-button drags still save its position. Edge positioning fits the
+wheel to the terminal and restores the resting position when closed. Grid mode
+retains six items per page. Arrow/Ctrl shadows and idle-button opacity from the
+preceding style update are included.
+
+Three JVM geometry/state tests and the full 15-case Vim UI suite passed.
+Native checks cover hold-opening, one command on release after a long hover,
+neutral return, touch cancellation, ownership loss, no position saves during
+steering, and edge bounds. Paging/group/tap, closed-drag and Grid regressions
+passed. Light/dark, eight-item and selected-segment captures inspected. The
+first UI run exposed Back falling through the non-focusable popup and a native
+accessibility timing issue; both were corrected before the final 15-case pass.
+Release build/lint, static APK verification and whitespace checks passed.
+
+Installed release 40 on S22+ RFCT21390SD via USB before finishing remaining
+emulator checks, as requested. Installed SHA-256 matches validation/apk.json;
+data preserved, app not launched. Source remains uncommitted based on 19f60a163e.
+See validation/radial-shortcut-wheel-2026-11-04.json.
+
+
+## Stationary wheel anchor — 2026-11-04
+
+The circular button's resting position now reserves wheel space at physical
+window edges. Opening no longer changes its layout offset. The wheel uses
+Android's visible window area and can overlap the header/footer instead of
+being restricted to the terminal. Its diameter uses available app space. Native
+popup clamping is disabled so it cannot shift the hub away from the fixed
+anchor. Saved normalized positions map into the resting range; opening/closing
+never writes a new preference position.
+
+Four JVM checks and fifteen distinct Vim UI checks passed across runs. Geometry
+checks include app/pane intersections and a simulated reduced area above the
+keyboard. Native corner checks verify identical button bounds on open/close,
+wheel/hub centering, app containment and allowed pane overlap. The full UI run
+passed fourteen checks; one fixture read cached native bounds immediately after
+explicitly changing its saved corner. Waiting for the native update fixed the
+fixture and the corner test passed. No production changes followed that run.
+Release build/lint, static APK verification and whitespace checks passed.
+
+Installed release 41 on S22+ RFCT21390SD via USB after reconnection. The installed
+APK checksum matches the verified artifact; app data preserved, app not launched.
+Source remains uncommitted based on 19f60a163e.
+See validation/stationary-wheel-anchor-2026-11-04.json.
+
+
+## Circular command button and center gap — 2026-11-04
+
+The shared floating shortcut face is a muted 40 dp circle with an 18 dp Canvas
+command glyph and subtle border. The enclosing 48 dp touch/drag target and
+stationary anchor remain. Idle opacity stays at 50%. Grid's active button and
+the idle root wheel show Close; group Back and command previews remain. The
+transparent wheel hub/ring gap is approximately 4 dp at the normal diameter.
+The gap stays neutral for steering and does nothing on tap.
+
+Four wheel JVM checks and six focused UI checks passed: native hold/release and
+neutral return; paging, groups and root Close; closed dragging in both modes;
+Grid actions/customization; and stationary corner/overlap geometry. Closed-button
+and wheel previews inspected. Release build/lint, static APK verification and
+whitespace checks passed.
+
+Installed release 43 on S22+ RFCT21390SD via USB. The installed APK checksum
+matches validation/apk.json. App data preserved; app not launched. Source remains
+uncommitted based on 19f60a163e.
+See validation/command-button-gap-2026-11-04.json.
+
+
+## Round AssistiveTouch face and key order — 2026-11-04
+
+Restored the three AssistiveTouch rings inside the circular 40 dp button while
+retaining its 48 dp touch/drag target and low idle opacity. Active Close/Back,
+the stationary wheel anchor and 4 dp center gap remain. The visible key row now
+ends Tab → joystick → Enter → keyboard, with the keyboard button pinned.
+
+Five focused UI checks passed: narrow-phone order/equal unclipped widths,
+native joystick hold/drag across the neighboring Enter without sending Enter,
+Shift modifiers, native popup close/outside keys, and closed wheel dragging.
+The round face capture was inspected. Release build/lint, static APK verification
+and whitespace checks passed. This cosmetic face restoration reused the
+existing gesture regression fixtures.
+
+Installed release 44 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched. Source remains
+uncommitted based on 19f60a163e.
+See validation/round-assistive-key-order-2026-11-04.json.
+
+
+## Circular joystick icon — 2026-11-04
+
+Replaced the crossed-arrow dock glyph with a circular control-pad outline,
+neutral center ring and four directional markers. It uses the existing 20 dp
+size, shared 1.65-unit stroke and colors. Accessibility and gestures are unchanged.
+The existing light/dark joystick overlay fixture passed; the actual-size keyboard
+row capture was inspected. Release build/lint, static APK verification and
+whitespace checks passed. No new tests were added for this cosmetic change.
+
+Installed release 45 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched. Source remains
+uncommitted based on 19f60a163e. Radial open/close animation is a design discussion
+at this point and is not part of this build.
+See validation/joystick-control-icon-2026-11-04.json.
+
+
+## Quick radial fan-out and joystick feedback — 2026-11-04
+
+Circular segments fan outward with a small stagger over 120 ms and retract over
+80 ms. Drawing/layer transforms read transition state; layout and command hit
+geometry remain fixed. Entry is immediately interactive. Exit retains the popup
+with commands disabled, supports a quick center tap to reverse into opening, and
+drops immediately on pane/ownership changes. The center remains anchored. Compose
+supplies the platform MotionDurationScale; installed framework source confirms
+integration with Android animator-duration-scale settings.
+
+The dock icon now has a filled center and stronger directional markers. The live
+joystick face uses only its moving thumb dot and directional highlight; its
+arrow glyphs are removed. Discrete arrow buttons and accessibility actions remain.
+
+Four JVM checks and nineteen distinct Android UI checks passed across runs.
+The full UI run passed eighteen cases; one new fixture froze the clock before
+initial popup rendering. Waiting for that render fixed the fixture and its
+pane/ownership case passed separately. New checks cover input during entry,
+blocked stale callbacks during exit, reversal, fixed bounds and cleanup after
+closing. Native hold/release, neutral cancellation, groups, paging, Grid and
+joystick neighbor-input checks passed. Opening/closing, icon and overlay captures
+inspected. Release build/lint, static APK verification and whitespace checks pass.
+No new overall-frame performance trace was recorded.
+
+Installed release 46 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved, app not launched. Source is uncommitted
+based on 19f60a163e. See validation/quick-radial-fanout-2026-11-04.json.
+
+
+## Radial animation options — 2026-11-04
+
+Circular mode now offers saved Fan out and Shutter effects under Preferences →
+Keyboard → Neovim shortcuts → Opening effect. Fan out reveals segments clockwise
+in an overlapping wave (420 ms open / 260 ms close). Shutter grows and untwists
+all blades together (360 ms open / 240 ms close). Drawing and label layers animate
+while layout and input geometry remain fixed. Entry remains interactive; exit
+blocks stale commands and supports reversing into opening. Effect, pane and
+ownership changes discard the old wheel. Grid mode is unchanged.
+
+Six JVM tests and nineteen Android UI checks passed, including settings
+persistence, both effects' entry/exit/reversal, native hold/release, cancellation,
+paging, groups and Grid behavior. Both mid-opening captures were inspected.
+Release build/lint, static signature/release/alignment checks passed. No new
+whole-frame performance trace was recorded. Source remains uncommitted based
+on 19f60a163e. See validation/radial-animation-options-2026-11-04.json.
+
+Installed release 47 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.
+
+
+## Faster radial effects and instant mode — 2026-11-04
+
+Fan out now opens and closes in 260 ms. Shutter opens in 240 ms and closes in
+200 ms; its curved blades overlap during motion and settle into the original
+sector geometry. Blade fills become opaque early to expose the layered seams.
+The saved Opening effect setting adds None: the entire wheel is immediately
+visible on entry, and closing removes the popup without an exit transition.
+
+Six JVM tests and twenty distinct Android UI checks passed, including instant
+open/close, stale-action guards, saved None selection and existing animated
+entry/exit/reversal, paging, groups, Grid and native input/cancellation cases.
+Repeated the shutter and instant cases to regenerate previews after model
+recreation cleared the cache; both passed. Inspected the shutter mid-opening
+capture. Release build/lint, static APK signature/release/alignment verification
+and whitespace checks passed. No new whole-frame performance trace was recorded.
+Source remains uncommitted based on 19f60a163e.
+See validation/radial-effect-refinements-2026-11-04.json.
+
+Installed release 48 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.
+
+
+## Coordinated wheel motion, haptics and explicit dismissal — 2026-11-04
+
+Fan out now swings whole segments and their labels together, with overlapping
+staggered starts. Shutter pivots overlapping blades around their outer tips
+inside a fixed annular housing; the center and neutral gap stay fixed. Timings
+remain 260/260 ms for Fan out and 240/200 ms for Shutter. None stays instant.
+Circular mode has a saved Selection haptics preference, enabled by default.
+Platform SegmentFrequentTick is emitted only on entering a different valid
+command. Staying on a segment, invalid slots and the neutral hub do not tick;
+disabling the preference suppresses feedback. No vibration permission is added.
+
+Grid and Circular menus ignore outside taps and Back. Grid adds a footer Close
+button and keeps its existing floating Close toggle. The wheel center closes
+at root or returns from a group; taps in the wheel's empty corners do nothing.
+Pane/ownership changes still discard the captured menu.
+
+Six JVM and twenty-one distinct Android UI checks passed, including native
+haptic deduplication and preference changes, saved settings, native outside
+taps and explicit closing in both layouts, fixed anchors, gesture cancellation,
+groups/paging, Grid, None and animation entry/exit/reversal. Inspected both
+mid-opening captures. After adding the drawing-only fixed shutter housing,
+both lifecycle checks passed again and the final shutter capture was inspected.
+Release build/lint, static APK signature/release/alignment checks and whitespace
+checks passed. No new whole-frame performance trace or physical haptic-strength
+measurement was made. Source remains uncommitted based on 19f60a163e.
+See validation/radial-motion-haptics-2026-11-04.json.
+
+Installed release 49 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.
+
+
+## Shutter without backing ring — 2026-11-04
+
+Removed only the annular backing fill. Moving blades, clipping, center, timings,
+gestures and haptics are unchanged. Content is visible between the moving blades.
+Reused the inspected pre-housing capture matching this geometry. No new tests
+were added or UI suite rerun for this cosmetic fill removal. Release build/lint,
+static APK verification and installed checksum checks passed. Installed release
+50 on S22+ RFCT21390SD, preserving app data without launching the app.
+See validation/shutter-no-backing-2026-11-04.json.
+
+
+## Standard selection tick for Vim and joystick — 2026-11-04
+
+Vim selection feedback now requests SegmentTick instead of SegmentFrequentTick.
+The joystick adds SegmentTick on entering each new non-neutral direction; key
+repeats and movement within the same direction do not buzz. Neutral pauses emit
+no feedback. Existing Vim and Android touch-haptic settings are respected,
+without changing phone settings or adding vibrator permissions. The shutter
+backing remains removed.
+
+Five focused Android checks passed: Vim tick deduplication/toggle, joystick
+direction changes without repeat vibrations, native hold/repeat/release without
+neighbor activation, target changes and gesture cancellation. Release build/lint,
+static APK signature/release/alignment checks and whitespace checks passed.
+No physical haptic-strength measurement was made. Source remains uncommitted
+based on 19f60a163e. See validation/firmer-selection-haptics-2026-11-04.json.
+
+Installed release 51 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.
+
+
+## Reference-based camera iris — 2026-11-04
+
+Replaced the shutter's individually pivoting sectors with a synchronized
+six-blade iris reveal. Fixed outer anchors connect to a rotating hexagonal
+aperture. As the aperture expands it reveals the final menu and stationary
+labels. It circumscribes the circle at full opening, leaving no residual mask;
+closing reverses the motion. Center/input geometry remain fixed, with no
+separate backing-ring fill. Timing remains 240/200 ms. Fan out, None and
+haptics retain their behavior.
+
+Inspected the user's public Shutterstock preview via a temporary contact sheet
+and the native mid-opening capture. No stock media is bundled in the app. Seven
+focused Android checks passed: entry input, exit/reversal, instant mode, both
+layouts' outside-tap/explicit-close behavior, pane/ownership cancellation and
+selection haptics. Release build/lint, static signature/release/alignment and
+whitespace checks passed. No new whole-frame performance trace was recorded.
+Source remains uncommitted based on 19f60a163e.
+See validation/reference-camera-iris-2026-11-04.json.
+
+Installed release 52 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.
+
+
+## Spin and Expand replace Shutter — 2026-11-04
+
+Removed Shutter rendering and its settings choice. Spin rotates/scales the wheel
+into place (280/180 ms). Expand grows it outward from the anchored center with
+a soft deceleration (240/160 ms). Fan out and None remain. Segments/labels share
+their transforms, with fixed layout/input geometry and the center painted above
+moving labels. Effect chips wrap on narrow screens. Legacy SHUTTER preferences
+load as EXPAND; existing valid choices remain unchanged.
+
+Inspected both user-supplied public clips as temporary contact sheets, plus
+native early/mid frames for Spin and Expand. No downloaded media is bundled.
+Seven JVM and twenty-two distinct Android UI checks passed, covering animation
+entry/exit/reversal, native steering, groups/paging, Grid, outside-tap/explicit
+close behavior, input cancellation, haptics and saved-settings migration. The
+two new lifecycle cases passed again with test-only early-frame capture changes.
+Release build/lint, static signature/release/alignment and whitespace checks
+passed. No new whole-frame performance trace was recorded. Source remains
+uncommitted based on 19f60a163e.
+See validation/spin-expand-effects-2026-11-04.json.
+
+Installed release 53 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.

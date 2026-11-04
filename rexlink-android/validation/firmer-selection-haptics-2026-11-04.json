@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-04",
+  "change": "Standard selection haptics for Vim and joystick",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 51,
+  "apk": "dist/Rexlink-2026.11.04-build51-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "b399851f7977a1ff86502e119ff2ef29e3974338a84dddf835a668f44430b812",
+  "checks": {
+    "android_ui_checks_passed": 5,
+    "vim_selection_deduplication_and_toggle_passed": true,
+    "joystick_direction_changes_tick_without_repeating_vibration": true,
+    "native_joystick_repeat_neighbor_and_release_passed": true,
+    "target_change_and_gesture_cancellation_passed": true,
+    "release_build_lint_static_verification_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Vim wheel uses platform SegmentTick instead of SegmentFrequentTick. Joystick emits SegmentTick only when a new non-neutral direction is entered. Neutral pauses, repeated arrows and jitter within the same direction emit no extra haptics. Existing Vim preference and system touch-feedback settings remain respected. No direct vibrator calls, extra permissions or phone-setting changes. The shutter backing ring remains removed from release 50.",
+  "test_notes": "Five focused Android checks passed with a recording haptic provider, including arrow repeats, neutral pauses, valid-direction changes and the Vim toggle. No physical haptic-strength measurement was made.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e",
+  "phone_install": "Installed release 51 on S22+ RFCT21390SD via USB; checksum matches; app data preserved; app not launched."
+}

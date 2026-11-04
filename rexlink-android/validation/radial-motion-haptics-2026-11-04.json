@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-04",
+  "change": "Coordinated radial motion, selection haptics and explicit-only menu dismissal",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 49,
+  "apk": "dist/Rexlink-2026.11.04-build49-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "5225f53a9990c0564b9ed22009961f15dbf5c03e9a88022101d93b668474a60f",
+  "checks": {
+    "wheel_unit_tests_passed": 6,
+    "distinct_android_ui_checks_passed": 21,
+    "native_haptic_selection_deduplication_and_toggle_passed": true,
+    "saved_haptic_preference_passed": true,
+    "grid_and_circular_outside_taps_ignored_and_explicit_close_passed": true,
+    "wheel_corner_taps_do_not_dismiss": true,
+    "entry_exit_reversal_and_cancellation_passed": true,
+    "native_hold_release_paging_groups_grid_and_instant_mode_passed": true,
+    "motion_previews_inspected": true,
+    "release_build_lint_and_static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Fan out swings whole sectors and their labels together with more overlap between staggered starts. Shutter pivots overlapping blades around outer tips within a fixed annular housing; its neutral center gap remains fixed. Timings remain 260/260 ms for Fan out and 240/200 ms for Shutter. None remains instant. Circular selection haptics use platform SegmentFrequentTick only when entering a different valid command. Holding/jitter within the same segment and returning to the neutral hub do not tick. The saved Selection haptics setting defaults on and can be disabled. Grid and Circular popups ignore outside taps and Back; a Grid footer Close button and the Circular center close explicitly. Invalid wheel-corner taps no longer close it. Pane/ownership changes still cancel the old menu.",
+  "validation_notes": "Six JVM tests and twenty-one Android UI checks passed. The haptic fixture waits for recomposition after changing its preference before sending the next native event. Inspected both mid-opening captures. A final drawing-only addition supplies the fixed shutter housing; both animation lifecycle checks passed again and the final shutter capture was inspected afterward. No new whole-frame performance trace was recorded. No claim of measured physical haptic strength is made from emulator checks.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e",
+  "phone_install": "Installed release 49 on S22+ RFCT21390SD via USB; installed checksum matches; app data preserved; app not launched."
+}

@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Camera-iris reveal from supplied reference",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 52,
+  "apk": "dist/Rexlink-2026.11.04-build52-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "d9c9515e8369221ed50a8666a6f11ad9ff82a309bdc00ff971c4d74fac5c5df6",
+  "reference_preview": "https://www.shutterstock.com/shutterstock/videos/1090672407/preview/stock-footage-camera-shutter-animation-illustration-icon.webm",
+  "checks": {
+    "focused_android_ui_checks_passed": 7,
+    "entry_input_exit_reversal_and_instant_mode_passed": true,
+    "both_layouts_outside_taps_and_explicit_close_passed": true,
+    "pane_and_ownership_cancellation_passed": true,
+    "selection_haptics_toggle_and_deduplication_passed": true,
+    "reference_contact_sheet_and_native_mid_opening_capture_inspected": true,
+    "release_build_lint_static_apk_verification_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Shutter now uses a six-blade iris reveal: the outer circle stays fixed while a rotating hexagonal aperture expands through the command ring. Blade seams connect fixed outer anchors to aperture vertices. Labels stay at their final positions and are revealed by the moving blades. The center hub and input geometry remain fixed. The aperture circumscribes the circle at full opening, leaving no residual blade over commands. Closing reverses the iris. There is no separate backing-ring fill. Timings remain 240/200 ms. Fan out, None and haptics behavior remain unchanged.",
+  "test_notes": "Seven focused Android checks passed. Public watermarked preview downloaded only to temporary storage and inspected as a contact sheet; no stock media is bundled in the app. Native mid-opening capture inspected. No new whole-frame performance trace was recorded.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e",
+  "phone_install": "Installed release 52 on S22+ RFCT21390SD via USB; checksum matches; app data preserved; app not launched."
+}

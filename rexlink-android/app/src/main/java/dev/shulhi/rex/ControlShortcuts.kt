@@ -132,7 +132,7 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
                 }
                 onDispose {popupView.setOnTouchListener(null)}
             }
-            SpeechBubble(provider,Modifier.width(244.dp).semantics {contentDescription="Control shortcuts"}) {
+            SpeechBubble(provider,Modifier.width(244.dp).semantics {contentDescription="Control shortcuts"},shadowElevation=0.dp) {
             Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 repeat(controlShortcutRows) {row->
                     Row(Modifier.fillMaxWidth().height(44.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {

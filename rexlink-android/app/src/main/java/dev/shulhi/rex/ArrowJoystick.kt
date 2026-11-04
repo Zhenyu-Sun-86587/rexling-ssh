@@ -18,7 +18,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
@@ -41,6 +43,7 @@ private val arrowIcons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN
     var direction by remember(inputKey) {mutableStateOf<String?>(null)}
     var displacement by remember(inputKey) {mutableStateOf(Offset.Zero)}
     val latest by rememberUpdatedState(onKey)
+    val haptics=LocalHapticFeedback.current
     val configuration=LocalViewConfiguration.current
     val deadZone=maxOf(with(LocalDensity.current) {10.dp.toPx()},configuration.touchSlop)
     val popupProvider=rememberSpeechBubblePositioner()
@@ -99,6 +102,7 @@ private val arrowIcons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN
                             if(next!=direction) {
                                 repeating?.cancel();direction=next
                                 if(next!=null) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                                     send(next)
                                     repeating=launch {
                                         delay(500)
@@ -118,7 +122,7 @@ private val arrowIcons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN
         }
         if(popupOpen && enabled) Popup(popupPositionProvider=popupProvider,onDismissRequest={popupOpen=false},
             properties=PopupProperties(focusable=false,dismissOnClickOutside=false,dismissOnBackPress=false)) {
-            SpeechBubble(popupProvider,Modifier.width(200.dp).semantics {contentDescription="Arrow key popup"}) {
+            SpeechBubble(popupProvider,Modifier.width(200.dp).semantics {contentDescription="Arrow key popup"},shadowElevation=0.dp) {
                 Box(Modifier.padding(8.dp)) {ArrowKeyPad(enabled,Modifier.fillMaxWidth().height(100.dp),latest,readable,inputKey)}
             }
         }
@@ -150,9 +154,6 @@ private fun joystickDirection(delta: Offset,deadZone: Float,previous: String?): 
             val knob=if(distance>0) displacement*(minOf(r*.16f,distance*.18f)/distance) else Offset.Zero
             drawCircle(Color.White.copy(alpha=.55f),minOf(4.dp.toPx(),r*.12f),center+knob)
         }
-        val positions=remember {mapOf("left" to Offset(-1f,0f),"right" to Offset(1f,0f),"up" to Offset(0f,-1f),"down" to Offset(0f,1f))}
-        val arrowOffset=diameter*(28f/88f)
-        positions.forEach {(key,offset)->ChromeSymbol(arrowIcons.getValue(key),Modifier.align(Alignment.Center)
-            .offset(arrowOffset*offset.x,arrowOffset*offset.y).size(if(diameter<88.dp) 11.dp else 13.dp),Color.White)}
+
     }
 }

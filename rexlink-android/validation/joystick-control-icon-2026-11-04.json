@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-04",
+  "change": "Circular control-pad icon for the joystick",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 45,
+  "apk": "dist/Rexlink-2026.11.04-build45-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "5d06d4647ab3c39f744d420734351b0ed235264f421070c778adf4efb8bc8563",
+  "checks": {
+    "existing_light_dark_overlay_fixture_passed": true,
+    "actual_size_keyboard_row_preview_inspected": true,
+    "release_build_lint_and_static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "The joystick dock icon uses a circular outer outline, a neutral center ring, and four small filled directional markers. It retains the existing 20dp icon size, shared ChromeSymbol 1.65-unit stroke, colors and accessibility description. Its position before Enter and gesture behavior are unchanged. The icon is drawn with two circle strokes and one vector path.",
+  "phone_install": "Installed release 45 on S22+ RFCT21390SD via USB; installed APK checksum matches; app data preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e"
+}

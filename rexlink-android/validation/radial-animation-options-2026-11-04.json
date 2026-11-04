@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-04",
+  "change": "Selectable clockwise fan-out and shutter wheel effects",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 47,
+  "apk": "dist/Rexlink-2026.11.04-build47-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "2fbc5a94f324e9aff87b66ea693583b6371d388c4f2add854cbdb4323f1209bd",
+  "checks": {
+    "wheel_unit_tests_passed": 6,
+    "android_ui_checks_passed": 19,
+    "saved_effect_survives_model_recreation": true,
+    "both_effects_accept_input_during_entry": true,
+    "both_effects_block_exit_commands_and_support_reversal": true,
+    "effect_pane_and_ownership_changes_cancel_old_wheel": true,
+    "native_gestures_paging_groups_and_grid_regressions_passed": true,
+    "mid_opening_previews_inspected": true,
+    "release_build_lint_and_static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Fan out opens segments clockwise with an overlapping wave over 420 ms and reverses over 260 ms. Shutter opens all segments together with outward-growing, untwisting blades over 360 ms and closes over 240 ms. The effect is saved under Preferences > Keyboard > Neovim shortcuts > Opening effect. Fixed input geometry remains immediately interactive on entry; stale commands are blocked during exit. Grid behavior is unchanged.",
+  "validation_notes": "Six JVM tests and nineteen Android UI checks passed. Inspected frozen mid-opening captures for both effects. No new whole-frame performance trace was recorded.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e",
+  "phone_install": "Installed release 47 on S22+ RFCT21390SD via USB; installed APK checksum matches; app data preserved; app not launched."
+}

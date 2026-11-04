@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-04",
+  "change": "Replace Shutter with Spin and Expand",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 53,
+  "apk": "dist/Rexlink-2026.11.04-build53-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "13eb5f20a3dd09e0c01afa15462906e17454cff715ce455cf3349dc08939b9f6",
+  "reference_clips": [
+    "https://www.youtube.com/shorts/9rS_bhkNoOM",
+    "https://www.youtube.com/shorts/q7bYefuhJ4M"
+  ],
+  "checks": {
+    "wheel_unit_tests_passed": 7,
+    "distinct_android_ui_checks_passed": 22,
+    "all_animated_effects_entry_exit_reversal_passed": true,
+    "saved_spin_none_and_legacy_shutter_migration_passed": true,
+    "outside_taps_explicit_close_native_gestures_groups_paging_grid_and_cancellation_passed": true,
+    "selection_haptics_deduplication_and_toggle_passed": true,
+    "both_reference_openings_and_native_early_mid_frames_inspected": true,
+    "release_build_lint_static_apk_verification_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Removed Shutter rendering and its preference option. Spin rotates the wheel into place with a small scale-in (280 ms open / 180 ms close). Expand grows it outward from the anchored center with a soft deceleration (240/160 ms). Fan out and None remain. Segment and label transforms stay synchronized; layout and input geometry remain fixed. The center is painted above moving labels. Effect chips wrap on narrow screens. Saved SHUTTER values load as EXPAND; other saved choices remain unchanged.",
+  "test_notes": "Seven JVM tests and twenty-two Android UI checks passed. Two animation lifecycle cases were repeated for early/mid frame captures after model-recreation checks cleared the cache; both passed. The final fixture-only capture addition did not change release implementation. Both public references were viewed as temporary contact sheets; no downloaded media is bundled. No new whole-frame performance trace was recorded.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e",
+  "phone_install": "Installed release 53 on S22+ RFCT21390SD via USB; checksum matches; app data preserved; app not launched."
+}

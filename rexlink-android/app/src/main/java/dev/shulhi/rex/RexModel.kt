@@ -135,6 +135,12 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var neovimShortcutLayout by mutableStateOf(runCatching {NeovimShortcutLayout.valueOf(preferences.getString("neovim_shortcut_layout","CIRCULAR")!!)}.getOrDefault(NeovimShortcutLayout.CIRCULAR))
         private set
     internal fun changeNeovimShortcutLayout(value: NeovimShortcutLayout) {neovimShortcutLayout=value;preferences.edit {putString("neovim_shortcut_layout",value.name)}}
+    internal var neovimShortcutEffect by mutableStateOf(NeovimShortcutEffect.fromPreference(preferences.getString("neovim_shortcut_effect","FAN_OUT")))
+        private set
+    internal fun changeNeovimShortcutEffect(value: NeovimShortcutEffect) {neovimShortcutEffect=value;preferences.edit {putString("neovim_shortcut_effect",value.name)}}
+    internal var neovimShortcutHaptics by mutableStateOf(preferences.getBoolean("neovim_shortcut_haptics",true))
+        private set
+    internal fun changeNeovimShortcutHaptics(value: Boolean) {neovimShortcutHaptics=value;preferences.edit {putBoolean("neovim_shortcut_haptics",value)}}
     internal var neovimShortcuts by mutableStateOf(NeovimShortcuts.decode(preferences.getString("neovim_shortcuts",null)))
         private set
     internal var neovimShortcutsEnabled by mutableStateOf(preferences.getBoolean("neovim_shortcuts_enabled",true))

@@ -63,9 +63,9 @@ internal class SpeechBubblePositioner(private val edge: Int,private val tail: In
     return remember(edge,tail) {SpeechBubblePositioner(edge,tail) {latestBounds(it)}}
 }
 
-@Composable internal fun SpeechBubble(positioner: SpeechBubblePositioner,modifier: Modifier=Modifier,content: @Composable ()->Unit) {
+@Composable internal fun SpeechBubble(positioner: SpeechBubblePositioner,modifier: Modifier=Modifier,shadowElevation: Dp=10.dp,content: @Composable ()->Unit) {
     val shape=remember(positioner.tip,positioner.above) {SpeechBubbleShape(positioner.tip,positioner.above)}
-    Box(modifier.shadow(10.dp,shape).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+    Box(modifier.shadow(shadowElevation,shape).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
         .border(1.dp,MaterialTheme.colorScheme.outline,shape)
         .padding(top=if(positioner.above) 0.dp else bubbleTail,bottom=if(positioner.above) bubbleTail else 0.dp)) {content()}
 }

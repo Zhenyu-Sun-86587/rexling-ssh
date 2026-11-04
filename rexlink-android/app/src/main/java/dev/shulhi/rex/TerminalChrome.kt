@@ -38,6 +38,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -97,7 +98,18 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.RIGHT -> arrow(1f,0f)
             ChromeIcon.UP -> arrow(0f,-1f)
             ChromeIcon.DOWN -> arrow(0f,1f)
-            ChromeIcon.ARROWS -> {line(12f,3f,12f,21f);line(3f,12f,21f,12f);line(9f,6f,12f,3f);line(12f,3f,15f,6f);line(9f,18f,12f,21f);line(12f,21f,15f,18f);line(6f,9f,3f,12f);line(3f,12f,6f,15f);line(18f,9f,21f,12f);line(21f,12f,18f,15f)}
+            ChromeIcon.ARROWS -> {
+                val center=Offset(12f*u,12f*u)
+                drawCircle(color,10.5f*u,center,style=Stroke(width))
+                drawCircle(color,4.25f*u,center)
+                val directions=Path().apply {
+                    moveTo(12f*u,3.2f*u);lineTo(10f*u,6.2f*u);lineTo(14f*u,6.2f*u);close()
+                    moveTo(20.8f*u,12f*u);lineTo(17.8f*u,10f*u);lineTo(17.8f*u,14f*u);close()
+                    moveTo(12f*u,20.8f*u);lineTo(10f*u,17.8f*u);lineTo(14f*u,17.8f*u);close()
+                    moveTo(3.2f*u,12f*u);lineTo(6.2f*u,10f*u);lineTo(6.2f*u,14f*u);close()
+                }
+                drawPath(directions,color)
+            }
             ChromeIcon.ENTER -> {line(20f,5f,20f,12f);line(20f,12f,4f,12f);line(4f,12f,9f,7f);line(4f,12f,9f,17f)}
             ChromeIcon.ESCAPE -> {drawArc(color,-90f,270f,false,Offset(4f*u,4f*u),Size(16f*u,16f*u),style=Stroke(width));line(4f,4f,12f,12f);line(4f,4f,4f,9f);line(4f,4f,9f,4f)}
             ChromeIcon.EYE -> {drawOval(color,Offset(2f*u,6f*u),Size(20f*u,12f*u),style=Stroke(width));drawCircle(color,3f*u,Offset(12f*u,12f*u),style=Stroke(width))}
@@ -490,8 +502,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         DockKey("alt",controlled,alt,description="Alt",modifier=Modifier.weight(1f),icon=ChromeIcon.ALT,readable=readable,onClick=onAlt)
                         ShiftDockKey(controlled,shift,Modifier.weight(1f),onShift,onShiftPress,onShiftRelease,readable=readable)
                         DockKey("tab",controlled,description="Tab key",modifier=Modifier.weight(1f),icon=ChromeIcon.TAB,readable=readable) {onKey("tab")}
-                        DockKey("enter",controlled,description="Enter",modifier=Modifier.weight(1f),icon=ChromeIcon.ENTER,readable=readable) {onKey("enter")}
                         ArrowJoystickDockKey(controlled,Modifier.weight(1f),onKey,readable,inputKey,keyboardVisible,arrowJoystickEnabled)
+                        DockKey("enter",controlled,description="Enter",modifier=Modifier.weight(1f),icon=ChromeIcon.ENTER,readable=readable) {onKey("enter")}
                     }
                 }
             }

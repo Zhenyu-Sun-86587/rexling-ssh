@@ -1,0 +1,28 @@
+{
+  "date": "2026-11-04",
+  "change": "Segmented Neovim command wheel with release-to-run steering",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 40,
+  "apk": "dist/Rexlink-2026.11.04-build40-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "c96c021721d61b2d9a99ce43862c77e79971603924f87a783ca0b05e6eb534a8",
+  "checks": {
+    "wheel_unit_tests_passed": 3,
+    "vim_ui_tests_passed": 15,
+    "native_hold_open_and_release_once_passed": true,
+    "neutral_return_and_cancel_passed": true,
+    "ownership_loss_cancellation_passed": true,
+    "outer_ring_paging_and_bidirectional_wrap_passed": true,
+    "groups_back_and_center_close_passed": true,
+    "closed_button_drag_and_edge_clamping_passed": true,
+    "grid_regressions_passed": true,
+    "light_dark_and_selected_previews_inspected": true,
+    "release_build_and_lint_passed": true,
+    "static_apk_verification_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Circular mode uses a continuous segmented wheel, with at most eight fixed positions per page and rotated single-line labels kept upright on the lower half. Press/hold the closed button, slide to a sector and release to execute once; hovering never repeats. Returning to the hub, cancelling the touch, or losing control cancels input. Tap opens a persistent menu; outer-ring up/down swipes page and wrap, while center-origin drags steer and never reposition the menu. Groups show a child wheel, center returns to the remembered root page or closes at root. Closed-button quick drags still reposition and persist. The wheel fits inside the terminal without changing the saved resting position. Grid remains six items per page. Arrow/Ctrl shadows remain removed and the idle assistive button retains 50% opacity.",
+  "test_notes": "The initial UI run passed 13 of 15 cases and exposed Back falling through a non-focusable popup plus native accessibility publication timing. A BackHandler preserves the previous Back behavior, while the native bounds helper allows a frame before retrying. The final full Vim UI suite passed all 15 cases together; three JVM geometry/state checks also passed.",
+  "phone_install": "Installed release 40 on S22+ RFCT21390SD via USB before finishing the remaining emulator checks, as requested. Installed APK checksum matches; app data preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e"
+}

@@ -11,6 +11,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -104,6 +107,28 @@ class KeyboardBarTest {
         ui.onNodeWithContentDescription("Arrow joystick").assertDoesNotExist()
         ui.runOnIdle {assertEquals(listOf("\u001b[1;2C","\u001b[A"),sent)}
     }
+    @Test fun joystickTicksOnDirectionChangesWithoutBuzzingDuringRepeat() {
+        val feedback=mutableListOf<HapticFeedbackType>()
+        val haptics=object: HapticFeedback {override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) {feedback+=hapticFeedbackType}}
+        ui.setContent {CompositionLocalProvider(LocalHapticFeedback provides haptics) {MaterialTheme {Box(Modifier.width(360.dp)) {
+            KeyboardBar(true,true,false,false,false,true,{},{},{},{},{},{sent+=it},onKeyboard={})
+        }}}}
+        ui.waitForIdle();ui.mainClock.autoAdvance=false
+        val arrow=ui.onNodeWithContentDescription("Arrow keys")
+        arrow.performTouchInput {down(center);moveTo(center+androidx.compose.ui.geometry.Offset(40f,0f))}
+        ui.mainClock.advanceTimeBy(900)
+        ui.runOnIdle {assertTrue(sent.size>=3);assertEquals(listOf(HapticFeedbackType.SegmentTick),feedback)}
+        arrow.performTouchInput {moveTo(center+androidx.compose.ui.geometry.Offset(41f,0f))}
+        ui.runOnIdle {assertEquals(1,feedback.size)}
+        arrow.performTouchInput {moveTo(center+androidx.compose.ui.geometry.Offset(0f,-40f))}
+        ui.runOnIdle {assertEquals(listOf(HapticFeedbackType.SegmentTick,HapticFeedbackType.SegmentTick),feedback)}
+        arrow.performTouchInput {moveTo(center)}
+        val count=sent.size;ui.mainClock.advanceTimeBy(700)
+        ui.runOnIdle {assertEquals(count,sent.size);assertEquals(2,feedback.size)}
+        arrow.performTouchInput {moveTo(center+androidx.compose.ui.geometry.Offset(40f,0f));up()}
+        ui.mainClock.advanceTimeBy(700)
+        ui.runOnIdle {assertEquals(count+1,sent.size);assertEquals(3,feedback.size)}
+    }
     @Test fun cancelClearsHeldShiftAndDoesNotSendAnArrow() {
         keyboard()
         ui.onNodeWithContentDescription("Shift").performTouchInput {down(center);cancel()}
@@ -121,13 +146,13 @@ class KeyboardBarTest {
     }
     @Test fun narrowPhoneKeepsEveryControlOnOneRowAndModifiersFullyVisible() {
         keyboard(width=320.dp)
-        val labels=listOf("Escape","Control","Alt","Shift","Tab key","Enter","Arrow keys","Hide keyboard")
+        val labels=listOf("Escape","Control","Alt","Shift","Tab key","Arrow keys","Enter","Hide keyboard")
         val bounds=labels.map {label->
             ui.onNodeWithContentDescription(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         }
         bounds.forEach {assertEquals(bounds.first().center.y,it.center.y,1f)}
         bounds.zipWithNext().forEach {(a,b)->assertTrue("Groups and buttons must not overlap",a.right<=b.left)}
-        assertTrue("Reclaimed chevron space must keep keys at least 34 dp wide",bounds[6].width>=with(ui.density) {34.dp.toPx()}-1f)
+        assertTrue("Reclaimed chevron space must keep keys at least 34 dp wide",bounds[5].width>=with(ui.density) {34.dp.toPx()}-1f)
         val widths=bounds.take(7).map {it.width}
         assertTrue("No key should lose pixels to clipping",widths.max()-widths.min()<=1f)
         ui.onNodeWithContentDescription("Show extra keys").assertIsNotDisplayed()

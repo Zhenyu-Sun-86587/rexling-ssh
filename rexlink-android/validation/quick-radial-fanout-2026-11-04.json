@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-04",
+  "change": "Quick radial fan-out and simplified joystick feedback",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 46,
+  "apk": "dist/Rexlink-2026.11.04-build46-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "3a3377b3b2950d4771b493f4b89ad030c92aa200ec48ef1750f5cd534bb3ae85",
+  "checks": {
+    "wheel_unit_tests_passed": 4,
+    "distinct_android_ui_checks_passed": 19,
+    "input_during_opening_passed": true,
+    "exit_blocks_stale_commands_and_can_reverse_passed": true,
+    "pane_and_ownership_changes_discard_animation_passed": true,
+    "native_hold_release_groups_pages_and_grid_regressions_passed": true,
+    "joystick_overlay_and_neighbor_input_regressions_passed": true,
+    "opening_closing_icon_and_overlay_previews_inspected": true,
+    "release_build_lint_and_static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Circular mode fans its segments outward from a fixed center in 120ms and retracts in 80ms, with a small per-sector stagger. Canvas drawing and layer transforms read animation state, keeping layout/hit geometry fixed and commands enabled immediately during entry. The popup stays alive for exit; commands are disabled while closing, a center tap reverses closing, and target/ownership changes remove it immediately. The transition uses the framework MotionDurationScale; installed Compose source was inspected to confirm Android animator-duration-scale integration. The joystick icon now has a filled center and stronger directional markers. The live movement overlay omits arrow glyphs, retaining its thumb dot and directional highlight. Discrete arrow popup keys and accessibility actions remain.",
+  "test_notes": "Four JVM tests passed. The combined UI run passed eighteen of nineteen cases. The new pane-switch fixture froze the clock before its initial wheel appeared; waiting for that initial render corrected the fixture, and its pane/ownership cancellation test passed separately. All nineteen distinct UI cases passed across runs, including new frozen-clock entry/exit and quick-reversal checks. No production changes followed the combined run. No new full-frame performance measurements were made.",
+  "phone_install": "Installed release 46 on S22+ RFCT21390SD via USB; installed APK checksum matches; app data preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e"
+}

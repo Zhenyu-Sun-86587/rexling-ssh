@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Stationary wheel anchor using the visible app window",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 41,
+  "apk": "dist/Rexlink-2026.11.04-build41-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "feb7b30933886b013a2fa6e2101ecab52b20686b9c573ff17e319482b90d03be",
+  "checks": {
+    "wheel_unit_tests_passed": 4,
+    "distinct_vim_ui_tests_passed": 15,
+    "native_stationary_open_close_both_corners_passed": true,
+    "wheel_may_overlap_pane_but_stays_in_app_passed": true,
+    "simulated_keyboard_visible_bounds_passed": true,
+    "steering_paging_group_grid_and_closed_drag_regressions_passed": true,
+    "release_build_and_lint_passed": true,
+    "static_apk_verification_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Opening the wheel no longer changes the button position. Resting positions reserve enough room for the complete wheel at physical window edges. The wheel uses Android\u2019s visible window bounds instead of pane bounds, can overlap app chrome, and remains centered on the stationary button. Its size uses available app space rather than terminal height. Closed-button dragging maps saved normalized positions into the valid resting range. Popup platform clamping is disabled to prevent a second offset. No preference position is rewritten on open/close.",
+  "test_notes": "Four JVM checks passed, including window/pane anchor intersections and a simulated reduced visible area above the keyboard. Fourteen of fifteen UI checks passed in the full run; the corner fixture initially read cached bounds immediately after explicitly moving the saved position from bottom-left to top-right. Waiting for that native update resolved the fixture; the native corner test then passed, confirming identical button bounds before and after opening, centered wheel/hub bounds, app containment and overlap outside the pane. No production changes followed the full run.",
+  "phone_install": "Installed release 41 on S22+ RFCT21390SD via USB after reconnection; installed APK checksum matches verified artifact. App data preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e"
+}

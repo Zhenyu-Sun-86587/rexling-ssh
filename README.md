@@ -129,9 +129,10 @@ clients. Hold and release without dragging for **Move left**, **Move right** and
 **Close tab**. Rename a session from its row’s
 **⋮ → Rename session** in the session list; changes sync through Rex.
 Long-press Ctrl for common control shortcuts, including **Ctrl+J** and **Ctrl+]**.
-The arrow joystick sits beside the keyboard controls. Hold it and slide toward
+The arrow joystick sits immediately before Enter in the keyboard row. Hold it and slide toward
 an arrow to send one step; holding for 500 ms starts a slower repeat every
-160 ms. Its overlay stays centered on the button, using a compact ring when
+160 ms. Its overlay uses a moving thumb dot and directional highlight, stays
+centered on the button, and uses a compact ring when
 the keyboard is hidden. Double-tap the joystick to open the arrow
 popup for precise taps or held keys; a single tap on the trigger closes it.
 PgUp and PgDn occupy the upper corners beside Up, with a slower held repeat.
@@ -145,20 +146,35 @@ F1–F12 and navigation keys. Closing the extra keys hides the chevron again.
 Under **Preferences → Keyboard → Ctrl shortcuts**, choose **Hold** (the default)
 or **Double tap** to open the list. When closed, single taps toggle Ctrl
 immediately. Tapping Ctrl while its popup is open closes it and clears Ctrl.
-Neovim panes have a draggable AssistiveTouch-style button for saved key shortcuts. Its
+Neovim panes have a draggable, low-profile circular button for saved key shortcuts. Its
 position is remembered and stays inside the terminal when its size changes.
 Choose **Circular** (the default) or **Grid** in the Neovim shortcut preferences.
-The circular layout places compact shortcut pills around the AssistiveTouch
-button itself, without a large menu background. At an edge the button moves
-inward while open, then returns to its saved position. Its center goes back
-from a group; at the top level it closes the menu. Drag the center with the
-radial menu open to move the whole cluster and save its position on release.
-Both layouts show six shortcuts
-at a time; swipe up/down for more pages, looping from last to first and back.
+The circular layout is a segmented wheel with up to eight commands per page.
+Choose **Fan out**, **Spin**, **Expand** or **None** under **Preferences → Keyboard → Neovim
+shortcuts → Opening effect**. Fan out reveals segments clockwise in a wave;
+Spin rotates the wheel into place, while Expand grows it outward from the
+center. None opens and closes immediately. The choice is saved, and commands
+remain usable during opening. The center stays anchored for every effect.
+Older Shutter selections automatically switch to Expand.
+Labels follow the ring; the center previews the highlighted command. A narrow
+gap separates the ring from the center, which shows Close when idle. Hold the
+button, slide to a segment and release to run it once. Returning to the center
+cancels the selection. Tap to leave the menu open for repeated commands.
+Swipe up/down starting on the outer ring to change pages, looping in either
+direction. Tap the center to go Back from a group or close the root wheel.
+Drag the closed button to reposition it. Its resting position leaves room for
+the wheel at screen edges, so opening it never moves the button. The wheel can
+overlap the header and bottom bars while staying in the visible app area. Grid mode shows six shortcuts per page and keeps its
+existing vertical paging.
 There is no fixed limit on the number of saved shortcuts.
-It stays open after selecting shortcuts; tap outside to dismiss it.
+It stays open after selecting shortcuts and ignores outside taps; use Close to
+dismiss it. Circular mode has optional selection haptics, enabled by default,
+with a selection tick when you move into a different command. Disable **Selection
+haptics** in the same Neovim shortcut preferences if desired. The arrow joystick
+also ticks on direction changes, with no repeated vibration while holding an
+arrow. Both follow the phone’s system touch-vibration settings.
 Optional group headers such as `[Git]` put following shortcuts inside a subtly
-shaded group pill. Tap it to show its shortcuts; Back returns
+shaded group segment (or a pill in Grid mode). Tap it to show its shortcuts; Back returns
 to the main menu. Use `[]` to return to ungrouped entries in the editor. Groups
 have one level, and both the main menu and groups support vertical paging.
 The defaults include `:w` and `:q`, which run immediately. Edit **Preferences →

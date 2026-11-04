@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Faster radial effects, overlapping shutter blades and no-animation option",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 48,
+  "apk": "dist/Rexlink-2026.11.04-build48-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "69117aa5f68f5d71d4e2d14f2b8b69b8f538e0e0e1a56dbdc04c8c8e14ae0998",
+  "checks": {
+    "wheel_unit_tests_passed": 6,
+    "distinct_android_ui_checks_passed": 20,
+    "instant_open_close_and_stale_action_guard_passed": true,
+    "no_animation_preference_survives_model_recreation": true,
+    "both_animated_effects_entry_exit_reversal_passed": true,
+    "native_wheel_paging_groups_grid_and_cancellation_passed": true,
+    "shutter_mid_opening_preview_inspected": true,
+    "release_build_lint_and_static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Fan out opens and closes in 260 ms. Shutter opens in 240 ms and closes in 200 ms; curved blades overlap during the transition and settle into the existing wheel geometry. None shows the fully drawn wheel immediately and removes it without retaining an exit popup. Effect choice remains saved under Preferences > Keyboard > Neovim shortcuts > Opening effect.",
+  "validation_notes": "Six JVM tests and twenty Android UI checks passed. Two UI checks were repeated only to regenerate shutter/None captures after model recreation cleared the cache. Inspected the shutter mid-opening capture. No new whole-frame performance trace was recorded.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e",
+  "phone_install": "Installed release 48 on S22+ RFCT21390SD via USB; checksum matches; app data preserved; app not launched."
+}

@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-04",
+  "change": "Low-profile circular shortcut button and narrower wheel center gap",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 43,
+  "apk": "dist/Rexlink-2026.11.04-build43-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "dbd0824a4b407c1a50541536bfaf7c2da49f11fe9bd14a9a6c5173b6e1eab873",
+  "checks": {
+    "wheel_unit_tests_passed": 4,
+    "focused_ui_tests_passed": 6,
+    "wheel_paging_groups_close_and_steering_passed": true,
+    "closed_drag_grid_actions_and_customization_passed": true,
+    "stationary_anchor_overlap_passed": true,
+    "closed_button_and_wheel_previews_inspected": true,
+    "release_build_lint_and_static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "The floating shortcut button is a 40dp muted circle with an 18dp Canvas command glyph and a subtle border. Its parent keeps the 48dp touch/drag target and stable wheel anchor. Idle opacity remains 50%. Both Grid and Circular modes share the face; active Grid and the idle root wheel show Close instead of AssistiveTouch rings. The transparent hub/ring gap is about 4dp at the normal 196dp wheel diameter. The gap is neutral for steering, and tapping it neither executes a command nor closes the menu. Group Back and highlighted-command previews remain.",
+  "phone_install": "Installed release 43 on S22+ RFCT21390SD via USB; installed APK checksum matches; app data preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 19f60a163e"
+}

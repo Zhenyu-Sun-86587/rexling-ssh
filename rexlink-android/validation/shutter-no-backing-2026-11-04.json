@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-04",
+  "change": "Remove shutter backing ring",
+  "base_revision": "19f60a163e",
+  "local_changes": true,
+  "version_code": 50,
+  "apk": "dist/Rexlink-2026.11.04-build50-19f60a163e-modified-arm64-release.apk",
+  "release_sha256": "f0e96f6af2de8e6d726457570efdae83e3ce3c4e143f1435f82f87683bcdb5bc",
+  "checks": {
+    "release_build_lint_static_verification_passed": true,
+    "installed_apk_checksum_matches": true,
+    "new_ui_tests_run": false
+  },
+  "behavior": "Removed only the full annular backing fill from Shutter. Moving blades, clipping, center hub, timings, gestures and selection haptics remain unchanged. Gaps between moving blades show the content underneath. Reused the previously inspected pre-housing capture matching this drawing geometry; no new UI tests were added for the removed fill.",
+  "phone_install": "Installed release 50 on S22+ RFCT21390SD via USB; installed checksum matches; app data preserved; app not launched."
+}
