@@ -17,13 +17,13 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /** A scrolling drag never sends a key; a stationary hold repeats until cancelled. */
-internal fun Modifier.repeatKey(enabled: Boolean,target: String,onKey: ()->Unit): Modifier=composed {
+internal fun Modifier.repeatKey(enabled: Boolean,target: String,repeatIntervalMillis: Long=65,onKey: ()->Unit): Modifier=composed {
     val scope=rememberCoroutineScope();val configuration=LocalViewConfiguration.current
     val latest by rememberUpdatedState(onKey)
     var pressed by remember {mutableStateOf(false)}
     background(if(pressed) MaterialTheme.colorScheme.primary.copy(alpha=.16f) else Color.Transparent)
         .semantics {role=Role.Button;if(enabled) onClick {latest();true} else disabled()}
-        .pointerInput(enabled,target) {
+        .pointerInput(enabled,target,repeatIntervalMillis) {
             if(!enabled) return@pointerInput
             awaitEachGesture {
                 val down=awaitFirstDown();down.consume();pressed=true
@@ -32,7 +32,7 @@ internal fun Modifier.repeatKey(enabled: Boolean,target: String,onKey: ()->Unit)
                 val job=scope.launch {
                     delay(configuration.longPressTimeoutMillis)
                     repeated=true
-                    while(isActive) {send();delay(65)}
+                    while(isActive) {send();delay(repeatIntervalMillis)}
                 }
                 try {
                     while(true) {

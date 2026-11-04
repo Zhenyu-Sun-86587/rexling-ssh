@@ -249,9 +249,13 @@ class NeovimShortcutUiTest {
         assertEquals(bounds,ui.onNodeWithContentDescription("Neovim shortcut menu").fetchSemanticsNode().boundsInRoot)
         ui.onNodeWithContentDescription("Back to all shortcuts").performClick()
         ui.onNodeWithContentDescription("Shortcut group Git").assertIsDisplayed()
-        repeat(2) {ui.onNodeWithContentDescription("Neovim shortcut center").performTouchInput {click()}}
-        ui.runOnIdle {assertFalse(customized);assertEquals(listOf(items[0],items[19],items[19]),sent)}
+        ui.onNodeWithContentDescription("Close Neovim shortcuts").performTouchInput {click()}
+        ui.onNodeWithContentDescription("Neovim shortcut menu").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Neovim shortcuts").performTouchInput {click()}
         ui.onNodeWithContentDescription("Neovim shortcut menu").assertIsDisplayed()
+        ui.onNodeWithContentDescription("Close Neovim shortcuts").performTouchInput {click()}
+        ui.onNodeWithContentDescription("Neovim shortcut menu").assertDoesNotExist()
+        ui.runOnIdle {assertFalse(customized);assertEquals(listOf(items[0],items[19],items[19]),sent)}
     }
     @Test fun circularControlsStayCenteredOnTheAssistiveButtonAndRestoreItsRestingPosition() {
         val position=mutableStateOf(Offset(0f,1f));var saved=0
@@ -273,7 +277,7 @@ class NeovimShortcutUiTest {
             val button=ui.onNodeWithContentDescription("Neovim shortcuts").fetchSemanticsNode().boundsInWindow
             val buttonCenter=button.center+windowOffset
             val wheel=nativeBounds("Neovim shortcut menu")
-            val center=nativeBounds("Neovim shortcut center")
+            val center=nativeBounds("Close Neovim shortcuts")
             assertEquals(buttonCenter.x,wheel.exactCenterX(),2f)
             assertEquals(buttonCenter.y,wheel.exactCenterY(),2f)
             assertEquals(buttonCenter.x,center.exactCenterX(),2f)

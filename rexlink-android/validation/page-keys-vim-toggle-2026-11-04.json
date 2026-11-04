@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-04",
+  "change": "Page Up/Down in the arrow popup and Vim center toggle",
+  "base_revision": "c12d9913b4",
+  "local_changes": true,
+  "version_code": 36,
+  "apk": "dist/Rexlink-2026.11.04-build36-c12d9913b4-modified-arm64-release.apk",
+  "release_sha256": "e0f92f6abf959adede7dd6817332a0ccf9b2302f23e305899612d040de6f4d22",
+  "checks": {
+    "focused_android_passed": 20,
+    "page_key_sequences_and_shift_passed": true,
+    "page_hold_interval_and_pane_cancellation_passed": true,
+    "default_repeat_key_regressions_passed": true,
+    "vim_back_close_reopen_passed": true,
+    "vim_anchor_and_open_drag_regressions_passed": true,
+    "page_popup_preview_inspected": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "PgUp and PgDn fill the two previously empty upper corners of the arrow popup, preserving its 200dp width and 100dp key area. Standard Page Up/Down sequences and Shift modifiers use the existing guarded input pipeline. Held page keys respect Android long-press activation and repeat every 160ms; arrow and Backspace repeat retain their defaults. The Vim radial center returns Back inside a group and closes the menu at root; the AssistiveTouch button reopens it. Existing page wrapping, open-menu dragging and edge positioning remain.",
+  "key_choice_sources": [
+    "https://neovim.io/doc/user/vimindex/",
+    "https://github.com/openai/codex/blob/main/codex-rs/tui/src/keymap.rs",
+    "https://code.claude.com/docs/en/keybindings"
+  ],
+  "phone_install": "Installed release 36 on S22+ RFCT21390SD via USB; installed APK checksum matches verified artifact and was reverified after the follow-up request; app data preserved; app not launched",
+  "source_commit": "Uncommitted source changes based on signed commit c12d9913b4"
+}

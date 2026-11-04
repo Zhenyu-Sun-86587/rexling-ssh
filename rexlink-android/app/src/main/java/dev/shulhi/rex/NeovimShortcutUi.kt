@@ -138,7 +138,7 @@ import kotlin.math.roundToInt
             NeovimShortcutWheel(entries,group,pager,pages,width,onChoose={item->when(item) {
                 is NeovimShortcutEntry.Action->onChoose(item.shortcut)
                 is NeovimShortcutEntry.Group->{rootPage=pager.currentPage%pages.coerceAtLeast(1);group=item.label}
-            }},onCenter={if(group.isNotEmpty()) group=""},onDismiss=onDismiss,menuDrag=menuDrag)
+            }},onCenter={if(group.isNotEmpty()) group="" else onDismiss()},onDismiss=onDismiss,menuDrag=menuDrag)
         } else {
         SpeechBubble(provider,Modifier.width(width).semantics {contentDescription="Neovim shortcut menu";stateDescription=if(group.isEmpty()) "Shortcuts" else "Group $group"}) {
         Column(Modifier.padding(5.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
@@ -236,7 +236,7 @@ private class NeovimMenuDrag(val start: ()->Unit,val move: (Offset)->Unit,val en
         }
         Column(Modifier.align(Alignment.Center).size(centerSize).then(neovimMenuDrag(menuDrag)).shadow(4.dp,RoundedCornerShape(10.dp)).clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF171C25))
-            .semantics {contentDescription=if(group.isEmpty()) "Neovim shortcut center" else "Back to all shortcuts"}
+            .semantics {contentDescription=if(group.isEmpty()) "Close Neovim shortcuts" else "Back to all shortcuts"}
             .clickable(role=Role.Button,onClick=onCenter),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
             if(group.isEmpty()) Canvas(Modifier.size(centerSize*.75f)) {
                 drawCircle(Color.White.copy(alpha=.18f),radius=size.minDimension*.46f)

@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-04",
+  "change": "Direct hold-and-slide arrow joystick",
+  "base_revision": "c12d9913b4",
+  "local_changes": true,
+  "version_code": 33,
+  "apk": "dist/Rexlink-2026.11.04-build33-c12d9913b4-modified-arm64-release.apk",
+  "release_sha256": "733c4cc1d75a0a17bf03a0af1186bb782ebb82e8fe5593157b21c026c985ec42",
+  "checks": {
+    "focused_android_passed": 23,
+    "preview_recheck_passed": 1,
+    "native_hold_slide_release_passed": true,
+    "simultaneous_shift_repeat_passed": true,
+    "ancestor_right_swipe_blocked_passed": true,
+    "target_and_ownership_cancellation_passed": true,
+    "neutral_pause_and_repeat_direction_change_passed": true,
+    "accessibility_direction_actions_passed": true,
+    "light_dark_previews_inspected": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Replaces the persistent arrow popup with one joystick near the keyboard controls. Press shows an 88dp direction indicator. Sliding beyond a 10dp/touch-slop neutral zone immediately sends one arrow; holding repeats after 350ms at 65ms intervals. Moving to center pauses; changing direction cancels old repeat; up/cancel/pane/control changes stop everything. Initial-pass consumption and local system-gesture exclusion prevent right drags triggering ancestor/back gestures. Callback target is frozen per gesture. Existing Shift/Ctrl/Alt pipeline and four accessibility direction actions are supported. Enter precedes joystick in the one-row dock; extra keys remain beside the keyboard icon.",
+  "phone_install": "Installed release 33 on S22+ RFCT21390SD via USB; installed APK checksum matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Uncommitted source changes based on signed commit c12d9913b4"
+}

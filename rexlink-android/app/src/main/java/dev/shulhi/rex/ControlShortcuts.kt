@@ -13,10 +13,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import android.view.MotionEvent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -41,16 +44,19 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
     var pressed by remember {mutableStateOf(false)}
     var highlighted by remember {mutableIntStateOf(-1)}
     var anchor by remember {mutableStateOf(Rect.Zero)}
+    var screenAnchor by remember {mutableStateOf(Rect.Zero)}
     var popup by remember {mutableStateOf(IntRect.Zero)}
     val scope=rememberCoroutineScope()
     val toggle by rememberUpdatedState(onToggle)
     val send by rememberUpdatedState(onShortcut)
+    val latched by rememberUpdatedState(active)
     val density=LocalDensity.current
     val padding=with(density) {8.dp.toPx()}
     val gap=with(density) {4.dp.toPx()}
     val configuration=LocalViewConfiguration.current
     val haptics=LocalHapticFeedback.current
     fun dismiss() {visible=false;highlighted=-1}
+    fun closeFromTrigger() {dismiss();if(latched) toggle()}
     LaunchedEffect(enabled,gesture) {dismiss();pressed=false}
     fun choose(index: Int) {if(enabled) send(controlShortcuts[index]);dismiss()}
     fun hit(x: Float,y: Float): Int {
@@ -65,22 +71,27 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
     BackHandler(visible) {dismiss()}
     val provider=rememberSpeechBubblePositioner {popup=it}
     val selected=active || pressed || visible
-    Box(modifier.fillMaxHeight().onGloballyPositioned {anchor=it.boundsInWindow()}
+    Box(modifier.fillMaxHeight().onGloballyPositioned {
+        anchor=it.boundsInWindow()
+        screenAnchor=Rect(it.localToScreen(Offset.Zero),androidx.compose.ui.geometry.Size(it.size.width.toFloat(),it.size.height.toFloat()))
+    }
         .clip(RoundedCornerShape(11.dp)).background(if(selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
         .semantics {
             contentDescription="Control";this.selected=active;role=Role.Button
-            if(enabled) {onClick {toggle();true};onLongClick(label="Control shortcuts") {visible=true;true}} else disabled()
+            if(enabled) {onClick {if(visible) closeFromTrigger() else toggle();true};onLongClick(label="Control shortcuts") {visible=true;true}} else disabled()
         }.pointerInput(enabled,gesture) {
             if(!enabled) return@pointerInput
             var lastTap: Long?=null
             awaitEachGesture {
                 val down=awaitFirstDown();down.consume();pressed=true
+                // Trigger taps bypass outside dismissal, so the release can close and clear Ctrl.
+                val closingPopup=visible
                 val doubleTap=gesture==ControlShortcutGesture.DOUBLE_TAP && lastTap?.let {
                     down.uptimeMillis-it in configuration.doubleTapMinTimeMillis..configuration.doubleTapTimeoutMillis
                 }==true
                 lastTap=null
                 var opened=false;var released=false;var moved=false
-                val timer=if(gesture==ControlShortcutGesture.HOLD) scope.launch {delay(configuration.longPressTimeoutMillis);opened=true;visible=true;haptics.performHapticFeedback(HapticFeedbackType.LongPress)} else null
+                val timer=if(!closingPopup && gesture==ControlShortcutGesture.HOLD) scope.launch {delay(configuration.longPressTimeoutMillis);opened=true;visible=true;haptics.performHapticFeedback(HapticFeedbackType.LongPress)} else null
                 try {
                     while(true) {
                         val change=awaitPointerEvent().changes.firstOrNull {it.id==down.id} ?: break
@@ -90,7 +101,8 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
                         if(opened && visible) highlighted=hit(change.position.x+anchor.left,change.position.y+anchor.top)
                         if(!change.pressed) {
                             released=true;timer?.cancel()
-                            if(opened) {if(visible && highlighted>=0) choose(highlighted)}
+                            if(closingPopup) {closeFromTrigger();lastTap=null}
+                            else if(opened) {if(visible && highlighted>=0) choose(highlighted)}
                             else if(!moved && change.position.x in 0f..size.width.toFloat() && change.position.y in 0f..size.height.toFloat()) {
                                 // Each tap toggles immediately; the second restores the first toggle.
                                 toggle()
@@ -110,6 +122,16 @@ private val controlShortcutRows=(controlShortcuts.size+CONTROL_SHORTCUT_COLUMNS-
             (if(selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(readable) 1f else .38f))
         if(visible) Popup(popupPositionProvider=provider,onDismissRequest={dismiss()},
             properties=PopupProperties(focusable=false,dismissOnClickOutside=true)) {
+            val popupView=LocalView.current.rootView
+            val triggerBounds by rememberUpdatedState(screenAnchor)
+            DisposableEffect(popupView) {
+                // ACTION_OUTSIDE arrives before the underlying trigger's DOWN. Keep this
+                // popup open only for that trigger; its pointer handler owns the close.
+                popupView.setOnTouchListener {_,event->
+                    event.actionMasked==MotionEvent.ACTION_OUTSIDE && triggerBounds.contains(Offset(event.rawX,event.rawY))
+                }
+                onDispose {popupView.setOnTouchListener(null)}
+            }
             SpeechBubble(provider,Modifier.width(244.dp).semantics {contentDescription="Control shortcuts"}) {
             Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 repeat(controlShortcutRows) {row->

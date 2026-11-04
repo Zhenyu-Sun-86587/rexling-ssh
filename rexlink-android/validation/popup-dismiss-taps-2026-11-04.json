@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Single-tap dismissal for arrow and Ctrl popups",
+  "base_revision": "c12d9913b4",
+  "local_changes": true,
+  "version_code": 37,
+  "apk": "dist/Rexlink-2026.11.04-build37-c12d9913b4-modified-arm64-release.apk",
+  "release_sha256": "17c7d28ea700314281c1f3b19eb8a4800f9d50a0dfdb99e355e694c5c2f7de36",
+  "checks": {
+    "focused_android_passed": 27,
+    "ctrl_tests_final_run_passed": 15,
+    "arrow_and_native_keyboard_tests_passed": 12,
+    "native_ctrl_trigger_close_and_clear_both_latch_states_passed": true,
+    "native_outside_dismissal_and_next_ctrl_tap_passed": true,
+    "hold_slide_regressions_passed": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "test_notes": "The final combined run passed all 12 arrow/native keyboard checks and 14 of 15 Ctrl checks. One existing hold fixture missed the native popup accessibility tree with the test clock frozen. The bounds helper now advances a frame while waiting; the full Ctrl suite then passed all 15 checks. Native trigger taps caught and verified the Android ACTION_OUTSIDE ordering correction.",
+  "behavior": "A single trigger tap closes an open arrow popup. Joystick mode still requires double tap to open; classic mode opens on single tap. Dragging from the popup still starts joystick steering. Tapping Ctrl with its shortcut popup open closes it and clears any selected Ctrl modifier. The popup root intercepts only ACTION_OUTSIDE over its own trigger so Android does not dismiss it before the trigger sees DOWN. Other outside taps retain normal dismissal. Hold/slide shortcuts and ordinary Ctrl taps remain functional. Tab remains on the keyboard row.",
+  "phone_install": "Installed release 37 on S22+ RFCT21390SD via USB; installed APK checksum matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Uncommitted source changes based on signed commit c12d9913b4"
+}

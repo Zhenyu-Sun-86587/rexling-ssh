@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Precision arrow joystick with slower repeat and fixed overlay alignment",
+  "base_revision": "c12d9913b4",
+  "local_changes": true,
+  "version_code": 34,
+  "apk": "dist/Rexlink-2026.11.04-build34-c12d9913b4-modified-arm64-release.apk",
+  "release_sha256": "8c4f39844579dd0f1af418dd894244b1cf099f762245ecc578ef8f3584d039b5",
+  "checks": {
+    "focused_android_passed": 20,
+    "repeat_delay_and_interval_passed": true,
+    "native_compact_full_alignment_passed": true,
+    "off_center_press_and_visible_center_steering_passed": true,
+    "native_rendered_preview_recheck_passed": true,
+    "modifier_and_swipe_capture_passed": true,
+    "compact_full_previews_inspected": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Immediate single-step steering remains; repeat now waits 500ms then sends every 160ms. The overlay provider always centers on the actual button and disables platform window clipping/repositioning. Keyboard-visible mode uses 88dp; hidden mode uses a 52dp ring with proportionate internals. Input uses the same drawn button center as the overlay; off-center presses remain neutral until deliberate movement crosses touch slop. Neutral pause, direction hysteresis, original pane target, release/cancel guards, Shift repeats, gesture capture and accessibility actions remain.",
+  "phone_install": "Installed release 34 on S22+ RFCT21390SD via USB; installed APK SHA-256 matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Uncommitted source changes based on signed commit c12d9913b4"
+}

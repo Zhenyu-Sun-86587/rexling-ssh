@@ -47,6 +47,8 @@ class AppearanceSheetTest {
                 val first=RexModel(app,name);store.put("theme",first)
                 first.chooseTheme("merino-dark");first.chooseTheme("merino-light");first.changeFontSize(11)
                 first.changeAppearance(Appearance.DARK)
+                assertTrue(first.arrowJoystickEnabled)
+                first.changeArrowJoystick(false)
                 assertEquals(ControlShortcutGesture.HOLD,first.shortcutGesture)
                 first.changeShortcutGesture(ControlShortcutGesture.DOUBLE_TAP)
                 assertNull(first.saveNeovimShortcuts(":w\n[Git]\n"+(1..40).joinToString("\n") {"Action $it = <Space>lg"}))
@@ -58,6 +60,7 @@ class AppearanceSheetTest {
                 val second=RexModel(app,name);store.put("theme2",second)
                 assertEquals("merino-dark",second.theme(true).id);assertEquals("merino-light",second.theme(false).id);assertEquals(11,second.fontSize)
                 assertEquals(Appearance.DARK,second.appearance)
+                assertFalse(second.arrowJoystickEnabled)
                 assertEquals(ControlShortcutGesture.DOUBLE_TAP,second.shortcutGesture)
                 assertEquals(NeovimShortcuts.parse(":w\n[Git]\n"+(1..40).joinToString("\n") {"Action $it = <Space>lg"}),second.neovimShortcuts)
                 assertEquals(NeovimShortcutLayout.GRID,second.neovimShortcutLayout)
@@ -77,12 +80,17 @@ class AppearanceSheetTest {
     }
     @Test fun preferencesChooseTheCtrlShortcutGesture() {
         val gesture=mutableStateOf(ControlShortcutGesture.HOLD)
-        ui.setContent {MaterialTheme {PreferencesSheet({},{},{},{},{},{},gesture.value,{gesture.value=it})}}
+        val joystick=mutableStateOf(true)
+        ui.setContent {MaterialTheme {PreferencesSheet({},{},{},{},{},{},gesture.value,{gesture.value=it},
+            arrowJoystickEnabled=joystick.value,onArrowJoystick={joystick.value=it})}}
         ui.onNodeWithText("Hold").performScrollTo().assertIsSelected()
         ui.onNodeWithText("Double tap").performClick().assertIsSelected()
         ui.runOnIdle {assertEquals(ControlShortcutGesture.DOUBLE_TAP,gesture.value)}
         ui.onNodeWithText("Hold").performClick().assertIsSelected()
         ui.runOnIdle {assertEquals(ControlShortcutGesture.HOLD,gesture.value)}
+        ui.onNodeWithText("Use joystick for arrows").performScrollTo().assertIsOn().performClick().assertIsOff()
+        ui.onNodeWithText("Tap for arrow buttons").assertIsDisplayed()
+        ui.runOnIdle {assertFalse(joystick.value)}
     }
     @Test fun themedSheetsRenderInLightAndDark() {
         val selected=mutableStateOf(themes.first {it.id=="abyssal-trench"})

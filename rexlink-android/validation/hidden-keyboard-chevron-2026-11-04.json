@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-04",
+  "change": "Swipe-revealed extra-key chevron before Escape",
+  "base_revision": "c12d9913b4",
+  "local_changes": true,
+  "version_code": 38,
+  "apk": "dist/Rexlink-2026.11.04-build38-c12d9913b4-modified-arm64-release.apk",
+  "release_sha256": "197befd6c253b1015aca99c96058c80bc91e5bf4f54768996de8db269a4482a9",
+  "checks": {
+    "focused_keyboard_checks_passed": 17,
+    "physical_swipe_reveal_and_close_passed": true,
+    "keyboard_hide_reset_passed": true,
+    "narrow_phone_equal_unclipped_key_widths_passed": true,
+    "native_joystick_hold_and_repeat_passed": true,
+    "popup_and_shift_regressions_passed": true,
+    "read_only_and_navigation_contrast_passed": true,
+    "default_and_revealed_layouts_inspected": true,
+    "release_lint_passed": true,
+    "static_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "test_notes": "Seventeen distinct keyboard checks passed across runs. Fifteen passed in the final full-suite run; the native popup and visibility-reset fixtures then passed together after fixture refinements. Native popup creation waits three rendered frames. The reset fixture invokes the trigger semantic action to isolate visibility behavior from an unsettled synthetic swipe; a separate physical swipe-and-tap test verifies reveal, placement, expansion, closing and default restoration. Width assertions allow one pixel of dp rounding and require the seven visible key widths to differ by no more than one pixel.",
+  "behavior": "Chevron moved before Escape into a horizontally scrollable key row and starts offscreen. Swiping right reveals it; the keyboard button remains pinned. Collapsing extras or hiding the keyboard resets the scroll so Escape is first again. The seven visible keys reclaim the prior chevron slot, approximately 4dp each. A fixed-width inner row distributes pixel rounding without clipping Escape. Joystick captures, popup interactions, modifiers and Enter remain intact.",
+  "phone_install": "Installed release 38 on S22+ RFCT21390SD via USB, preserving app data without launching it. Installed APK SHA-256 matches the verified artifact.",
+  "source_commit": "Uncommitted changes based on signed commit c12d9913b4"
+}

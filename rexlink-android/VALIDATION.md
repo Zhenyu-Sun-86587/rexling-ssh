@@ -2089,3 +2089,158 @@ ports (39537 and 44407) refuse connections. Awaiting a current main-screen addre
 or USB connection. Source remains based on 076b1bfeb3 with local changes and the
 existing 1Password signing blocker.
 See validation/open-vim-wheel-drag-2026-11-04.json.
+
+
+## Direct arrow joystick — 2026-11-04
+
+The persistent arrow popup is replaced with a hold-and-slide joystick near the
+keyboard controls. Press shows an 88 dp direction indicator; passing the neutral
+zone (10 dp or touch slop) sends an arrow immediately. Holding repeats after
+350 ms at 65 ms intervals. Centering pauses repeat; changing direction cancels
+the old repeat. Release, cancellation, pane changes and ownership loss stop it.
+The gesture captures down and movement in the Initial pass, with local Android
+system-gesture exclusion, so rightward movement cannot start an ancestor swipe.
+Callbacks retain their original guarded pane target. Modifier input remains in
+the existing pipeline, with four discrete accessibility direction actions.
+Enter now precedes the joystick; the extra-key chevron remains beside keyboard.
+
+Twenty-three distinct focused Android checks passed: immediate direction input,
+hold/repeat/release, neutral pause, direction changes, cancel, target/control
+loss, ancestor swipe blocking, simultaneous two-finger Shift repeat, one-shot
+Shift, native Android held input, accessibility actions, narrow row geometry,
+readonly contrast, extra keys and existing Backspace repeat. The preview fixture
+initially expected encoded bytes from a callback that records raw key names;
+its assertion was corrected and the isolated preview recheck passed. Light/dark
+joystick and dock previews inspected. Debug/release builds, release lint,
+static APK verification and whitespace checks passed.
+
+Installed release 33 on S22+ RFCT21390SD via USB with app data preserved, without
+launching the app; installed APK SHA-256 matches validation/apk.json. Source is
+based on signed commit c12d9913b4 with local changes.
+See validation/arrow-joystick-2026-11-04.json.
+
+
+## Precision joystick and centered overlays — 2026-11-04
+
+Arrow steering still sends one immediate step, but repeat waits 500 ms and then
+sends every 160 ms. The overlay stays exactly centered on the actual drawn key,
+without clamping/platform repositioning. It uses an 88 dp face with the keyboard
+visible and a proportionate 52 dp face when hidden. Steering uses this same
+button center. An off-center press stays neutral until deliberate movement
+crosses touch slop; tiny press movement sends nothing. Neutral pause, direction
+hysteresis, release/cancel guards, pane targeting, modifiers, gesture capture and
+accessibility actions remain.
+
+Twenty distinct focused Android checks passed. Timing checks confirm no repeat
+before the delay and the slower interval afterward. Native screen checks cover
+compact/full sizes and center alignment near the bottom, off-center presses,
+steering relative to the visible center and unchanged dock layout. The fixture
+compares the actual drawn key coordinates: accessibility bounds are clipped by
+the adjacent chevron's expanded touch target. The full-size preview reserves
+keyboard space, and native captures wait for a rendered window frame as well as
+layout. Rendered compact/full previews inspected. Modifier, simultaneous Shift,
+neutral pause, target/control cancellation, native release and swipe prevention
+checks passed. Debug/release builds, release lint, static APK verification and
+whitespace checks passed.
+
+Installed release 34 on S22+ RFCT21390SD via USB with app data preserved, without
+launching the app; installed APK SHA-256 matches validation/apk.json. Source is
+based on signed commit c12d9913b4 with local changes.
+See validation/precision-arrow-joystick-2026-11-04.json.
+
+
+## Arrow mode preference and double-tap popup — 2026-11-04
+
+Preferences > Keyboard now has a saved Use joystick for arrows switch, enabled
+by default. When enabled, hold/slide retains the precision joystick while a
+double-tap toggles the original four-arrow speech-bubble popup. When disabled,
+a single tap toggles that popup and dragging does not steer or show a joystick.
+Popup arrows support precise taps and the existing hold-repeat/modifier/target
+pipeline. The popup stays open across arrow and outside-key taps, closes via its
+trigger, and resets on pane, control or mode changes. Starting a joystick drag
+closes the popup and resumes steering. Accessibility click toggles the popup.
+
+All 32 focused Android checks passed in one run, including native double-tap
+open/close without input, sticky outside-key behavior, precise Shift arrow taps,
+classic single-tap mode, popup-to-joystick switching, held repeat cancellation,
+preference UI switching and model recreation. Existing slow repeat, neutral pause,
+multitouch Shift, native held input, anchor alignment, compact/full overlays,
+readonly layout and swipe-capture checks also passed. Debug/release builds,
+release lint, static APK verification and whitespace checks passed.
+
+Installed release 35 on S22+ RFCT21390SD via USB with app data preserved, without
+launching the app; installed APK SHA-256 matches validation/apk.json. Source is
+based on signed commit c12d9913b4 with local changes.
+See validation/arrow-mode-preference-2026-11-04.json.
+
+
+## Page keys and Vim center toggle — 2026-11-04
+
+PgUp/PgDn occupy the two empty upper corners of the arrow popup, preserving its
+200 dp width and 100 dp key area. Taps send standard Page Up/Down sequences;
+Shift modifiers use the existing guarded input pipeline. Page-key holds use
+Android's configured long-press activation and a slower 160 ms repeat interval.
+The shared repeat helper retains its default interval for arrows and Backspace.
+The Vim radial center now returns Back inside a group and closes the menu at
+root. Its AssistiveTouch button reopens it; wrapping and open dragging remain.
+
+Twenty distinct focused Android checks passed: page-key sequences and Shift,
+held-page repeat and pane cancellation, both popup modes, native double-tap,
+legacy Backspace repeat, Vim group Back/root close/reopen, anchor geometry and
+open-menu dragging. The held-page fixture waits for the popup before freezing
+the test clock and reads Android's configured long-press delay rather than
+assuming 500 ms. Popup preview inspected. Debug/release builds, release lint,
+static APK verification and whitespace checks passed.
+
+Installed release 36 on S22+ RFCT21390SD via USB with app data preserved, without
+launching it. The installed APK checksum matches validation/apk.json and was
+reverified after the follow-up installation request. Source is based on signed
+commit c12d9913b4 with local changes. The existing date/versionCode presentation
+was left unchanged after the user's version-number question.
+See validation/page-keys-vim-toggle-2026-11-04.json.
+
+
+## Popup trigger dismissal — 2026-11-04
+
+A single tap closes the open arrow popup in either keyboard mode. Joystick
+mode retains double-tap opening and hold/slide steering. Tapping Ctrl while its
+shortcut popup is open closes it and clears the modifier. Android sends
+ACTION_OUTSIDE before DOWN to the underlying trigger, so the native popup root
+intercepts outside events over its own trigger and lets that trigger close it.
+Other outside taps dismiss normally. Tab remains on the keyboard row.
+
+Twenty-seven distinct focused Android checks passed across the final runs:
+12 arrow/native keyboard checks and all 15 Ctrl checks. Native tests cover
+closing from selected and unselected Ctrl, ordinary taps afterward, and outside
+dismissal. Existing hold/slide, neutral pause, repetition, cancellation and
+classic popup behavior remain covered. One existing hold fixture initially
+missed the popup accessibility tree while the test clock was frozen; allowing
+a frame while waiting resolved it, and all 15 Ctrl tests passed together.
+Release build, release lint, static APK verification and whitespace checks pass.
+
+Installed release 37 on S22+ RFCT21390SD via USB, preserving data without
+launching the app. Installed APK SHA-256 matches validation/apk.json. Source
+changes remain uncommitted based on signed commit c12d9913b4.
+See validation/popup-dismiss-taps-2026-11-04.json.
+
+
+## Hidden keyboard chevron — 2026-11-04
+
+The extra-key chevron is before Esc, hidden until a rightward swipe on the key
+row. The keyboard button remains fixed. Closing extras or hiding the keyboard
+resets the scroll to Esc first. Seven visible keys reclaim the old chevron slot
+(about 4 dp each). An exact-width inner row distributes fractional pixels so Esc
+is not clipped at the default scroll position.
+
+Seventeen distinct keyboard checks passed across runs: physical swipe/reveal,
+chevron placement and close/reset, keyboard hiding, narrow-phone unclipped key
+widths, native joystick steering/repeat, Shift modifiers, popup taps, cancellation
+and readable disabled controls. Fifteen passed in the final full-suite run; the
+two remaining fixtures then passed together after allowing native popup frames
+and isolating keyboard reset from a synthetic swipe still settling. The separate
+physical swipe/tap case remains covered. Default and revealed captures inspected.
+Release build/lint, static APK verification and whitespace checks passed.
+
+Installed release 38 on S22+ RFCT21390SD via USB, preserving data without launching
+it. Installed APK SHA-256 matches validation/apk.json. Changes remain uncommitted.
+See validation/hidden-keyboard-chevron-2026-11-04.json.

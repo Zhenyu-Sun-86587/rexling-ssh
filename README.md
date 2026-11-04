@@ -129,19 +129,29 @@ clients. Hold and release without dragging for **Move left**, **Move right** and
 **Close tab**. Rename a session from its row’s
 **⋮ → Rename session** in the session list; changes sync through Rex.
 Long-press Ctrl for common control shortcuts, including **Ctrl+J** and **Ctrl+]**.
-The arrow button opens a compact popup above the key row. Tap or hold its arrow
-keys to navigate; the popup stays open while using other keys or tapping outside.
-Tap the arrow button again to close it. Enter has a dedicated
-key, and the chevron beside the keyboard icon expands F1–F12 and navigation keys.
+The arrow joystick sits beside the keyboard controls. Hold it and slide toward
+an arrow to send one step; holding for 500 ms starts a slower repeat every
+160 ms. Its overlay stays centered on the button, using a compact ring when
+the keyboard is hidden. Double-tap the joystick to open the arrow
+popup for precise taps or held keys; a single tap on the trigger closes it.
+PgUp and PgDn occupy the upper corners beside Up, with a slower held repeat.
+Turn off **Preferences → Keyboard → Use joystick for arrows** to use a single
+tap for the popup instead, with joystick gestures disabled.
+With joystick enabled, a drag switches back to steering. Returning to the center pauses
+repeat, and releasing stops immediately. The gesture stays captured so a right
+slide does not trigger back or pane navigation. Enter has a dedicated key, and
+swiping right on the key row reveals the chevron to the left of Esc for
+F1–F12 and navigation keys. Closing the extra keys hides the chevron again.
 Under **Preferences → Keyboard → Ctrl shortcuts**, choose **Hold** (the default)
-or **Double tap** to open the list. Single taps still toggle Ctrl immediately.
+or **Double tap** to open the list. When closed, single taps toggle Ctrl
+immediately. Tapping Ctrl while its popup is open closes it and clears Ctrl.
 Neovim panes have a draggable AssistiveTouch-style button for saved key shortcuts. Its
 position is remembered and stays inside the terminal when its size changes.
 Choose **Circular** (the default) or **Grid** in the Neovim shortcut preferences.
 The circular layout places compact shortcut pills around the AssistiveTouch
 button itself, without a large menu background. At an edge the button moves
 inward while open, then returns to its saved position. Its center goes back
-from a group and otherwise leaves the menu open. Drag the center with the
+from a group; at the top level it closes the menu. Drag the center with the
 radial menu open to move the whole cluster and save its position on release.
 Both layouts show six shortcuts
 at a time; swipe up/down for more pages, looping from last to first and back.

@@ -49,6 +49,8 @@ class ControlShortcutsTest {
         val deadline=SystemClock.uptimeMillis()+4000
         while(SystemClock.uptimeMillis()<deadline) {
             for(window in automation.windows) find(window.root)?.let {return it}
+            // A native popup may still need a frame to publish its accessibility tree.
+            if(!ui.mainClock.autoAdvance) {ui.mainClock.advanceTimeByFrame();ui.waitForIdle()}
             SystemClock.sleep(20)
         }
         error("No visible shortcut node: $description")
@@ -172,4 +174,42 @@ class ControlShortcutsTest {
         ui.onNodeWithContentDescription("Control").assertIsSelected()
         ui.runOnIdle {assertTrue(sent.isEmpty())}
     }
+    private fun nativeTapControl() {
+        val start=bounds("Control");val down=SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN,start.exactCenterX(),start.exactCenterY(),down)
+        SystemClock.sleep(35)
+        touch(MotionEvent.ACTION_UP,start.exactCenterX(),start.exactCenterY(),down)
+        ui.waitForIdle()
+    }
+    private fun assertTriggerClosesAndClears(initiallyActive: Boolean) {
+        fixture(gesture=ControlShortcutGesture.DOUBLE_TAP,initiallyActive=initiallyActive)
+        ui.onNodeWithContentDescription("Control").performTouchInput {doubleClick()}
+        ui.onNodeWithContentDescription("Control shortcuts").assertIsDisplayed()
+        nativeTapControl()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Control").assertIsNotSelected()
+        ui.runOnIdle {assertEquals(if(initiallyActive) 3 else 2,toggles);assertTrue(sent.isEmpty())}
+        nativeTapControl()
+        ui.onNodeWithContentDescription("Control").assertIsSelected()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+    }
+    @Test fun nativeTriggerTapClosesPopupWithoutSelectingCtrl() {assertTriggerClosesAndClears(false)}
+    @Test fun nativeTriggerTapClosesPopupAndClearsPreviouslySelectedCtrl() {assertTriggerClosesAndClears(true)}
+
+    @Test fun nativeOutsideDismissalDoesNotConsumeTheNextCtrlTap() {
+        fixture(gesture=ControlShortcutGesture.DOUBLE_TAP)
+        ui.onNodeWithContentDescription("Control").performTouchInput {doubleClick()}
+        ui.onNodeWithContentDescription("Control shortcuts").assertIsDisplayed()
+        val start=bounds("Control");val down=SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN,1f,start.exactCenterY(),down)
+        SystemClock.sleep(35)
+        touch(MotionEvent.ACTION_UP,1f,start.exactCenterY(),down)
+        ui.waitForIdle()
+        ui.onNodeWithContentDescription("Control shortcuts").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Control").assertIsNotSelected()
+        nativeTapControl()
+        ui.onNodeWithContentDescription("Control").assertIsSelected()
+        ui.runOnIdle {assertEquals(3,toggles);assertTrue(sent.isEmpty())}
+    }
+
 }

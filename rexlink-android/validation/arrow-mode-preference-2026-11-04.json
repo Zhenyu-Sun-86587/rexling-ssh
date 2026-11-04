@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-04",
+  "change": "Saved arrow joystick preference and double-tap access to the original arrow popup",
+  "base_revision": "c12d9913b4",
+  "local_changes": true,
+  "version_code": 35,
+  "apk": "dist/Rexlink-2026.11.04-build35-c12d9913b4-modified-arm64-release.apk",
+  "release_sha256": "38bec0be4b481564212ce3baaf8a489fb37cc8345f55037c1cdf6e5c7c05fed0",
+  "checks": {
+    "focused_android_passed": 32,
+    "physical_double_tap_toggle_passed": true,
+    "classic_single_tap_mode_passed": true,
+    "popup_tap_repeat_and_modifier_input_passed": true,
+    "popup_joystick_transition_and_cancellation_passed": true,
+    "preference_toggle_and_restoration_passed": true,
+    "precision_joystick_and_alignment_regressions_passed": true,
+    "release_lint_passed": true,
+    "static_release_apk_checks_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Adds Preferences > Keyboard > Use joystick for arrows, enabled by default and saved locally. Enabled: hold/slide retains precision joystick behavior; double-tap toggles the original four-arrow speech-bubble popup. Disabled: single tap toggles the popup, with no joystick steering/overlay. Popup stays open across arrow and outside-key taps, closes by its configured trigger, and resets on target/control/mode changes. Beginning a joystick drag closes the popup and resumes steering. Root accessibility click also toggles popup. Direct arrow taps and holds use the existing repeat/modifier/target pipeline.",
+  "phone_install": "Installed release 35 on S22+ RFCT21390SD via USB; installed APK checksum matches verified artifact; app data preserved; app not launched",
+  "source_commit": "Uncommitted source changes based on signed commit c12d9913b4"
+}
