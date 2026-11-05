@@ -1,0 +1,49 @@
+{
+  "apk": "dist/Rexling-2026.11.05-build54-f9ec92ddee-modified-arm64-release.apk",
+  "application_label": "Rexling",
+  "version_name": "2026.11.05",
+  "version_code": 54,
+  "sha256": "a2dbbdd22d99b1fb0b50c2972d328058a260baa678a8ac6238587753092b25fc",
+  "bytes": 17418528,
+  "signature_verified": true,
+  "debuggable": false,
+  "art_profiles": [
+    {
+      "name": "assets/dexopt/baseline.prof",
+      "bytes": 7401
+    },
+    {
+      "name": "assets/dexopt/baseline.profm",
+      "bytes": 843
+    }
+  ],
+  "zip_alignment_16k": true,
+  "permissions": [
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_LOCAL_NETWORK",
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+    "android.permission.CHANGE_NETWORK_STATE",
+    "dev.shulhi.rex.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+  ],
+  "native_libraries": [
+    {
+      "name": "lib/arm64-v8a/libandroidx.graphics.path.so",
+      "bytes": 10096,
+      "load_alignment": 16384
+    },
+    {
+      "name": "lib/arm64-v8a/libc++_shared.so",
+      "bytes": 1423696,
+      "load_alignment": 16384
+    },
+    {
+      "name": "lib/arm64-v8a/librex_android.so",
+      "bytes": 5303728,
+      "load_alignment": 16384
+    }
+  ],
+  "runtime_execution": "not performed by this static APK check"
+}

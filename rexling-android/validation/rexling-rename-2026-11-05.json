@@ -1,0 +1,39 @@
+{
+  "date": "2026-11-05",
+  "change": "Rename project, app, source projects and repository to Rexling",
+  "base_revision": "f9ec92ddee",
+  "local_changes": true,
+  "version_code": 54,
+  "apk": "dist/Rexling-2026.11.05-build54-f9ec92ddee-modified-arm64-release.apk",
+  "release_sha256": "a2dbbdd22d99b1fb0b50c2972d328058a260baa678a8ac6238587753092b25fc",
+  "repository": "https://github.com/shulhi/rexling",
+  "source_projects": [
+    "rexling-android",
+    "rexling-core"
+  ],
+  "rust_packages": [
+    "rexling-core",
+    "rexling-jni"
+  ],
+  "checks": {
+    "cargo_locked_metadata_passed": true,
+    "rust_tests_passed": 48,
+    "rust_live_tests_ignored": 15,
+    "jvm_tests_passed": 151,
+    "jvm_optional_tests_skipped": 1,
+    "android_ui_checks_passed": 9,
+    "android_live_fixture_skipped": 1,
+    "source_build_release_and_lint_passed": true,
+    "about_name_build_copy_and_repository_links_passed": true,
+    "saved_theme_and_preferences_recreation_passed": true,
+    "notification_private_token_routing_passed": true,
+    "release_label_package_signature_profiles_and_alignment_passed": true,
+    "signing_certificate_matches_release_53": true,
+    "github_repository_and_local_origin_verified": true,
+    "apk_checksum_sidecar_matches": true
+  },
+  "compatibility": "Android applicationId dev.shulhi.rex, preference store rex, stored default-theme IDs, notification token scheme and librex_android JNI ABI are retained. App copy, theme display name, monitor notifications, client hello name and build/APK branding use Rexling. The source directories and crates are renamed without rewriting history. Historical evidence and artwork provenance retain old names.",
+  "test_notes": "48 Rust tests passed; 15 live opt-in tests stayed ignored. JVM suite: 151 passed, one optional benchmark skipped. Android About/Appearance/BackgroundAlerts fixtures: nine passed, one live notification fixture skipped because it requires an explicitly owned disposable server fixture. APK certificate was compared to the previous Rexlink release 53. No live user terminal was changed.",
+  "phone_install": "Not installed: user confirmed phone is disconnected; shareable release APK prepared.",
+  "source_commit": "Uncommitted source rename based on signed commit f9ec92ddee"
+}

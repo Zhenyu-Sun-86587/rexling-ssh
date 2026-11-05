@@ -1,4 +1,4 @@
-# <img src="rexlink-android/app/src/main/res/drawable-nodpi/rexlink_dinosaur.png" alt="Rexlink app icon" width="40" height="40" align="absmiddle"> Rexlink
+# <img src="rexling-android/app/src/main/res/drawable-nodpi/rexlink_dinosaur.png" alt="Rexling app icon" width="40" height="40" align="absmiddle"> Rexling
 
 Unofficial native Android client for Superlogical Rex.
 Connect directly to your authenticated Rex server over your private Tailscale network.
@@ -7,30 +7,30 @@ maintains terminal state. No custom bridge, proxy or Rex subprocess is required.
 
 | Light theme | Dark theme |
 | :---: | :---: |
-| <img src="docs/images/rexlink-android.png" alt="Rexlink light theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> | <img src="docs/images/rexlink-android-dark.png" alt="Rexlink dark theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> |
+| <img src="docs/images/rexlink-android.png" alt="Rexling light theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> | <img src="docs/images/rexlink-android-dark.png" alt="Rexling dark theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> |
 
 ```text
-rexlink/
-├── rexlink-android/       Android Studio / Gradle app, UI, rendering and input
-└── rexlink-core/          Rust workspace, shared protocol and terminal implementation
-    ├── src/              rexlink-core crate
-    ├── jni/              rexlink-jni crate; exports the existing librex_android ABI
+rexling/
+├── rexling-android/       Android Studio / Gradle app, UI, rendering and input
+└── rexling-core/          Rust workspace, shared protocol and terminal implementation
+    ├── src/              rexling-core crate
+    ├── jni/              rexling-jni crate; exports the existing librex_android ABI
     ├── probe/            original rex-probe / rex-view investigation CLI and evidence
     ├── native/           Ghostty shim, pinned source manifest and MIT license
     └── scripts/          native build helper
 ```
 
 The probe keeps its original investigation implementation and evidence for protocol
-experiments. The app uses the maintained `rexlink-core` crate, through `rexlink-jni`.
+experiments. The app uses the maintained `rexling-core` crate, through `rexling-jni`.
 The crate alias inside JNI remains `rex_core`; Android's package `dev.shulhi.rex`
 and native-library name are unchanged, preserving installed app data and updates.
 
 ## Install on Android
 
-Rexlink currently supports **64-bit ARM phones running Android 9 or newer**,
+Rexling currently supports **64-bit ARM phones running Android 9 or newer**,
 including the Galaxy S22+. You need access to an existing Rex server. Install
 and connect Tailscale on your phone when the server is on a private tailnet.
-Rexlink uses that existing VPN connection; it does not embed another VPN.
+Rexling uses that existing VPN connection; it does not embed another VPN.
 
 Obtain the release APK from the project maintainer, or build it below. Open the
 APK on your phone and allow installation from that file/browser app when Android
@@ -39,22 +39,22 @@ then install with Android SDK platform-tools:
 
 ```sh
 adb devices -l
-adb -s <your-device-serial> install -r "Rexlink-<version>-build<code>-<commit>-arm64-release.apk"
+adb -s <your-device-serial> install -r "Rexling-<version>-build<code>-<commit>-arm64-release.apk"
 ```
 
-Open **Rexlink**, enter your Rex server's authenticated private HTTPS URL, and
+Open **Rexling**, enter your Rex server's authenticated private HTTPS URL, and
 connect. Add other hosts under **⋮ → Servers**. Keep Tailscale connected and
-ensure Rexlink is included in its VPN routing. The app does not configure a Rex
+ensure Rexling is included in its VPN routing. The app does not configure a Rex
 server or change its authentication. APKs are not yet published to an app store.
 
 ## Build and install from source
 
 ```sh
-git clone <repository-url> rexlink
-cd rexlink
+git clone https://github.com/shulhi/rexling.git
+cd rexling
 ```
 
-Replace `<repository-url>` with the Git URL where you host this repository.
+The repository is hosted at [shulhi/rexling](https://github.com/shulhi/rexling).
 
 
 Install Android Studio, Android SDK platform 37, Build Tools 36.0.0, NDK
@@ -65,19 +65,19 @@ tests, debug builds, device installation and platform details.
 From this repository root:
 
 ```sh
-./rexlink-android/scripts/gradle.sh :app:assembleRelease
+./rexling-android/scripts/gradle.sh :app:assembleRelease
 ```
 
 For a shareable APK whose filename includes the date, build number and commit,
-run `./rexlink-android/scripts/gradle.sh :app:shareRelease`. The APK and SHA-256
-checksum are written to `rexlink-android/dist/`.
+run `./rexling-android/scripts/gradle.sh :app:shareRelease`. The APK and SHA-256
+checksum are written to `rexling-android/dist/`.
 
 To install the APK you just built:
 
 ```sh
 adb devices -l
 adb -s <your-device-serial> install -r \
-  rexlink-android/app/build/outputs/apk/release/app-release.apk
+  rexling-android/app/build/outputs/apk/release/app-release.apk
 ```
 
 The build downloads checksum-verified Ghostty and Zig, compiles the Rust JNI
@@ -85,10 +85,10 @@ library for Android arm64, and builds the APK. The first build needs network
 access; later builds reuse ignored local caches. No old sibling checkout is needed.
 
 ```text
-rexlink-android/app/build/outputs/apk/release/app-release.apk
+rexling-android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Open **rexlink-android/** in Android Studio, rather than the repository root.
+Open **rexling-android/** in Android Studio, rather than the repository root.
 Release builds are optimized and non-debuggable. This prototype currently uses
 the development signing identity; see the build guide before publishing a release.
 
@@ -100,10 +100,10 @@ across connected hosts; the terminal card switches panes. Both loop at the ends.
 A single fixed pane indicator stays at the bottom of the terminal card. Its
 active capsule transfers width as you swipe; the pane's icon and program name
 appear directly above it without moving the terminal content.
-Rexlink saves the last session, tab and pane for each server, including the last
+Rexling saves the last session, tab and pane for each server, including the last
 pane used in each tab, and restores them when reopened. Closed terminals fall
 back to an existing pane.
-Check **⋮ → Preferences → About Rexlink** for the date-based app version, build number and
+Check **⋮ → Preferences → About Rexling** for the date-based app version, build number and
 commit; **Copy build info** copies these details for bug reports.
 The bottom dock switches tabs and opens Activity. Its tab/pane button opens a
 switcher directly: tap **Tabs** or **Panes**, or swipe between them. Select a row
@@ -212,9 +212,9 @@ hostname defaults to port 9417. Rex's service tailnet address may differ from th
 Mac's Portside address even when both run on the same machine.
 **Check connection** shows the destination and size limit. Portside authenticates your Tailscale
 identity; no upload token is stored. **Open Portside** launches its Android app
-if installed; Rexlink uploads directly to the server and does not need that app.
+if installed; Rexling uploads directly to the server and does not need that app.
 
-Copy an image and use **Paste** from your keyboard or Rexlink's menu, or choose
+Copy an image and use **Paste** from your keyboard or Rexling's menu, or choose
 **⋮ → Attach image** to open the system photo picker. PNG, JPEG, GIF and WebP
 images are streamed, up to the server's limit or 100 MiB, whichever is smaller.
 The returned server path is inserted into the active Codex/Claude prompt without
@@ -236,17 +236,17 @@ Only input/approval/sign-in requests and errors alert; running and finished task
 do not. Tapping an alert opens its server, session and pane. Terminal control is
 released and rendering pauses in the background; monitoring is read-only.
 
-Monitoring stops when you remove Rexlink from Recents, force-stop it, or tap Stop.
+Monitoring stops when you remove Rexling from Recents, force-stop it, or tap Stop.
 It does not start at boot or require server-side push. Network loss, Android Doze
 and device battery management can delay alerts; instant delivery is not guaranteed.
 
-See [Android usage](rexlink-android/README.md),
-[protocol findings](rexlink-android/PROTOCOL.md), and
-[validation history](rexlink-android/VALIDATION.md).
+See [Android usage](rexling-android/README.md),
+[protocol findings](rexling-android/PROTOCOL.md), and
+[validation history](rexling-android/VALIDATION.md).
 
 ## Project status
 
-Rexlink is maintained on a **best-effort basis**. Support, updates, bug fixes and
+Rexling is maintained on a **best-effort basis**. Support, updates, bug fixes and
 compatibility with future Rex versions are not guaranteed. Use it at your own
 risk: it is provided **AS IS, without warranties or conditions of any kind**.
 The warranty disclaimer and limitations of liability are set out in the
@@ -260,4 +260,4 @@ IDs. See [HISTORY.md](HISTORY.md) for provenance and history-navigation commands
 Copyright 2026 Shulhi Sapli and contributors. Project code is licensed under
 [Apache License 2.0](LICENSE). Third-party code, fonts, logos and sourced assets
 retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Rexlink is an independent, unofficial client and is not an official Rex product.
+Rexling is an independent, unofficial client and is not an official Rex product.

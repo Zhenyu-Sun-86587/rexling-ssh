@@ -1,6 +1,6 @@
 # Repository history
 
-Rexlink combines the original `rex-probe` and `rex-android` Git histories.
+Rexling (formerly Rexlink) combines the original `rex-probe` and `rex-android` Git histories.
 The migration retains the original commits and their IDs; it does not squash or
 filter-rewrite either source history. The merge commit connects both ancestries.
 Source-head IDs and migration details are recorded in `MIGRATION.json`.
@@ -16,8 +16,8 @@ Source-head IDs and migration details are recorded in `MIGRATION.json`.
 git log --all --graph --decorate --oneline
 git log legacy/android --oneline
 git log legacy/probe --oneline
-git log -m --follow -- rexlink-core/src/control.rs
-git log -m --follow -- rexlink-android/app/src/main/java/dev/shulhi/rex/MainActivity.kt
+git log -m --follow -- rexling-core/src/control.rs
+git log -m --follow -- rexling-android/app/src/main/java/dev/shulhi/rex/MainActivity.kt
 ```
 
 Use `-m` to examine the import merge against each parent when following file
@@ -25,3 +25,12 @@ renames into the original roots. Git follows individual file renames heuristical
 always expose full pre-migration history even if a directory-level log does not
 cross the merge automatically. There are no submodules or nested `.git` repos.
 Nothing was pushed to a remote service by this migration.
+
+## Rexling rename — 2026-11-05
+
+The project and GitHub repository were renamed to Rexling. Source projects moved
+to `rexling-android/` and `rexling-core/`; Rust packages are `rexling-core` and
+`rexling-jni`. These are ordinary file renames; existing commits and source-head
+IDs are retained. Earlier evidence and `MIGRATION.json` retain their original
+paths and project names. The repository is now https://github.com/shulhi/rexling.
+Android keeps its installed app ID and JNI ABI so updates preserve app data.

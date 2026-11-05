@@ -8,4 +8,4 @@
 **/dist/
 *.stream
 *.trace.jsonl
-rexlink-core/probe/evidence/private/
+rexling-core/probe/evidence/private/
