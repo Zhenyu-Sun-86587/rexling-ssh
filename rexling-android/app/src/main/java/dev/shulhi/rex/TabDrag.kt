@@ -9,7 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.abs
 
-/** Gesture coordinates follow LazyRow's logical start, including in RTL. */
+/** Coordinates follow the list's main axis: logical x for LazyRow, y for LazyColumn. */
 internal class TabDrag {
     var id by mutableStateOf<String?>(null); private set
     var order by mutableStateOf<List<String>>(emptyList()); private set
@@ -22,6 +22,7 @@ internal class TabDrag {
     fun start(ids: List<String>,list: LazyListState,x: Float): Boolean {
         val item=list.layoutInfo.visibleItemsInfo.firstOrNull {x>=it.offset && x<it.offset+it.size} ?: return false
         val key=item.key as? String ?: return false
+        if(key !in ids) return false
         original=ids;order=ids;id=key;left=item.offset.toFloat();pointer=x;width=item.size;distance=0f;moved=false
         return true
     }
@@ -51,7 +52,7 @@ internal class TabDrag {
 
 /** Intercept held moves/up before a child tab's clickable consumes the release. */
 internal suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectTabDrag(
-    start: (androidx.compose.ui.geometry.Offset)->Unit,
+    start: (androidx.compose.ui.geometry.Offset)->Boolean,
     move: (androidx.compose.ui.geometry.Offset)->Unit,
     end: ()->Unit,
     cancel: ()->Unit,
@@ -60,7 +61,7 @@ internal suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectT
         try {
             val down=awaitFirstDown(requireUnconsumed=false)
             val held=awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
-            start(held.position)
+            if(!start(held.position)) return@awaitEachGesture
             held.consume()
             while(true) {
                 val event=awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)

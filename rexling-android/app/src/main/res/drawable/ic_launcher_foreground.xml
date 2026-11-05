@@ -1,4 +1,4 @@
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:insetLeft="18%" android:insetTop="22%" android:insetRight="18%" android:insetBottom="14%">
+    android:insetLeft="18%" android:insetTop="26%" android:insetRight="18%" android:insetBottom="10%">
     <bitmap android:src="@drawable/rexlink_dinosaur" android:gravity="fill" android:filter="true"/>
 </inset>

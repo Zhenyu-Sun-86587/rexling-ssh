@@ -14,7 +14,11 @@
     "node": "0e1647f1ee9258dffedc3009b37671c21b06dccddf69be3800e5f430517ca735",
     "shell": "60b56767373c1e5b43869aa88c80545aef898991e3bd22adb8da607492b6bc92",
     "htop": "81465bd2580e4853e86cd3c29467ed40368d6e2e6c6dfb0e7c1b79af7e9a31e0",
-    "btop": "87179932ff8a218b55e453f079726eca47152ef83c7fbf2466511cbd5d9857f2"
+    "btop": "87179932ff8a218b55e453f079726eca47152ef83c7fbf2466511cbd5d9857f2",
+    "cloudflare": "b11b918339eaf53809c4b8909561a464dba5b5d0ee83f83263e8eee530c3b798"
   },
-  "generator": "scripts/build_program_vectors.py"
+  "generator": "scripts/build_program_vectors.py",
+  "glyph_sha256": {
+    "cloudflare": "4e2f2f3782b1d6db2a31c38e19641b68bc65de76c008f3301a7e9285330ee42c"
+  }
 }

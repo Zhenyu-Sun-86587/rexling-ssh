@@ -54,6 +54,9 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import kotlin.math.roundToInt
 import kotlin.math.abs
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.combinedClickable
@@ -70,7 +73,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER }
+internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -91,6 +94,42 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.CHEVRON -> {line(7f,10f,12f,15f);line(12f,15f,17f,10f)}
             ChromeIcon.SESSIONS -> { box(4f,8f,13f,12f); line(8f,4f,20f,4f); line(20f,4f,20f,16f); line(7f,12f,11f,12f); line(7f,16f,13f,16f) }
             ChromeIcon.COPY -> { box(8f,8f,12f,12f); line(15f,4f,4f,4f); line(4f,4f,4f,15f) }
+            ChromeIcon.PASTE -> {box(6f,5f,14f,16f);box(9f,3f,6f,4f,1f);line(10f,12f,16f,12f);line(10f,16f,15f,16f)}
+            ChromeIcon.EDIT -> {
+                val pencil=Path().apply {moveTo(4f*u,16f*u);lineTo(16f*u,4f*u);lineTo(20f*u,8f*u);lineTo(8f*u,20f*u);lineTo(4f*u,20f*u);close()}
+                drawPath(pencil,color,style=Stroke(width));line(14f,6f,18f,10f)
+            }
+            ChromeIcon.UNPLUG -> {box(7f,7f,10f,7f);line(9f,3f,9f,7f);line(15f,3f,15f,7f);line(12f,14f,12f,20f);line(12f,20f,18f,20f);line(3f,3f,21f,21f)}
+            ChromeIcon.DELETE -> {box(7f,8f,10f,13f,1f);line(5f,6f,19f,6f);box(9f,3f,6f,3f,1f);line(10f,11f,10f,17f);line(14f,11f,14f,17f)}
+            ChromeIcon.IMAGE -> {box(3f,4f,18f,16f);drawCircle(color,1.4f*u,Offset(16f*u,8f*u));line(3f,17f,8f,12f);line(8f,12f,12f,16f);line(12f,16f,15f,13f);line(15f,13f,21f,18f)}
+            ChromeIcon.SERVER -> {
+                for(y in listOf(4f,14f)) {box(4f,y,16f,6f,1.5f);drawCircle(color,.8f*u,Offset(7f*u,(y+3f)*u));line(11f,y+3f,17f,y+3f)}
+            }
+            ChromeIcon.REFRESH -> {drawArc(color,50f,270f,false,Offset(4f*u,4f*u),Size(16f*u,16f*u),style=Stroke(width));line(18f,7f,13f,7f);line(18f,7f,18f,2f)}
+            ChromeIcon.SETTINGS -> {
+                val gear=Path().apply {
+                    repeat(32) {i->
+                        val angle=-PI/2+i*PI/16
+                        val r=if(i%4==0 || i%4==3) 9.5f else 7.8f
+                        val x=(12f+cos(angle).toFloat()*r)*u;val y=(12f+sin(angle).toFloat()*r)*u
+                        if(i==0) moveTo(x,y) else lineTo(x,y)
+                    };close()
+                }
+                drawPath(gear,color,style=Stroke(width));drawCircle(color,3f*u,Offset(12f*u,12f*u),style=Stroke(width))
+            }
+            ChromeIcon.SUN -> {
+                drawCircle(color,4f*u,Offset(12f*u,12f*u),style=Stroke(width))
+                repeat(8) {i->val angle=i*PI/4;val x=cos(angle).toFloat();val y=sin(angle).toFloat();line(12f+x*7.5f,12f+y*7.5f,12f+x*10f,12f+y*10f)}
+            }
+            ChromeIcon.MOON -> {
+                val moon=Path().apply {
+                    moveTo(20.5f*u,13.8f*u)
+                    cubicTo(18.8f*u,20.8f*u,10.5f*u,23f*u,5.6f*u,17.9f*u)
+                    cubicTo(.7f*u,12.8f*u,3.2f*u,4.6f*u,10.3f*u,3f*u)
+                    cubicTo(7.1f*u,9.3f*u,13.7f*u,16.4f*u,20.5f*u,13.8f*u);close()
+                }
+                drawPath(moon,color,style=Stroke(width))
+            }
             ChromeIcon.MORE -> { for(y in listOf(5f,12f,19f)) drawCircle(color,1.4f*u,Offset(12f*u,y*u)) }
             ChromeIcon.CLOSE -> {line(6f,6f,18f,18f);line(6f,18f,18f,6f)}
             ChromeIcon.ADD -> { line(5f,12f,19f,12f); line(12f,5f,12f,19f) }
@@ -375,7 +414,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     if(enabled) detectTabDrag(
                         start={point->
                             val x=if(sign>0) point.x else size.width-point.x
-                            if(drag.start(currentWindows.map {it.id},list,x)) {menuId=null;haptic.performHapticFeedback(HapticFeedbackType.LongPress)}
+                            val started=drag.start(currentWindows.map {it.id},list,x)
+                            if(started) {menuId=null;haptic.performHapticFeedback(HapticFeedbackType.LongPress)}
+                            started
                         },
                         move={amount->drag.move(amount.x*sign,viewConfiguration.touchSlop,list)},
                         cancel={drag.cancel()},
@@ -413,7 +454,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
                         .zIndex(if(drag.id==w.id) 1f else 0f)
                         .graphicsLayer {translationX=drag.translation(w.id,list)*sign}) {
-                    Column(Modifier.height(48.dp).width(width)
+                    Column(Modifier.height(49.dp).width(width)
                         .drawWithContent {
                             drawContent()
                             if(active) {
@@ -451,9 +492,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         Spacer(Modifier.height(2.dp))
                     }
                     androidx.compose.material3.DropdownMenu(menuId==w.id,{menuId=null},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                        androidx.compose.material3.DropdownMenuItem(text={Text(leftLabel)},enabled=enabled && windowIndex>0,onClick={menuId=null;moveBy(-1)})
-                        androidx.compose.material3.DropdownMenuItem(text={Text(rightLabel)},enabled=enabled && windowIndex<windows.lastIndex,onClick={menuId=null;moveBy(1)})
-                        androidx.compose.material3.DropdownMenuItem(text={Text("Close tab")},enabled=enabled,onClick={menuId=null;onClose(w)})
+                        TerminalMenuItem(leftLabel,ChromeIcon.LEFT,enabled=enabled && windowIndex>0,onClick={menuId=null;moveBy(-1)})
+                        TerminalMenuItem(rightLabel,ChromeIcon.RIGHT,enabled=enabled && windowIndex<windows.lastIndex,onClick={menuId=null;moveBy(1)})
+                        TerminalMenuItem("Close tab",ChromeIcon.CLOSE,enabled=enabled,onClick={menuId=null;onClose(w)})
                     }
                     }
                 }

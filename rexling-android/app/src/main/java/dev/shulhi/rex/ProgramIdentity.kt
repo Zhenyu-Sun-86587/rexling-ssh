@@ -2,13 +2,13 @@ package dev.shulhi.rex
 
 import java.util.Locale
 
-enum class ProgramKind { TERMINAL, CLAUDE, CODEX, NEOVIM, VIM, GIT, PYTHON, NODE, SSH, TMUX, MONITOR }
+enum class ProgramKind { TERMINAL, CLAUDE, CODEX, NEOVIM, VIM, GIT, PYTHON, NODE, SSH, TMUX, MONITOR, CLOUDFLARE }
 data class ProgramIdentity(val kind: ProgramKind, val label: String, val executable: String="",val pending: Boolean=false) {
     val title: String get() = when(kind) {
         ProgramKind.CLAUDE -> "claude"; ProgramKind.CODEX -> "codex"; ProgramKind.NEOVIM -> "nvim"
         ProgramKind.VIM -> "vim"; ProgramKind.GIT -> "git"; ProgramKind.PYTHON -> "python"
         ProgramKind.NODE -> "node"; ProgramKind.SSH -> "ssh"; ProgramKind.TMUX -> "tmux"
-        ProgramKind.MONITOR -> "monitor"; ProgramKind.TERMINAL -> label
+        ProgramKind.MONITOR -> "monitor"; ProgramKind.CLOUDFLARE -> "cloudflared"; ProgramKind.TERMINAL -> label
     }
     /** Shell OSC titles usually describe cwd; keep the executable name above the directory. */
     private val isShell: Boolean get() = kind == ProgramKind.TERMINAL &&
@@ -47,6 +47,7 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String, val executa
                     name in listOf("ssh", "mosh", "mosh-client") -> ProgramKind.SSH
                     name in listOf("tmux", "zellij", "screen") -> ProgramKind.TMUX
                     name in listOf("top", "htop", "btop") -> ProgramKind.MONITOR
+                    name in listOf("cloudflared", "cloudflare") -> ProgramKind.CLOUDFLARE
                     else -> null
                 }
                 if (kind != null) return ProgramIdentity(kind, when(kind) {
@@ -54,7 +55,7 @@ data class ProgramIdentity(val kind: ProgramKind, val label: String, val executa
                     ProgramKind.NEOVIM -> "Neovim"; ProgramKind.VIM -> "Vim"; ProgramKind.GIT -> "Git"
                     ProgramKind.PYTHON -> "Python"; ProgramKind.NODE -> "JavaScript runtime"
                     ProgramKind.SSH -> "Remote shell"; ProgramKind.TMUX -> "Terminal multiplexer"
-                    ProgramKind.MONITOR -> "System monitor"; ProgramKind.TERMINAL -> "Terminal"
+                    ProgramKind.MONITOR -> "System monitor"; ProgramKind.CLOUDFLARE -> "Cloudflare"; ProgramKind.TERMINAL -> "Terminal"
                 },name)
             }
             val name = candidates.firstOrNull()?.replace('\\', '/')?.substringAfterLast('/')?.trimStart('-')

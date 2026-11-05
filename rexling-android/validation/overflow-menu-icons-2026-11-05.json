@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-05",
+  "change": "Consistent icons in overflow menu actions",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 55,
+  "apk": "dist/Rexling-2026.11.05-build55-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "2d47113087a0b291dc5681a29871e5d06c235c2fb061948be2f222a6a041e066",
+  "checks": {
+    "existing_android_menu_checks_passed": 3,
+    "actual_terminal_menu_light_dark_and_disabled_rows_inspected": true,
+    "release_build_lint_and_static_apk_verification_passed": true,
+    "new_tests_added": false,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Terminal, tab, session and server overflow actions use shared 19 dp outline glyphs. Theme toggle shows the sun/moon for the target appearance. Material leading-icon colors supply disabled-state dimming; destructive session closing retains its error color. Decorative icons add no redundant accessibility labels. Existing callbacks, action availability, labels and pane-creation behavior remain unchanged.",
+  "test_notes": "Existing quick-theme toggle, session-rename menu and tab hold/reorder-menu checks passed. No new tests were added for this cosmetic change. Actual MainActivity overflow menu was captured and inspected in light/dark modes on a reset disposable emulator, including disabled actions. No live user terminal was touched. Pane split selection is a UI proposal only in this release.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f",
+  "phone_install": "Installed release 55 on S22+ RFCT21390SD via USB; installed checksum matches; app data preserved; app not launched."
+}

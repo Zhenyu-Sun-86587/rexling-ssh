@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-05",
+  "change": "Compact menu spacing and right/below pane splitting",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 56,
+  "apk": "dist/Rexling-2026.11.05-build56-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "5c2fe1b6984e83f626f95a1c924174dd002a23e809b3767cdf351d48055df60e",
+  "checks": {
+    "jvm_tests_passed": 151,
+    "optional_jvm_benchmark_skipped": 1,
+    "rust_tests_passed": 50,
+    "live_rust_tests_ignored": 15,
+    "android_ui_checks_passed": 10,
+    "right_and_below_ui_callbacks_match_wire_directions": true,
+    "split_args_preserve_anchor_after_side_default_shell_and_focus_false": true,
+    "invalid_direction_and_stale_targets_rejected_before_creation": true,
+    "empty_busy_and_missing_anchor_actions_disabled": true,
+    "split_panel_and_compact_menu_light_dark_inspected": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Overflow icon/text gap is 8 dp, preserving row touch targets, disabled states and destructive colors. The Panes page has two side-by-side Split right / Split below actions with diagrams highlighting the new half. Right sends horizontal and Below sends vertical; both split after the current anchor, use the default shell and request focus:false. The phone continues displaying one pane at a time. Native requests without direction preserve legacy horizontal behavior; invalid values are rejected before creation starts.",
+  "test_notes": "151 JVM tests passed with one optional benchmark skipped. 50 Rust checks passed with 15 live opt-in cases ignored. Ten Android checks passed, including seven pane-switcher cases and three existing menu regressions. The new direction mapping is covered in the UI callbacks and native protocol arguments, including stale/invalid guards. Inspected light/dark switcher and actual MainActivity overflow captures on the disposable emulator. No live server session or pane was created during verification.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f",
+  "phone_install": "Installed release 56 on S22+ RFCT21390SD via USB; installed checksum matches; app settings preserved; app not launched."
+}

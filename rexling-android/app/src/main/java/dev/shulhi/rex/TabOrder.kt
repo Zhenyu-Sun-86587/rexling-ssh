@@ -17,3 +17,17 @@ internal data class PendingTabOrder(val session: String,val request: Long,val id
         return ids.map {windows.getValue(it)}
     }
 }
+
+internal data class PendingPaneOrder(val session: String,val window: String,val request: Long,val ids: List<String>) {
+    fun keepFor(state: AppState): PendingPaneOrder? = takeIf {
+        state.connected && state.selectedSession==session && state.paneMoveId<request &&
+            state.windows.firstOrNull {it.id==window}?.blocks?.map {it.id}?.toSet()==ids.toSet()
+    }
+    fun apply(state: AppState,windows: List<WindowItem>): List<WindowItem>? {
+        if(keepFor(state)==null) return null
+        return windows.map {w->if(w.id!=window) w else {
+            val blocks=w.blocks.associateBy {it.id}
+            w.copy(blocks=ids.map {blocks.getValue(it)})
+        }}
+    }
+}

@@ -4,6 +4,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProgramIdentityTest {
+    @Test fun cloudflareFollowsExecutableAndEffectiveAppMetadataWithoutGuessingFromTitles() {
+        for(candidate in listOf("cloudflared","/opt/homebrew/bin/cloudflared","C:\\tools\\cloudflared.exe","cloudflare")) {
+            val program=ProgramIdentity.resolve(listOf(candidate,"fish"))
+            assertEquals(ProgramKind.CLOUDFLARE,program.kind)
+            assertEquals("Cloudflare",program.label)
+            assertEquals("cloudflared",program.title)
+        }
+        assertEquals(ProgramKind.CLOUDFLARE,ProgramIdentity.resolve(listOf("fish","cloudflared")).kind)
+        assertEquals(ProgramKind.TERMINAL,ProgramIdentity.resolve(listOf("my-cloudflared-helper")).kind)
+        val state=AppState.parse("""{"programs":{"a":["/opt/homebrew/bin/cloudflared"],"b":["fish"]},"titles":{"b":"cloudflared"}}""")
+        assertEquals(ProgramKind.CLOUDFLARE,state.programs["a"]?.kind)
+        assertEquals(ProgramKind.TERMINAL,state.programs["b"]?.kind)
+    }
     @Test fun recognizesAgentsInsideInterpretersAndNativeInstallations() {
         assertEquals(ProgramKind.CLAUDE,ProgramIdentity.resolve(listOf("claude-code","node")).kind)
         assertEquals(ProgramKind.CLAUDE,ProgramIdentity.resolve(listOf("/usr/lib/node_modules/@anthropic-ai/claude-code/cli.js","node")).kind)

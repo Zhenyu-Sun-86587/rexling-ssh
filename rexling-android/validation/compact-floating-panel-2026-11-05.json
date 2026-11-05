@@ -1,0 +1,25 @@
+{
+  "date": "2026-11-05",
+  "change": "Compact tab/pane panel and floating-overlay inspection",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 62,
+  "apk": "dist/Rexling-2026.11.05-build62-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "cfe89d1077f02d1842b9d7e1c5598b5c32336ca1b998b144e7ee925fa5461be7",
+  "checks": {
+    "android_ui_checks_passed": 17,
+    "panel_checks_passed": 12,
+    "map_checks_passed": 5,
+    "five_panes_map_and_actions_visible_together": true,
+    "hide_floating_allows_touch_to_reach_underlying_pane": true,
+    "restored_overlay_preserves_topmost_touch_selection": true,
+    "visibility_toggle_sends_no_selection": true,
+    "busy_inspection_and_geometry_refresh_preserve_hidden_state": true,
+    "compact_panels_and_floating_views_visually_inspected": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Single compact header for Tabs/Panes/counts and Close replaces duplicate headings. Rows are at least 56 dp with smaller vector stacks and 4 dp gaps. Open/split actions share a 48 dp footer row. Floating panes retain real rectangles and z-order with translucent fill and dashed borders. Hide/Show floating affects only map visibility; underlying tiled panes become reachable by touch, and floating panes remain in the full list. Selection, explicit navigation and server resources are unchanged by visibility toggles.",
+  "phone_install": "Installed release 62 on S22+ using the user-provided wireless ADB connection; installed checksum matches; settings preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f"
+}

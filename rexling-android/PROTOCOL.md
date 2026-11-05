@@ -32,8 +32,19 @@ change to the server's active window for other clients.
 
 ## New pane
 
-UI JNI command: `{"type":"new_pane","session":"session:<id>","anchor":"block:<id>"}`.
-Both IDs must still match the actor's selection. It sends `session.new_split`:
+UI JNI command: `{"type":"new_pane","session":"session:<id>","anchor":"block:<id>","direction":"horizontal"}`.
+**Split right** sends `horizontal`; **Split below** sends `vertical`. An omitted
+direction retains the legacy right split; unsupported values are rejected before
+creation starts.
+The Panes footer uses Open pane and New pane. New pane opens an anchored direction
+menu; opening or dismissing it sends no command. The menu closes if the selected
+target, tab, section or action availability changes. Both menu choices still bind
+the explicit panel-selected anchor. The map has no title row; its floating-layer
+visibility control appears only when overlays exist.
+The session must still match the actor's selection. The explicit anchor must
+exist among that session's known terminal panes; it can be different from the
+currently open pane. The panel's local selection is not terminal navigation.
+It sends `session.new_split`:
 
 ```json
 {
@@ -48,8 +59,9 @@ Both IDs must still match the actor's selection. It sends `session.new_split`:
 
 The reply supplies `anchor_id`, `block_ids`, `split_ids` and `revision`. The app
 opens the new block as above. This changes the actual server layout: the new
-shell is to the right of the anchored pane, with the server's default split
-ratio. The phone displays one pane at a time.
+shell is to the right of the anchored pane for `horizontal`, or below it for
+`vertical`, with the server's default split ratio. The phone displays one pane
+at a time.
 
 The terminal flavor needs no custom options: it uses the user's default shell.
 The advertised `session.view` schema defines layer blocks in layout order; that
@@ -60,7 +72,66 @@ Creation progress disables the UI's creation action and pane/tab changes. The
 actor never queues a creation for replay during reconnection. If a reply is lost,
 the result may be uncertain; view refresh reveals existing resources without
 starting the shell again. Stale session/anchor commands are rejected locally
-before any server mutation, as verified by the native integration test.
+before any server mutation, as verified by native tests.
+
+## Pane layout map
+
+The Panes switcher maps the current window's server layout, rather than assuming
+equal-width tiles from block order. The API revision 8 `session.view` schema
+defines each `layers[].layout` leaf's `rect` as `[x,y,width,height]` in fractions
+of the whole window. Nested `split.before` / `split.after` coordinates are already
+absolute within that window; neither the parent rectangle nor floating layer
+bounds are multiplied in again.
+
+JNI window metadata includes `layout: [{id,rect,layer,floating}]`, retaining only
+known terminal blocks and finite positive rectangles. Android clips rectangles
+to the window and draws them in layer order, preserving nested proportions. The
+88 dp map uses small program tiles drawn from cached vector paths at their final
+pixel size, with the panel's selected target
+highlighted. Layout-only updates preserve pane selection and program metadata.
+Floating rectangles use translucent fill and dashed borders, retaining their real
+geometry and stacking order. A compact Hide/Show floating control removes/restores
+only those overlays, allowing normal touch selection on a covered tiled pane.
+Toggling visibility does not select, open, close or move anything on the server.
+Floating panes remain in the full list with a Floating caption. Visibility
+survives geometry refreshes within the same window and can be inspected while
+terminal actions are disabled.
+Tapping a usable tile or pane list row changes local panel selection only.
+**Open pane** navigates; split actions carry the selected target's explicit anchor.
+Tabs likewise select locally and navigate with **Open tab**. The selected tab
+determines which panes the Panes section manages, without opening that tab.
+“Viewing” in row captions identifies the actual open terminal separately from
+panel selection. A removed target disables Open/split instead of falling back
+silently to another pane. Tiny tiles remain identifiable through the full list. Missing or
+incomplete geometry displays “Layout unavailable” instead of inventing a grid;
+the pane list and split actions remain available. The terminal still displays
+one pane at a time. This adds no polling or server mutations.
+
+## Reordering from the tab/pane panel
+
+Hold-and-drag reorders either vertical list. Ordinary swipes scroll, and held
+movement is consumed before row selection; release commits only a changed order.
+Edge holding scrolls automatically. Cancellation, disabled actions, changed list
+membership/order or session/window identity discard the drag. Map tiles and other
+non-row content cannot begin a reorder. TalkBack rows expose Move up/down actions.
+
+Tabs use the existing `session.move_window` command and acknowledgment path.
+Pane commands bind `{session,window,id,before,blocks,requestId}`. Native code reads
+a fresh view and requires the exact expected terminal-pane order in that window,
+then computes swaps to insert the pane before the target (empty before means the
+end). Each `session.swap_blocks` receives explicit `session_id`, `block_id` and
+`other_block_id`. The server's revision-8 schema specifies that swaps retain split
+IDs/ratios, floating layers and window order. Programs keep their block IDs. Focus
+can follow a moved program on the server; the phone never navigates, takes control
+or sends a resize as part of reordering.
+
+The UI projects the pending pane list order while retaining reported geometry;
+the refreshed server view supplies the actual updated map. `paneMoveId` acknowledges
+success or failure so that stale optimistic state is discarded. Swaps are sent
+sequentially and never automatically replayed. A failed sequence refreshes the
+actual layout and reports a potentially partial move, rather than retrying an
+operation that might undo an already-applied swap. This is server layout order,
+not a separate phone-only preference.
 
 ## Read-only carousel previews and session details
 
@@ -141,6 +212,13 @@ a record from an exited program cannot incorrectly label the next program.
 Reports remain program-supplied hints, not trusted identity. The app selects
 bundled vector assets by known identifiers. No server-supplied image is fetched
 or executed. Unknown programs fall back to a generic terminal symbol.
+
+Cloudflare is recognized from `cloudflared` executable names/paths and the
+`cloudflare` app identifier. Header/tab tiles use the supplied catalog Cloudflare
+vector; inline program glyphs use its retained monochrome SVG. Display titles
+alone never choose program icons. The layout map uses the same program artwork
+as the list, without titles or numbers. Unknown metadata uses the existing
+neutral loading tile until an actual program is known.
 
 A separate authenticated, labelled `rex-android-programs` helper reads metadata
 for the selected session's panes. It never owns blocks, writes input, resizes,

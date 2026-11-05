@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-05",
+  "change": "Cleaner New pane direction menu and removal of layout heading",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 63,
+  "apk": "dist/Rexling-2026.11.05-build63-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "bcb170ec11f4fdb3e697a6ad3ef464e5c20a37f16b8e18b42f01cf30444e6b60",
+  "checks": {
+    "android_ui_checks_passed": 19,
+    "panel_checks_passed": 14,
+    "map_checks_passed": 5,
+    "both_direction_choices_preserve_panel_selected_anchor": true,
+    "menu_dismissal_does_not_create_or_navigate": true,
+    "anchor_removal_closes_open_direction_menu": true,
+    "five_panes_and_actions_visible": true,
+    "light_dark_direction_menu_and_footer_inspected": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Panes footer matches Tabs with two buttons: Open pane and New pane. New pane opens a compact bordered, shadowless menu offering right/below split previews. Opening and dismissal do not mutate server resources; direction choice keeps the explicit selected anchor. Menu state resets on target/tab/section/availability changes. Tab title and reserved heading space above the layout are removed; the floating visibility control remains only when needed.",
+  "phone_install": "Installed release 63 on S22+ using the updated user-provided wireless ADB connection; installed checksum matches; settings preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f"
+}

@@ -1,0 +1,1 @@
+Alpha-mask cleanup only: remove remaining white/gray checkerboard fragments and stray pixels outside the dinosaur, especially under the jaw beside the cream neck and between hands. Preserve all subject details, framing, proportions and opaque highlights. Keep the same square canvas and genuine transparent alpha.

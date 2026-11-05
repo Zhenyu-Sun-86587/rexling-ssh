@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-05",
+  "change": "Smaller list number circles and Cloudflare program recognition",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 60,
+  "apk": "dist/Rexling-2026.11.05-build60-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "3c24b0b1a040ac99a28f7a5414e14c82e1c632149c843947a673ef4bed46ff64",
+  "checks": {
+    "jvm_tests_passed": 156,
+    "optional_jvm_benchmark_skipped": 1,
+    "android_ui_checks_passed": 17,
+    "catalog_vectors_compared": 11,
+    "cloudflare_mean_premultiplied_channel_difference_255": 0.29898821721311475,
+    "light_dark_small_badges_inspected": true,
+    "release_build_lint_signature_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true,
+    "cloudflare_header_and_tab_stacks_visually_inspected": true
+  },
+  "behavior": "List number-circle diameter is 18 dp, down from 24 dp; map badges are unchanged. Cloudflared executable paths/names and cloudflare app identifiers choose the retained Superlogical Cloudflare artwork. Header/tab tiles use native cached vectors, inline icons use the supplied glyph. No guessing from display titles or partial helper names. Native process collection is unchanged.",
+  "phone_install": "Installed release 60 on S22+ RFCT21390SD via USB; installed checksum matches; settings preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f"
+}

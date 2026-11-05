@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-05",
+  "change": "Hold-and-drag tab and pane sorting with server layout synchronization",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 64,
+  "apk": "dist/Rexling-2026.11.05-build64-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "45aefbd87acc12b5103f9a2b7e1d343da5914385b6815e36e2bfce198978fe4f",
+  "checks": {
+    "jvm_tests_passed": 157,
+    "optional_jvm_benchmark_skipped": 1,
+    "rust_tests_passed": 58,
+    "live_opt_in_rust_tests_ignored": 15,
+    "android_ui_checks_passed": 32,
+    "vertical_tab_and_pane_drags_commit_once_without_navigation": true,
+    "edge_scroll_cancellation_disabled_map_and_accessible_moves_passed": true,
+    "isolated_rpc_peer_verifies_swaps_and_preserved_geometry_control_selection": true,
+    "stale_layout_rejected_before_swaps": true,
+    "partial_failure_refreshes_acknowledges_and_never_replays": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Both panel lists reorder by hold-and-drag with automatic edge scrolling and accessibility Move up/down actions. Selection/navigation stays unchanged. Tabs sync through session.move_window. Panes sync through sequential session.swap_blocks with a fresh expected-order guard, retaining block identities and existing split/floating geometry. The UI projects a pending list order until an explicit success/failure acknowledgment; server view updates map positions. Partial failure is reported/refreshed without replay.",
+  "phone_install": "Installed release 64 on S22+ RFCT21390SD via USB; installed checksum matches; settings preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f"
+}

@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-05",
+  "change": "Matching circular pane-number badges in map and list",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 59,
+  "apk": "dist/Rexling-2026.11.05-build59-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "0f999a4d4c0d1b346efba3f6c5b75121f5a0150e04c8dfeb6243390daa9b910e",
+  "checks": {
+    "existing_android_ui_checks_passed": 14,
+    "light_dark_panels_inspected": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Shared circular number badges replace plain numbers in the compact map and inline number prefixes in the pane list. Selected badges use primary fill and on-primary text; other badges use a subtle outline. Map badges shrink to fit small tiles. Pane numbers are included in list state descriptions; decorative badge text does not duplicate accessibility labels. Selection, explicit Open and split targeting are unchanged.",
+  "phone_install": "Installed release 59 on S22+ RFCT21390SD via USB; installed checksum matches; settings preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f"
+}

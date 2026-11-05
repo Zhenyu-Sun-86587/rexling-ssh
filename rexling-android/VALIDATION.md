@@ -2560,3 +2560,273 @@ No phone installation: the user confirmed the phone is disconnected. Prepared
 Rexling-2026.11.05-build54-f9ec92ddee-modified-arm64-release.apk for sharing.
 Source rename remains uncommitted based on f9ec92ddee.
 See validation/rexling-rename-2026-11-05.json.
+
+
+## Overflow menu icons — 2026-11-05
+
+Added shared 19 dp outline icons to terminal, tab, session and server overflow
+actions. Theme actions show the target sun/moon glyph. Icons inherit Material
+menu colors, including disabled dimming; session closing retains its error
+color. Glyphs are decorative and do not duplicate TalkBack labels. Existing
+actions, callbacks and pane-creation behavior are unchanged.
+
+Three existing Android checks passed: quick-theme switching, the rename-session
+menu and holding/releasing a tab's move/close menu. No new tests were added for
+this cosmetic change. Inspected the actual MainActivity menu in light/dark
+modes with disabled actions on the reset disposable emulator. Release build,
+lint, static APK signature/release/profile/alignment checks and whitespace
+checks passed. No live user terminal was changed. Split-direction selection
+remains a UI proposal. Source is uncommitted based on 4d93bcda9f.
+See validation/overflow-menu-icons-2026-11-05.json.
+
+Installed release 55 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app data preserved and app not launched.
+
+
+## Pane split direction and compact menus — 2026-11-05
+
+The Panes panel now offers Split right and Split below, with diagrams highlighting
+the new half. Right maps to horizontal and Below to vertical, relative to the
+selected pane. Both use side:after, the default shell and focus:false. Existing
+phone presentation stays one pane at a time. Empty, busy and missing-anchor states
+disable both actions. Native code validates the direction before creation starts
+and retains horizontal behavior for legacy requests that omit it. Stale session
+and anchor guards remain in place; no lost-response creation retry is added.
+
+Overflow icons and labels now share an 8 dp gap, retaining touch targets,
+disabled states, destructive colors and single accessibility labels.
+
+151 JVM tests passed (one optional benchmark skipped), 50 Rust checks passed
+(15 live opt-in cases ignored), and ten Android checks passed. Coverage includes
+both split callbacks, exact native wire arguments, legacy default and invalid
+directions, stale-target rejection before creation, empty/busy/missing-anchor
+states, pane navigation and existing menu callbacks. Inspected split panels and
+actual MainActivity menus in light/dark modes on the disposable emulator. Build,
+lint, static APK signature/release/ABI/profile/alignment and whitespace checks
+passed. No live server session or pane was created during verification.
+Source is uncommitted based on 4d93bcda9f.
+See validation/pane-split-menu-spacing-2026-11-05.json.
+
+Installed release 56 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app settings preserved and app not launched.
+
+
+## Pane layout map — 2026-11-05
+
+Panes now shows the server window's current geometry above its pane list. JNI
+retains terminal leaf rectangles from session.view; coordinates are fractions
+of the whole window, including nested splits and floating layers. Android clips
+to the window, preserves layer order and highlights the active pane. Tile icons
+and titles identify programs; tapping a usable tile uses existing pane selection.
+The full list remains available for tiny tiles. Missing or incomplete geometry
+shows Layout unavailable, rather than a guessed arrangement. Layout-only updates
+preserve selection and program metadata. No polling or server mutation is added.
+
+155 JVM tests passed (one optional benchmark skipped), 53 Rust checks passed
+(15 live opt-in cases ignored), and 14 Android checks passed. New coverage checks
+nested split proportions, floating window coordinates, malformed and offscreen
+rectangles, unknown IDs, layer ordering, geometry refresh without selection,
+exact tile selection, busy-state disabling and legacy metadata fallback.
+Inspected light/dark full panels and nested/updated maps on the isolated API 37
+emulator. Build, lint, static APK signature/release/ABI/profile/alignment and
+whitespace checks passed. Geometry was verified against the cached API revision
+8 schema and synthetic fixtures; no live user session or pane was changed.
+Source remains uncommitted based on 4d93bcda9f.
+See validation/pane-layout-map-2026-11-05.json.
+
+Installed release 57 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app settings preserved and app not launched.
+
+
+## Panel selection and explicit navigation — 2026-11-05
+
+Rows and layout tiles now select a local target inside the panel. Open tab and
+Open pane perform navigation, consistently across both sections. Selecting a tab
+also lets its panes be managed without opening the tab. Viewing captions identify
+the actual open tab/pane independently of selection. The layout map is reduced
+from 132 to 88 dp and uses numbers matching the full pane list.
+
+Split actions send the selected pane's explicit anchor, even when another pane
+is open. Kotlin and native code validate that it belongs to the current session's
+known panes. Session mismatch, absent/removed anchors, invalid directions and busy
+creation are rejected. Selection itself sends no commands; splitting remains a
+single mutation with no automatic retry. Successful creation opens the new pane,
+as before. Removed targets disable Open/split instead of targeting another pane.
+
+155 JVM tests passed (one optional benchmark skipped), 54 Rust checks passed
+(15 live opt-in cases ignored), and 14 Android checks passed. The updated UI
+checks cover viewing pane 1 while selecting/splitting pane 3, explicit Open in
+both sections, managing panes in another tab, map/list selection synchronization,
+target removal, busy/empty states and missing layout. Native tests verify inactive
+anchor arguments and stale/invalid rejection. Inspected numbered map and selected
+target panels in light/dark themes on the isolated emulator. Release build, lint,
+static signature/release/profile/alignment and whitespace checks passed. No live
+user pane or session was changed during verification.
+Source remains uncommitted based on 4d93bcda9f.
+See validation/pane-selection-navigation-2026-11-05.json.
+
+Installed release 58 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app settings preserved and app not launched.
+
+
+## Circular pane numbers — 2026-11-05
+
+The map and list share circular pane-number badges, replacing bare map numbers
+and the list's number prefix. Selected badges use a primary fill; other badges
+have a subtle outline. Map badges shrink to fit small tiles. List state
+descriptions include the pane number, while decorative badge text stays silent.
+Selection, explicit navigation and split targeting are unchanged.
+
+The existing 14 map/switcher Android checks passed on the isolated emulator.
+No new tests were added for this cosmetic change. Inspected light/dark panels
+with the map and list selecting the same pane. Release build, lint, static APK
+signature/release/profile/alignment and whitespace checks passed.
+See validation/pane-number-circles-2026-11-05.json.
+
+Installed release 59 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app settings preserved and app not launched.
+
+
+## Smaller pane badges and Cloudflare identification — 2026-11-05
+
+Pane-list circles are reduced from 24 to 18 dp to match title-text scale; map
+badges stay at their existing size. Added explicit cloudflared executable/path
+and cloudflare app-identifier recognition. It uses the user-supplied Superlogical
+Cloudflare tile in header/tab stacks and its retained glyph for inline icons.
+The existing vector compiler preserves the catalog artwork and native drawing
+cache. Asset sources and checksums are retained. Titles do not select icons;
+unrelated helper names retain generic fallback. Native process collection is
+unchanged; the missing Android mapping caused the reported fallback.
+
+156 JVM tests passed (one optional benchmark skipped), including executable/path,
+app identifier, metadata parsing and false-positive cases. Seventeen Android
+checks passed on the isolated emulator, covering all eleven catalog vectors,
+program stack sizing, map selection and pane management. Cloudflare's mean
+premultiplied pixel-channel difference from the supplied reference is 0.299/255.
+Inspected smaller list badges in light/dark panels. Release build, lint, static
+signature/release/profile/alignment and whitespace checks passed. No live user
+terminal or pane was changed during verification.
+See validation/cloudflare-small-pane-badges-2026-11-05.json.
+
+Installed release 60 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app settings preserved and app not launched.
+
+
+## Icon-only pane map, new launcher and flush underline — 2026-11-05
+
+Removed pane numbers from the map, list and split caption. Map tiles now show
+small single program icons using the same cached native vector commands as
+header/tab stacks, at up to 26 dp wide with aspect ratio preserved. Small tiles
+scale the icon to fit. Program-title accessibility labels replace numeric labels.
+Panel selection, explicit Open and inactive-pane splitting stay unchanged.
+
+The latest user-supplied rounded paper dinosaur replaces launcher/README artwork.
+Built-in image_gen removed the baked-in checkerboard and cleaned the alpha mask;
+source, foreground hashes and preparation instructions are retained. Android
+keeps a white adaptive background. Left/right insets are 18%, top 26%, bottom
+10%, preserving square artwork while shifting it down to fill the mask bottom.
+The monochrome notification/themed mark is unchanged. The focused launcher
+test's stale pre-rename label expectation was corrected to Rexling.
+
+The 49 dp dock previously centered 48 dp tab items, leaving a half-dp gap below
+their underlines. Items now use the dock's full 49 dp height, placing the active
+underline directly against the keyboard divider without moving the divider.
+
+Twenty focused Android checks passed in two batches: fourteen map/panel checks,
+then six launcher, adaptive-tabs, startup and tab-menu checks. The bottom-mask
+foreground coverage check passes with no gaps. Inspected launcher output,
+icon-only panels in light/dark themes, and the tab underline at the dock edge.
+Release build, lint, static signature/release/profile/alignment and whitespace
+checks passed. No live user terminal or pane was changed during verification.
+See validation/icon-layout-launcher-2026-11-05.json.
+
+Installed release 61 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; app settings preserved and app not launched.
+
+
+## Compact tab/pane panel and floating overlays — 2026-11-05
+
+Combined section switching, counts and Close in a single header row, with a
+16 dp drag handle area. Removed duplicate panel/context headings; the selected
+tab's title now labels its map. Rows are at least 56 dp, with smaller vector
+stacks, tighter padding and 4 dp separation. Pane Open and split actions share
+one bottom row with 48 dp targets. The panel accommodates more rows before
+scrolling while retaining section swipes and explicit navigation.
+
+Floating rectangles retain actual positions and layer order, with translucent
+fill and dashed outlines. Hide floating removes only the map overlays so touch
+can select tiled panes underneath; Show floating restores them. These controls
+send no server commands and do not change selection. Floating panes remain in
+the list with a Floating caption. Hidden state survives geometry refreshes in
+the same window, and visibility can be inspected while terminal actions are busy.
+
+Seventeen Android checks passed: twelve panel cases and five map cases. New
+coverage checks all five pane rows with map/actions visible, touch selection of
+a covered tiled pane after hiding two overlapping floating layers, topmost
+floating selection after restoration, unchanged selection on visibility toggles,
+and read-only inspection during geometry updates. Inspected light/dark compact
+panels and floating layers shown/hidden on the isolated emulator. Release build,
+lint, static signature/release/profile/alignment and whitespace checks passed.
+No live user session or pane was changed during verification.
+See validation/compact-floating-panel-2026-11-05.json.
+
+Installed release 62 on the S22+ through the user-provided wireless ADB endpoint.
+Installed checksum matches validation/apk.json; settings preserved and app not
+launched.
+
+
+## New pane direction menu and no layout heading — 2026-11-05
+
+Replaced the two split buttons with a single New pane button alongside Open
+pane, matching the Tabs footer. New pane opens a compact, bordered direction
+menu with Split right and Split below previews. The menu has no drop shadow.
+Opening/dismissing sends no command; choosing a direction still binds the
+panel-selected anchor. It resets when target, tab, section or action availability
+changes. Removed the tab title above the layout and its reserved space. Floating
+visibility controls appear alone only when floating layers exist.
+
+Nineteen Android checks passed: fourteen panel and five map cases. Updated
+coverage exercises both direction choices, splitting an inactive pane, menu
+cancellation without navigation/creation, anchor removal while the menu is open,
+busy/empty/stale targets and five-pane visibility. Inspected menu/footer light
+and dark captures. Release build, lint, static signature/release/profile/alignment
+and whitespace checks passed. No live user pane was changed during verification.
+See validation/new-pane-direction-menu-2026-11-05.json.
+
+Installed release 63 on the S22+ through the updated user-provided wireless ADB
+endpoint. Installed checksum matches validation/apk.json; settings preserved and
+app not launched.
+
+
+## Hold-and-drag tab/pane sorting — 2026-11-05
+
+Both panel lists support held vertical dragging, animated row placement and
+automatic edge scrolling. Drop commits once; ordinary scrolls, hold/release,
+cancellation, changed sessions/lists and disabled actions do not reorder or
+navigate. Non-row map content cannot start a reorder. Rows expose Move up/down
+accessibility actions. The existing horizontal tab drag shares the guarded
+gesture detector and retains its behavior.
+
+Tabs call the existing synced move-window path. As requested, pane sorting also
+changes the server layout: a fresh view must match the expected window pane
+order before sequential explicit session.swap_blocks calls rearrange programs
+through existing positions. Split geometry, floating-layer bounds and block IDs
+are preserved. The actor never opens, owns or resizes a terminal for reordering.
+Pending UI order is acknowledged on both success/failure; server metadata updates
+the actual map. Failed sequences refresh the actual possibly partial order and
+are never replayed automatically. Native source-schema inspection was read-only;
+no user session/pane was reordered during verification.
+
+157 JVM tests passed (one optional benchmark skipped), 58 Rust checks passed
+(15 live opt-in cases ignored), and 32 Android checks passed. New isolated
+WebSocket-peer tests exercise real control RPCs, tiled/floating swaps, retained
+selection/ownership/program metadata, stale-order rejection before mutation and
+partial failure with acknowledgment/no replay. UI coverage includes held tab/pane
+drags, edge scrolling to offscreen panes, cancellation, session change, disabled
+actions, map rejection and accessibility moves; existing panel/map/tab-strip
+regressions also pass. Release build, lint, static APK signature/release/profile/
+alignment and whitespace checks passed.
+See validation/panel-drag-reordering-2026-11-05.json.
+
+Installed release 64 on S22+ RFCT21390SD via USB. Installed checksum matches
+validation/apk.json; settings preserved and app not launched.

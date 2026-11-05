@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
         ProgramKind.GIT -> R.drawable.ic_program_git
         ProgramKind.PYTHON -> R.drawable.ic_program_python
         ProgramKind.NODE -> R.drawable.ic_program_nodedotjs
+        ProgramKind.CLOUDFLARE -> R.drawable.ic_program_cloudflare
         else -> null
     }
     val tint = color ?: when(program.kind) {
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
         ProgramKind.GIT -> Color(if(dark) 0xfff2876c else 0xffc7462b)
         ProgramKind.PYTHON -> Color(if(dark) 0xff8cbde5 else 0xff326f9f)
         ProgramKind.NODE -> Color(if(dark) 0xff8bc77a else 0xff477b32)
+        ProgramKind.CLOUDFLARE -> Color(if(dark) 0xffffb85c else 0xffb85b00)
         else -> MaterialTheme.colorScheme.onSurface
     }
     if(resource != null) Icon(painterResource(resource), program.label, modifier.size(16.dp), tint)

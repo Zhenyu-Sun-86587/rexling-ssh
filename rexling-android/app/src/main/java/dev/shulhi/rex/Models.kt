@@ -6,7 +6,7 @@ import org.json.JSONObject
 data class SessionItem(val id: String, val label: String)
 data class SessionDetail(val attachment: String, val tabs: Int, val panes: Int)
 data class BlockItem(val id: String, val label: String)
-data class WindowItem(val id: String, val label: String, val blocks: List<BlockItem>)
+data class WindowItem(val id: String, val label: String, val blocks: List<BlockItem>,val layout: List<PanePlacement> = emptyList())
 data class TerminalScroll(val total: Long=0,val offset: Long=0,val visible: Long=0) {
     val available: Long get()=(total-visible).coerceAtLeast(0)
     val below: Long get()=(available-offset).coerceAtLeast(0)
@@ -45,7 +45,7 @@ data class AppState(
     val identity: String = "", val error: String = "", val notice: String = "",
     val sessions: List<SessionItem> = emptyList(), val windows: List<WindowItem> = emptyList(),
     val selectedSession: String = "", val selectedBlock: String = "", val controlled: Boolean = false,
-    val screen: TerminalScreen? = null, val creating: Boolean = false, val navigationId: Long = 0,val tabMoveId: Long=0,val connectionEpoch: Long=0,val otherOwner: Boolean=false,val attentionCount: Int=0,
+    val screen: TerminalScreen? = null, val creating: Boolean = false, val navigationId: Long = 0,val tabMoveId: Long=0,val paneMoveId: Long=0,val connectionEpoch: Long=0,val otherOwner: Boolean=false,val attentionCount: Int=0,
     internal val cachedPrograms: Set<String> = emptySet(),
 ) {
     val connected: Boolean get() = phase == "connected"
@@ -68,7 +68,7 @@ data class AppState(
                 previewFrames = root.optJSONObject("previews")?.let { frames -> frames.keys().asSequence().associateWith { TerminalScreen.parse(frames.getJSONObject(it)) } } ?: emptyMap(),
                 sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->
                     val d=details.getJSONObject(key);SessionDetail(d.optString("attachment"),d.optInt("tabs"),d.optInt("panes")) } } ?: emptyMap(),
-                revision = root.optLong("revision"), navigationId = root.optLong("navigationId"),tabMoveId=root.optLong("tabMoveId"),connectionEpoch=root.optLong("connectionEpoch"),otherOwner=root.optBoolean("otherOwner"),attentionCount=root.optInt("attentionCount").coerceIn(0,1024), phase = root.optString("phase", "disconnected"),
+                revision = root.optLong("revision"), navigationId = root.optLong("navigationId"),tabMoveId=root.optLong("tabMoveId"),paneMoveId=root.optLong("paneMoveId"),connectionEpoch=root.optLong("connectionEpoch"),otherOwner=root.optBoolean("otherOwner"),attentionCount=root.optInt("attentionCount").coerceIn(0,1024), phase = root.optString("phase", "disconnected"),
                 endpoint = root.optString("endpoint"), identity = root.optString("identity"),
                 error = root.optString("error"), notice = root.optString("notice"),
                 sessions = root.optJSONArray("sessions").objects { value ->
@@ -76,9 +76,13 @@ data class AppState(
                 },
                 windows = root.optJSONArray("windows").objects { value ->
                     val w = value as JSONObject
-                    WindowItem(w.optString("id"), w.optString("label", "Window"), w.optJSONArray("blocks").objects { item ->
+                    val blocks=w.optJSONArray("blocks").objects { item ->
                         val b = item as JSONObject; BlockItem(b.getString("id"), b.optString("label", "Terminal"))
-                    })
+                    }
+                    val ids=blocks.mapTo(hashSetOf()) {it.id}
+                    val layout=w.optJSONArray("layout").objects {PanePlacement.parse(it as? JSONObject)}.filterNotNull()
+                        .filter {it.id in ids}.sortedBy {it.layer}.asReversed().distinctBy {it.id}.asReversed()
+                    WindowItem(w.optString("id"), w.optString("label", "Window"),blocks,layout)
                 },
                 selectedSession = root.optString("selectedSession"), selectedBlock = root.optString("selectedBlock"),
                 controlled = root.optBoolean("controlled"), creating = root.optBoolean("creating"), screen = root.optJSONObject("screen")?.let(TerminalScreen::parse),

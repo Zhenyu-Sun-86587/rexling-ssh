@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-@Composable private fun PaneProgramTile(program: ProgramIdentity, modifier: Modifier, large: Boolean,rotation: Float) {
+@Composable internal fun PaneProgramTile(program: ProgramIdentity, modifier: Modifier, large: Boolean,rotation: Float) {
     if(program.pending) {
         val shape=RoundedCornerShape(if(large) 7.dp else 5.dp)
         Box(modifier.graphicsLayer {rotationZ=rotation}.clip(shape)
@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
         ProgramKind.GIT -> "git"
         ProgramKind.PYTHON -> "python"
         ProgramKind.NODE -> "node"
+        ProgramKind.CLOUDFLARE -> "cloudflare"
         ProgramKind.TERMINAL -> "shell"
         ProgramKind.MONITOR -> if(program.executable=="btop") "btop" else "htop"
         else -> null

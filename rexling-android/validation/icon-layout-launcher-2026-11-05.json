@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-05",
+  "change": "Icon-only pane layout, latest dinosaur launcher and flush active-tab underline",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 61,
+  "apk": "dist/Rexling-2026.11.05-build61-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "d8368b2d980a8eb80f38b63c4037bd74b05ae34a12bab450339341dd941c1dea",
+  "checks": {
+    "android_ui_checks_passed": 20,
+    "map_panel_checks_passed": 14,
+    "launcher_tabs_startup_menu_checks_passed": 6,
+    "launcher_bottom_mask_has_no_foreground_gaps": true,
+    "transparent_artwork_and_bottom_filled_launcher_inspected": true,
+    "icon_only_map_light_dark_inspected": true,
+    "active_underline_reaches_dock_bottom": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Pane map uses small cached vector program tiles, without numbers or titles. List numbers and numeric split captions are removed. Selection and explicit navigation are unchanged. The new user-supplied paper dinosaur has its checkerboard extracted to real transparency with built-in image_gen and alpha cleanup. Square artwork is shifted downward with 18/26/18/10 percent launcher insets to fill the mask bottom. Tab item height now matches its 49 dp dock, removing the previous half-dp gap above the keyboard divider.",
+  "phone_install": "Installed release 61 on S22+ RFCT21390SD via USB; installed checksum matches; settings preserved; app not launched.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f"
+}

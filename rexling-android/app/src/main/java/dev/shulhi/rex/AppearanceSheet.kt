@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 @Composable internal fun QuickThemeMenuItem(dark: Boolean,onDark: (Boolean)->Unit) {
-    DropdownMenuItem(text={Text(if(dark) "Toggle Light theme" else "Toggle Dark theme")},onClick={onDark(!dark)})
+    TerminalMenuItem(if(dark) "Toggle Light theme" else "Toggle Dark theme",if(dark) ChromeIcon.SUN else ChromeIcon.MOON,onClick={onDark(!dark)})
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

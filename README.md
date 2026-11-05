@@ -106,9 +106,28 @@ back to an existing pane.
 Check **⋮ → Preferences → About Rexling** for the date-based app version, build number and
 commit; **Copy build info** copies these details for bug reports.
 The bottom dock switches tabs and opens Activity. Its tab/pane button opens a
-switcher directly: tap **Tabs** or **Panes**, or swipe between them. Select a row
-to switch, use **New tab** or **New pane** in its section, or close an item with
+switcher directly: tap **Tabs** or **Panes**, or swipe between them. **Panes**
+shows a map of the current layout on the server, including nested splits and
+their proportions. Small vector program icons identify panes in the compact map. Tapping a
+tile or row selects a target inside the panel; **Open pane** navigates to it.
+Floating panes have dashed outlines. **Hide floating** reveals panes underneath;
+**Show floating** restores the overlays. This changes only the map, and floating
+panes stay available in the list. The compact header combines section switching
+and Close; **Open pane** and **New pane** sit together below the list. **New pane**
+offers **Split right** and **Split below** in a compact direction menu.
+The Tabs section uses the same selection and **Open tab** pattern. A “Viewing”
+caption identifies the currently open tab/pane independently of the selection.
+**Split right** and **Split below** act on the selected target, without first
+opening it, and show a preview of the new half. These
+split the selected pane on the server; the phone continues showing one pane at
+a time. Use **New tab** or **New pane** in its section, or close an item with
 its × button and confirmation. Panes lists the panes in the current tab.
+Hold and drag a row in either section to reorder it; hold near an edge to scroll
+farther. Reordering does not open or select the dragged item. Tab order syncs
+through Rex. Pane sorting moves programs through the server's existing layout
+positions, preserving split sizes and floating-layer bounds. The layout map and
+pane swipe order follow the updated server arrangement. Move up/down actions are
+also available through accessibility controls.
 Tabs fit their icon and title up to a width cap, giving the active title
 priority. Short titles leave room for others; inactive tabs become compact
 icons when space is tight. A single tab can use all the space before the

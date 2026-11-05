@@ -180,7 +180,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
         client.openPreferredTerminal();client.rememberCurrentTerminal()
     }
-    LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock) {
+    LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock,blocks) {
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
         if(index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
     }
@@ -208,16 +208,16 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             HorizontalDivider(Modifier.padding(vertical=6.dp))
                             OwnershipMenuItem(controlled,ready&&client.hasScreen) {menu=false;if(controlled) client.releaseControl() else client.takeControl()}
                             QuickThemeMenuItem(palette.dark) {dark->menu=false;model.changeAppearance(if(dark) Appearance.DARK else Appearance.LIGHT)}
-                            DropdownMenuItem(text={Text("Preferences")},onClick={menu=false;preferencesOpen=true})
-                            DropdownMenuItem(text={Text("Copy viewport")},enabled=client.hasScreen,onClick={
+                            TerminalMenuItem("Preferences",ChromeIcon.SETTINGS,onClick={menu=false;preferencesOpen=true})
+                            TerminalMenuItem("Copy viewport",ChromeIcon.COPY,enabled=client.hasScreen,onClick={
                                 menu=false;client.terminal.value?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
                             })
-                            DropdownMenuItem(text={Text("Paste")},enabled=controlled,onClick={
+                            TerminalMenuItem("Paste",ChromeIcon.PASTE,enabled=controlled,onClick={
                                 menu=false;pasteClipboard()
                             })
-                            DropdownMenuItem(text={Text("Attach image")},enabled=controlled && model.images.state==null,onClick={menu=false;chooseImage()})
-                            DropdownMenuItem(text={Text("Servers · ${model.connectedCount} connected")},onClick={menu=false;servers=true})
-                            DropdownMenuItem(text={Text("Refresh sessions")},enabled=state.connected,onClick={menu=false;client.refresh()})
+                            TerminalMenuItem("Attach image",ChromeIcon.IMAGE,enabled=controlled && model.images.state==null,onClick={menu=false;chooseImage()})
+                            TerminalMenuItem("Servers · ${model.connectedCount} connected",ChromeIcon.SERVER,onClick={menu=false;servers=true})
+                            TerminalMenuItem("Refresh sessions",ChromeIcon.REFRESH,enabled=state.connected,onClick={menu=false;client.refresh()})
                         }
                     }
                 })
@@ -306,11 +306,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     if(servers) ServersSheet(model){servers=false}
     if(picker=="tabs" || picker=="panes") TabPaneSwitcher(windows,window?.id.orEmpty(),chosen,
         state.programs,state.titles,state.directories,client::tabPaneIndex,ready,
-        canCreateTab=ready && state.selectedSession.isNotBlank(),canCreatePane=ready && state.selectedBlock.isNotBlank(),
+        canCreateTab=ready && state.selectedSession.isNotBlank(),canCreatePane=ready && state.selectedSession.isNotBlank(),
         onTab={picker="";client.selectWindow(it)},onPane={picker="";client.selectBlock(it)},
-        onNewTab={picker="";client.createTab()},onNewPane={picker="";client.createPane()},
+        onNewTab={picker="";client.createTab()},onNewPane={anchor,split->picker="";client.createPane(split,anchor)},
         onCloseTab={picker="";closeTarget=closeTabTarget(it)},onClosePane={picker="";closeTarget=closePaneTarget(it)},
-        onClose={picker=""},initialPage=if(picker=="panes") 1 else 0)
+        onClose={picker=""},initialPage=if(picker=="panes") 1 else 0,onMoveTab=client::moveTab,onMovePane=client::movePane,reorderKey=currentSessionKey)
     closeTarget?.let {target->
         AlertDialog(onDismissRequest={closeTarget=null},title={Text(if(target.tab) "Close tab?" else "Close pane?")},
             text={Text(if(target.tab) "Close “${target.label}”? This ends every program in its ${target.blocks.size} pane${if(target.blocks.size==1) "" else "s"}."

@@ -57,9 +57,9 @@ import androidx.compose.ui.unit.sp
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Server actions for ${server.label}") {menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                            DropdownMenuItem(text={Text("Edit")},onClick={menu=false;editing=server;editor=true})
-                            if(status.maintained) DropdownMenuItem(text={Text("Disconnect")},onClick={menu=false;model.disconnectServer(server.id)})
-                            DropdownMenuItem(text={Text("Forget server")},onClick={menu=false;model.forgetServer(server.id)})
+                            TerminalMenuItem("Edit",ChromeIcon.EDIT,onClick={menu=false;editing=server;editor=true})
+                            if(status.maintained) TerminalMenuItem("Disconnect",ChromeIcon.UNPLUG,onClick={menu=false;model.disconnectServer(server.id)})
+                            TerminalMenuItem("Forget server",ChromeIcon.DELETE,onClick={menu=false;model.forgetServer(server.id)})
                         }
                     }
                 }

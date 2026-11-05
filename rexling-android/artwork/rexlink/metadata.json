@@ -1,8 +1,8 @@
 {
-  "source": "Latest user-selected close-up blue paper dinosaur from Downloads, with baked-in checkerboard",
-  "preparation": "Checkerboard removed using the built-in image tool in background-extraction edit mode. Transparent alpha is retained; Android supplies a white adaptive launcher background. Existing monochrome notification/themed mark retained.",
-  "source_sha256": "1a09a066347ac359a726a287249cda2615056cea209440d1a509a7d8ff16979a",
-  "foreground_sha256": "9725dd5e209e7f8f728d381515f931af38e48c257ca8ab3e99ea0a7a2a2660b5",
+  "source": "Latest user-supplied rounded blue paper dinosaur on a baked-in checkerboard, 2026-11-05",
+  "preparation": "Checkerboard extracted with built-in image_gen, followed by alpha cleanup. Real transparency retained. Android supplies the existing white adaptive background; foreground keeps square aspect ratio and is shifted downward to fill the mask bottom.",
+  "source_sha256": "e4ba37c7b8236405acb53a7de3b51021f7d30bed9ea9215699cbfefcd6a83f01",
+  "foreground_sha256": "b2fd3875ffb7d1c687f98a383ff8cf33619b9461fa8e01de77e95701fe2767c4",
   "foreground": "app/src/main/res/drawable-nodpi/rexlink_dinosaur.png",
   "notification": "app/src/main/res/drawable/ic_notification.xml",
   "tool": "built-in image_gen",
@@ -11,10 +11,11 @@
     "background": "white",
     "insets_percent": {
       "left": 18,
-      "top": 22,
+      "top": 26,
       "right": 18,
-      "bottom": 14
+      "bottom": 10
     },
     "framing": "Portrait fills the bottom edge; side cropping is intentional; artwork keeps its square aspect ratio."
-  }
+  },
+  "cleanup_prompt": "artwork/rexlink/cleanup-prompt.txt"
 }

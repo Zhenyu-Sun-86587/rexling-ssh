@@ -64,8 +64,8 @@ import kotlin.math.roundToInt
             Box {
                 ChromeButton(ChromeIcon.MORE,"Session actions for ${target.session.label} on ${target.server.label}",!closing){menu=true}
                 DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                    DropdownMenuItem(text={Text("Rename session")},onClick={menu=false;onRename()})
-                    DropdownMenuItem(text={Text("Close session",color=MaterialTheme.colorScheme.error)},onClick={menu=false;onClose()})
+                    TerminalMenuItem("Rename session",ChromeIcon.EDIT,onClick={menu=false;onRename()})
+                    TerminalMenuItem("Close session",ChromeIcon.CLOSE,destructive=true,onClick={menu=false;onClose()})
                 }
             }
         }

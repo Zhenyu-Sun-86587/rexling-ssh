@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-05",
+  "change": "Server-reported pane layout map in the Panes switcher",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 57,
+  "apk": "dist/Rexling-2026.11.05-build57-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "71b688399b50a022627d7ef7fbb05e091dd5ae484a072c6319347dd8efbe8f70",
+  "checks": {
+    "jvm_tests_passed": 155,
+    "optional_jvm_benchmark_skipped": 1,
+    "rust_tests_passed": 53,
+    "live_rust_tests_ignored": 15,
+    "android_ui_checks_passed": 14,
+    "nested_split_window_coordinates_and_ratios_preserved": true,
+    "floating_layers_clipped_and_sorted": true,
+    "invalid_unknown_and_offscreen_rectangles_ignored": true,
+    "layout_only_updates_preserve_selection_and_program_metadata": true,
+    "map_tap_selects_exact_pane_and_busy_map_is_disabled": true,
+    "missing_layout_retains_pane_list_and_split_actions": true,
+    "light_dark_nested_and_updated_layouts_inspected": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Panes shows the current server window layout above its list. JNI forwards terminal leaf rectangles in window fractions, preserving nested split ratios and layer order. The selected tile has a primary border and background; tile glyphs/titles identify programs. Usable tiles invoke the existing pane-selection callback. Layout-only changes do not select a pane or clear program metadata. Missing or incomplete geometry shows Layout unavailable, without guessing a grid. Full list and right/below split actions remain available. Phone terminal presentation remains one pane at a time.",
+  "test_notes": "155 JVM checks passed, one optional benchmark skipped. 53 Rust checks passed, 15 live opt-in checks ignored. Fourteen Android checks passed on the isolated API 37 emulator: three map checks, eight switcher checks and three menu regressions. Schema and synthetic nested/floating fixtures verify coordinates; no live user session or pane was changed. Light/dark full panels and nested/updated maps were visually inspected. No additional polling introduced.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f",
+  "phone_install": "Installed release 57 on S22+ RFCT21390SD via USB; installed checksum matches; app settings preserved; app not launched."
+}

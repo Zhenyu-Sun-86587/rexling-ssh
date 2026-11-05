@@ -9,6 +9,7 @@ import android.graphics.RectF
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -26,9 +27,9 @@ import kotlin.math.abs
 class ProgramTileRenderingTest {
     @get:Rule val ui=createComposeRule()
     private val context=InstrumentationRegistry.getInstrumentation().targetContext
-    private val names=listOf("codex","claude_code","neovim","vim","git","python","node","shell","htop","btop")
+    private val names=listOf("codex","claude_code","neovim","vim","git","python","node","shell","htop","btop","cloudflare")
     private val resources=listOf(R.drawable.catalog_codex,R.drawable.catalog_claude_code,R.drawable.catalog_neovim,R.drawable.catalog_vim,
-        R.drawable.catalog_git,R.drawable.catalog_python,R.drawable.catalog_node,R.drawable.catalog_shell,R.drawable.catalog_htop,R.drawable.catalog_btop)
+        R.drawable.catalog_git,R.drawable.catalog_python,R.drawable.catalog_node,R.drawable.catalog_shell,R.drawable.catalog_htop,R.drawable.catalog_btop,R.drawable.catalog_cloudflare)
     @Test fun nativeVectorsKeepTheCatalogGeometryColorsAndLogoMasks() {
         val atlas=Bitmap.createBitmap(976,384*names.size,Bitmap.Config.ARGB_8888);val out=Canvas(atlas)
         val deltas=mutableListOf<String>()
@@ -52,7 +53,7 @@ class ProgramTileRenderingTest {
         File(context.cacheDir,"program-tile-deltas.txt").writeText(deltas.joinToString("\n"))
     }
     @Test fun programStacksKeepTheirSlotsAcrossOneTwoAndThreePanesAtPhoneSizes() {
-        val programs=listOf(ProgramIdentity(ProgramKind.CODEX,"Codex"),ProgramIdentity(ProgramKind.CLAUDE,"Claude Code"),ProgramIdentity(ProgramKind.NEOVIM,"Neovim"))
+        val programs=listOf(ProgramIdentity.resolve(listOf("/opt/homebrew/bin/cloudflared")),ProgramIdentity(ProgramKind.CLAUDE,"Claude Code"),ProgramIdentity(ProgramKind.NEOVIM,"Neovim"))
         ui.setContent {MaterialTheme {Column {
             for(count in 1..3) Row(Modifier.testTag("row$count")) {
                 Box(Modifier.testTag("header$count")) {ProgramStack(programs.take(count),0,framed=true,fixedSlot=true)}
@@ -65,6 +66,9 @@ class ProgramTileRenderingTest {
             assertEquals(header.width,next.width,0f);assertEquals(header.height,next.height,0f)
         }
         ui.onNodeWithTag("header3").assertExists();ui.onNodeWithTag("tab3").assertExists()
+        ui.waitForIdle()
+        val stack=ui.onNodeWithTag("row3").captureToImage().asAndroidBitmap()
+        File(context.cacheDir,"cloudflare-stacks.png").outputStream().use {stack.compress(Bitmap.CompressFormat.PNG,100,it)}
     }
     @Test fun exportSmallSizeRotationComparisonForVisualReview() {
         val density=3f;val cellWidth=148;val cellHeight=110

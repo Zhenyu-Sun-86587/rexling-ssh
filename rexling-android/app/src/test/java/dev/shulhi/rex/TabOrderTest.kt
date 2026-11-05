@@ -24,4 +24,20 @@ class TabOrderTest {
         assertNull(pending.keepFor(state.copy(windows=windows.dropLast(1))))
         assertEquals("Renamed",pending.apply(state.copy(windows=windows.map {it.copy(label="Renamed")}))?.first()?.label)
     }
+    @Test fun paneOrderPreservesIdentityGeometryAndOtherTabsAndRollsBackOnAcknowledgement() {
+        val layout=listOf(PanePlacement("a",0f,0f,.5f,1f),PanePlacement("b",.5f,0f,.5f,1f))
+        val window=WindowItem("w","Work",listOf(BlockItem("a","A"),BlockItem("b","B")),layout)
+        val state=AppState(phase="connected",selectedSession="s",selectedBlock="a",controlled=true,windows=listOf(window,WindowItem("other","Other",emptyList())),paneMoveId=2)
+        val pending=PendingPaneOrder("s","w",4,listOf("b","a"))
+        val result=pending.apply(state,state.windows)!!
+        assertEquals(listOf("b","a"),result.first().blocks.map {it.id})
+        assertSame(layout,result.first().layout);assertSame(state.windows.last(),result.last())
+        assertEquals("a",state.selectedBlock);assertTrue(state.controlled)
+        assertNotNull(pending.keepFor(state.copy(paneMoveId=3)))
+        assertNull(pending.keepFor(state.copy(paneMoveId=4)))
+        assertNull(pending.keepFor(state.copy(selectedSession="another")))
+        assertNull(pending.keepFor(state.copy(phase="disconnected")))
+        assertNull(pending.keepFor(state.copy(windows=listOf(window.copy(blocks=window.blocks.take(1))))))
+        assertEquals(4L,AppState.parse("""{"paneMoveId":4}""").paneMoveId)
+    }
 }

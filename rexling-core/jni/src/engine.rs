@@ -90,6 +90,52 @@ fn input_event(paste:bool,text:&str)->Value {
     else {json!({"type":"key","payload":{"key":"unidentified","mods":"","consumed_mods":"","text":text,"unshifted_codepoint":0,"composing":false,"action":"press"}})}
 }
 type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Value)>>>>>;
+fn new_split_arguments(session: &str,anchor: &str,command: &Value)->Result<Value> {
+    let direction=match command.get("direction") {
+        None=>"horizontal", // Preserve older callers' Split right behavior.
+        Some(Value::String(value)) if matches!(value.as_str(),"horizontal"|"vertical")=>value.as_str(),
+        _=>anyhow::bail!("Choose Split right or Split below"),
+    };
+    Ok(json!({"session_id":session,"anchor_id":anchor,"direction":direction,"side":"after",
+        "layout":{"block":{"flavor":"com.superlogical.terminal.shell"}},"focus":false}))
+}
+fn split_anchor<'a>(windows: &Value,command: &'a Value)->Result<&'a str> {
+    let anchor=command["anchor"].as_str().filter(|id|!id.is_empty()).context("Choose a pane first")?;
+    ensure!(windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==anchor)),
+        "This pane is no longer available; choose another pane");
+    Ok(anchor)
+}
+fn pane_reorder_swaps(windows: &Value,command: &Value)->Result<Vec<(String,String)>> {
+    let window=windows.as_array().into_iter().flatten().find(|w|w["id"]==command["window"] && w["id"].is_string()).context("That tab is no longer available")?;
+    let mut ids:Vec<String>=window["blocks"].as_array().into_iter().flatten().filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
+    ensure!(!ids.is_empty() && ids.len()<=256 && ids.iter().collect::<BTreeSet<_>>().len()==ids.len(),"Invalid pane order");
+    ensure!(command["blocks"]==json!(ids),"The pane layout changed; try again");
+    let id=command["id"].as_str().context("pane ID required")?;
+    let before=command["before"].as_str().filter(|s|!s.is_empty());
+    ensure!(ids.iter().any(|p|p==id) && before.is_none_or(|b|ids.iter().any(|p|p==b)) && before!=Some(id),"That pane is no longer available");
+    let mut wanted:Vec<_>=ids.iter().filter(|p|p.as_str()!=id).cloned().collect();
+    let at=before.and_then(|b|wanted.iter().position(|p|p==b)).unwrap_or(wanted.len());
+    wanted.insert(at,id.into());
+    let mut swaps=Vec::new();
+    for i in 0..ids.len() {
+        if ids[i]!=wanted[i] {
+            let j=ids.iter().position(|p|p==&wanted[i]).unwrap();
+            swaps.push((ids[i].clone(),ids[j].clone()));ids.swap(i,j);
+        }
+    }
+    Ok(swaps)
+}
+fn collect_pane_layout(node: &Value,ids: &BTreeSet<&str>,layer: usize,floating: bool,depth: usize,out: &mut Vec<Value>) {
+    if !node.is_object() || depth>64 || out.len()>=256 {return;}
+    if let Some(id)=node["block_id"].as_str()
+        && ids.contains(id)
+        && let Some(rect)=node["rect"].as_array()
+        && rect.len()==4 && rect.iter().all(|v|v.as_f64().is_some_and(f64::is_finite))
+        && rect[2].as_f64().unwrap()>0.0 && rect[3].as_f64().unwrap()>0.0 {
+        out.push(json!({"id":id,"rect":rect,"layer":layer,"floating":floating}));
+    }
+    for child in ["before","after"] {collect_pane_layout(&node["split"][child],ids,layer,floating,depth+1,out);}
+}
 type ConnectTask = Pin<Box<dyn Future<Output = Result<Control>>>>;
 type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
@@ -123,6 +169,7 @@ struct Actor {
     selected_block: String,
     navigation_id: u64,
     tab_move_id: u64,
+    pane_move_id: u64,
     controlled: bool,
     theme: Option<Value>,
     creating: bool,
@@ -184,6 +231,7 @@ impl Actor {
             selected_block: String::new(),
             navigation_id: 0,
             tab_move_id: 0,
+            pane_move_id: 0,
             controlled: false,
             theme: None,
             creating: false,
@@ -219,7 +267,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -513,7 +561,12 @@ impl Actor {
         let mut selected_exists = false;
         for window in view["windows"].as_array().into_iter().flatten() {
             let mut blocks = Vec::new();
-            for layer in window["layers"].as_array().into_iter().flatten() {
+            let mut layout=Vec::new();
+            for (index,layer) in window["layers"].as_array().into_iter().flatten().enumerate() {
+                let ids=layer["blocks"].as_array().into_iter().flatten()
+                    .filter(|b|b["creator_name"]=="com.superlogical.terminal")
+                    .filter_map(|b|b["block_id"].as_str()).collect();
+                collect_pane_layout(&layer["layout"],&ids,index,layer["kind"]!="tiled",0,&mut layout);
                 for block in layer["blocks"].as_array().into_iter().flatten() {
                     if block["creator_name"] != "com.superlogical.terminal" {
                         continue;
@@ -530,7 +583,7 @@ impl Actor {
                     );
                 }
             }
-            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks}));
+            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout}));
         }
         let next = json!(windows);
         let ids = |windows: &Value| -> BTreeSet<String> {
@@ -706,9 +759,11 @@ impl Actor {
     async fn execute_command(&mut self,value:Value) {
         let navigation=value["navigationId"].as_u64();
         let tab_move=if value["type"]=="move_tab" {value["requestId"].as_u64()} else {None};
+        let pane_move=if value["type"]=="move_pane" {value["requestId"].as_u64()} else {None};
         if let Err(error)=self.command(value).await {self.command_error(error,navigation,false);}
         // Acknowledge failures too, so an optimistic order can roll back without retrying a mutation.
         if let Some(id)=tab_move {self.tab_move_id=id;self.publish();}
+        if let Some(id)=pane_move {self.pane_move_id=id;self.publish();}
     }
     async fn send_input(&mut self,value:Value)->Result<()> {
         ensure!(!self.monitoring,"Background monitor is read-only");
@@ -972,6 +1027,25 @@ impl Actor {
                 // Moving a window never opens/resizes a terminal or changes focus/ownership.
                 self.refresh_view().await?;
             }
+            "move_pane" => {
+                ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before moving panes");
+                ensure!(value["session"].as_str()==Some(self.selected_session.as_str()),"The selected session changed");
+                self.refresh_view().await?;
+                let swaps=pane_reorder_swaps(&self.windows,&value)?;
+                self.error.clear();
+                for (block,other) in swaps {
+                    let result=self.control.as_mut().context("not connected")?.call("session.swap_blocks",
+                        json!({"session_id":self.selected_session,"block_id":block,"other_block_id":other})).await;
+                    if let Err(error)=result {
+                        // Never replay a swap: it could undo an already-applied move.
+                        let _=self.refresh_view().await;
+                        let message=format!("Pane order may be partially updated; check the layout before trying again: {error:#}");
+                        return Err(error.context(message));
+                    }
+                }
+                // Swaps preserve split geometry and programs. Do not open, own or resize a pane.
+                self.refresh_view().await?;
+            }
             "session" => {
                 self.preview_task = None;
                 self.summary_task = None;
@@ -1059,7 +1133,7 @@ impl Actor {
             }
             "new_tab" | "new_pane" => {
                 ensure!(
-                    self.phase == "connected" && !self.paused,
+                    self.phase == "connected" && !self.paused && !self.creating,
                     "Connect before creating a terminal"
                 );
                 ensure!(!self.selected_session.is_empty(), "Choose a session first");
@@ -1074,14 +1148,10 @@ impl Actor {
                         json!({"session_id":self.selected_session,"window_label":format!("Terminal {}", self.windows.as_array().map_or(0, Vec::len) + 1),"layout":layout,"focus":false}),
                     )
                 } else {
-                    ensure!(!self.selected_block.is_empty(), "Choose a pane first");
-                    ensure!(
-                        value["anchor"].as_str() == Some(self.selected_block.as_str()),
-                        "The selected pane changed; try again"
-                    );
+                    let anchor=split_anchor(&self.windows,&value)?;
                     (
                         "session.new_split",
-                        json!({"session_id":self.selected_session,"anchor_id":self.selected_block,"direction":"horizontal","side":"after","layout":layout,"focus":false}),
+                        new_split_arguments(&self.selected_session,anchor,&value)?,
                     )
                 };
                 self.creating = true;
@@ -1620,6 +1690,101 @@ fn frame_value(frame: &Frame) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pane_reorder_plan_moves_both_ways_and_rejects_stale_or_invalid_targets() {
+        let windows=json!([{"id":"w","blocks":[{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}]}]);
+        for (id,before,wanted) in [("a","d",vec!["b","c","a","d"]),("d","a",vec!["d","a","b","c"]),("b","",vec!["a","c","d","b"])] {
+            let command=json!({"window":"w","blocks":["a","b","c","d"],"id":id,"before":before});
+            let swaps=pane_reorder_swaps(&windows,&command).unwrap();let mut actual=vec!["a","b","c","d"];
+            for(a,b) in swaps {let i=actual.iter().position(|id|*id==a).unwrap();let j=actual.iter().position(|id|*id==b).unwrap();actual.swap(i,j);}
+            assert_eq!(actual,wanted);
+        }
+        let valid=json!({"window":"w","blocks":["a","b","c","d"],"id":"a","before":"b"});
+        assert!(pane_reorder_swaps(&windows,&valid).unwrap().is_empty());
+        for (key,value) in [("window",json!("gone")),("blocks",json!(["a","b"])),("id",json!("gone")),("before",json!("gone")),("before",json!("a"))] {
+            let mut invalid=valid.clone();invalid[key]=value;assert!(pane_reorder_swaps(&windows,&invalid).is_err());
+        }
+    }
+    #[test]
+    fn pane_layout_preserves_nested_window_rects_and_floating_layers() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        let blocks=|ids:&[&str]|ids.iter().map(|id|json!({"block_id":id,"creator_name":"com.superlogical.terminal"})).collect::<Vec<_>>();
+        actor.set_view(&json!({"windows":[{"window_id":"w","layers":[
+            {"kind":"tiled","blocks":blocks(&["a","b","c"]),"layout":{"rect":[0,0,1,1],"split":{
+                "before":{"block_id":"a","rect":[0,0,0.35,1]},
+                "after":{"rect":[0.35,0,0.65,1],"split":{
+                    "before":{"block_id":"b","rect":[0.35,0,0.65,0.4]},
+                    "after":{"block_id":"c","rect":[0.35,0.4,0.65,0.6]}}}}}},
+            {"kind":"floating","bounds":[0.1,0.1,0.5,0.5],"blocks":blocks(&["d"]),"layout":{"block_id":"d","rect":[0.1,0.1,0.5,0.5]}}
+        ]}]}));
+        let layout=actor.windows[0]["layout"].as_array().unwrap();
+        assert_eq!(layout.len(),4);
+        assert_eq!(layout[0],json!({"id":"a","rect":[0,0,0.35,1],"layer":0,"floating":false}));
+        assert_eq!(layout[2]["rect"],json!([0.35,0.4,0.65,0.6]));
+        assert_eq!(layout[3],json!({"id":"d","rect":[0.1,0.1,0.5,0.5],"layer":1,"floating":true}));
+    }
+    #[test]
+    fn pane_layout_ignores_unknown_ids_and_invalid_leaves() {
+        let ids=BTreeSet::from(["a"]);let mut out=Vec::new();
+        for node in [Value::Null,json!({}),json!({"block_id":"other","rect":[0,0,1,1]}),
+            json!({"block_id":"a","rect":[0,0,0,1]}),json!({"block_id":"a","rect":[0,0,1]}),
+            json!({"block_id":"a","rect":[0,"bad",1,1]})] {
+            collect_pane_layout(&node,&ids,0,false,0,&mut out);
+        }
+        assert!(out.is_empty());
+    }
+    #[test]
+    fn layout_only_changes_keep_the_selected_pane_and_program_metadata() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        let view=|rect:Value|json!({"windows":[{"window_id":"w","layers":[{"kind":"tiled",
+            "blocks":[{"block_id":"a","creator_name":"com.superlogical.terminal"}],"layout":{"block_id":"a","rect":rect}}]}]});
+        actor.set_view(&view(json!([0,0,1,1])));
+        actor.selected_block="a".into();actor.programs=json!({"a":["codex"]});actor.titles=json!({"a":"Task"});actor.working=json!(["a"]);
+        actor.set_view(&view(json!([0,0,0.5,1])));
+        assert_eq!(actor.windows[0]["layout"][0]["rect"],json!([0,0,0.5,1]));
+        assert_eq!(actor.selected_block,"a");assert_eq!(actor.programs,json!({"a":["codex"]}));
+        assert_eq!(actor.titles["a"],"Task");assert_eq!(actor.working,json!(["a"]));
+    }
+    #[test]
+    fn split_arguments_keep_the_anchor_side_shell_and_desktop_focus_for_both_directions() {
+        for direction in ["horizontal","vertical"] {
+            let args=new_split_arguments("session:one","block:current",&json!({"direction":direction})).unwrap();
+            assert_eq!(args,json!({"session_id":"session:one","anchor_id":"block:current","direction":direction,"side":"after",
+                "layout":{"block":{"flavor":"com.superlogical.terminal.shell"}},"focus":false}));
+        }
+        assert_eq!(new_split_arguments("s","b",&json!({})).unwrap()["direction"],"horizontal");
+        for invalid in [json!("below"),json!(""),json!(null),json!(false),json!(1)] {
+            assert!(new_split_arguments("s","b",&json!({"direction":invalid})).is_err());
+        }
+    }
+    #[test]
+    fn split_rejects_stale_targets_and_invalid_direction_before_starting_creation() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.phase="connected".into();actor.selected_session="s".into();actor.selected_block="b".into();
+        actor.windows=json!([{"id":"w","blocks":[{"id":"b"}]}]);
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        for command in [json!({"type":"new_pane","session":"old","anchor":"b","direction":"vertical"}),
+            json!({"type":"new_pane","session":"s","anchor":"old","direction":"vertical"}),
+            json!({"type":"new_pane","session":"s","anchor":"b","direction":"invalid"})] {
+            assert!(runtime.block_on(actor.command(command)).is_err());
+            assert!(!actor.creating);assert!(actor.control.is_none());
+        }
+    }
+    #[test]
+    fn split_can_target_an_inactive_pane_without_navigating_to_it() {
+        let windows=json!([{"id":"w","blocks":[{"id":"one"},{"id":"two"},{"id":"three"}]}]);
+        let command=json!({"type":"new_pane","session":"s","anchor":"three","direction":"vertical"});
+        let anchor=split_anchor(&windows,&command).unwrap();
+        assert_eq!(anchor,"three");
+        assert_eq!(new_split_arguments("s",anchor,&command).unwrap()["anchor_id"],"three");
+        for invalid in [json!({"anchor":"gone"}),json!({"anchor":""}),json!({}),json!({"anchor":1})] {
+            assert!(split_anchor(&windows,&invalid).is_err());
+        }
+        assert!(split_anchor(&json!([]),&command).is_err());
+    }
     #[test]
     fn header_directory_abbreviates_only_the_real_home_and_prefers_foreground() {
         assert_eq!(
@@ -2740,3 +2905,6 @@ while True:
 #[cfg(test)]
 #[path="latency_tests.rs"]
 mod latency_tests;
+#[cfg(test)]
+#[path="pane_reorder_tests.rs"]
+mod pane_reorder_tests;

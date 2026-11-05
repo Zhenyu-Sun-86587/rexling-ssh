@@ -40,7 +40,7 @@ internal fun connectionMessage(phase: String,network: Boolean?): String? = when 
     }
 }
 @Composable internal fun OwnershipMenuItem(controlled: Boolean,enabled: Boolean,onClick: ()->Unit) {
-    DropdownMenuItem(text={Text(if(controlled) "Release control" else "Take control")},enabled=enabled,onClick=onClick)
+    TerminalMenuItem(if(controlled) "Release control" else "Take control",ChromeIcon.POINTER,enabled=enabled,onClick=onClick)
 }
 @Composable internal fun ReadyNotice(epoch: Long,controlled: Boolean,ready: Boolean,modifier: Modifier=Modifier) {
     var shown by remember {mutableLongStateOf(0)};var visible by remember {mutableStateOf(false)}

@@ -1,0 +1,29 @@
+{
+  "date": "2026-11-05",
+  "change": "Separate panel selection from navigation; compact numbered pane map",
+  "base_revision": "4d93bcda9f",
+  "local_changes": true,
+  "version_code": 58,
+  "apk": "dist/Rexling-2026.11.05-build58-4d93bcda9f-modified-arm64-release.apk",
+  "release_sha256": "5ed1ed1a9a87030a15c75aa9c2ce4bfa764e5c131a041d8e481c14738970b6af",
+  "checks": {
+    "jvm_tests_passed": 155,
+    "optional_jvm_benchmark_skipped": 1,
+    "rust_tests_passed": 54,
+    "live_rust_tests_ignored": 15,
+    "android_ui_checks_passed": 14,
+    "pane_three_split_while_viewing_pane_one_sends_no_navigation": true,
+    "open_required_for_tab_and_pane_navigation": true,
+    "selected_tab_panes_manageable_without_navigation": true,
+    "removed_target_disables_open_and_split": true,
+    "inactive_anchor_validated_against_session_panes": true,
+    "stale_session_missing_anchor_invalid_direction_rejected": true,
+    "numbered_map_and_selected_rows_light_dark_inspected": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "behavior": "Panel selection is local. Tapping a pane tile/row selects the split target; Open pane navigates. Tabs use the same selection/Open pattern, and Panes manages the selected tab without opening it. Viewing captions identify actual open resources independently of selection. The 88 dp map uses numbers matching the list. Split buttons send the explicit selected anchor rather than the currently open pane; stale/removed targets are rejected and creation is never retried automatically.",
+  "test_notes": "Fourteen Android tests passed on the isolated API 37 emulator, including the exact three-pane scenario, explicit navigation, cross-tab management, missing target and busy state. 155 JVM and 54 Rust checks passed, one optional JVM benchmark skipped and 15 live Rust checks ignored. Light/dark panels inspected. No live user session or pane changed.",
+  "source_commit": "Uncommitted source changes based on signed commit 4d93bcda9f",
+  "phone_install": "Installed release 58 on S22+ RFCT21390SD via USB; installed checksum matches; app settings preserved; app not launched."
+}
