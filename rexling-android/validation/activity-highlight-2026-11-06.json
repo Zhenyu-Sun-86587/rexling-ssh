@@ -1,0 +1,21 @@
+{
+  "date": "2026-11-06",
+  "version_code": 72,
+  "change": "Actual tab highlight for Working, amber pulse for Needs you, no refresh line under filters",
+  "apk": "dist/Rexling-2026.11.05-build72-47d06edf05-modified-arm64-release.apk",
+  "sha256": "fcb8e6a7bb9ec70be6972d4485f68c740a206a9dfa47f0fa8eaba51f5e0edda3",
+  "checks": {
+    "unique_android_tests_passed": 17,
+    "activity_tests": 8,
+    "adaptive_tab_tests": 9,
+    "shared_gradient_pixels_match_along_axes_with_gpu_rounding_tolerance": true,
+    "working_stays_filled_with_moving_highlight": true,
+    "needs_you_pulses_uniformly": true,
+    "finished_pixels_unchanged": true,
+    "metadata_refresh_has_no_second_indicator_or_row_movement": true,
+    "empty_loading_feedback_preserved": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "phone": "S22+ 100.97.157.23:36789 via wireless ADB; settings preserved; app not launched"
+}

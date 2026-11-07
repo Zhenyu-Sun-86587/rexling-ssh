@@ -208,11 +208,11 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 }
                                 if(old.controlled!=next.controlled || old.selectedBlock!=next.selectedBlock || old.phase!=next.phase) cancelKeyRepeats()
                                 if(!next.controlled || old.selectedBlock!=next.selectedBlock) resetModifiers()
-                                mutableState.value = next
+                                publishActivityState(next)
                                 queueDisplay(next)
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
-                                mutableChrome.value=presentation.chrome(next).copy(revision=0,screen=null,previewFrames=emptyMap())
+
                                 openPreferredTerminal();rememberCurrentTerminal();claimActivePane()
                             }
                         } catch (error: Exception) {
@@ -228,6 +228,26 @@ internal class RexConnection(application: Application, private val scope: Corout
         } catch (error: Throwable) {
             setState(AppState(phase = "error", error = "Native terminal could not start: ${error.message}"))
         }
+    }
+    private var rawActivityState: AppState?=null
+    private var policyInput: List<ActivityRecord>?=null
+    private var policyOutput: List<ActivityRecord> = emptyList()
+    private var policyEnabled=false
+    private var policyForeground=false
+    private var inferredBlocks: Set<String> = emptySet()
+    internal fun refreshActivityPolicy() {policyInput=null;rawActivityState?.let {publishActivityState(state.value.copy(activity=it.activity,workingBlocks=it.workingBlocks))}}
+    private fun publishActivityState(raw: AppState) {
+        rawActivityState=raw
+        val enabled=preferences.getBoolean(CodexAttentionPolicy.ENABLED,false)
+        if(policyInput!==raw.activity || policyEnabled!=enabled || policyForeground!=foreground) {
+            policyInput=raw.activity;policyEnabled=enabled;policyForeground=foreground
+            policyOutput=CodexAttentionPolicy.apply(preferences,savedEndpoint,raw.activity,foreground)
+            inferredBlocks=policyOutput.filter {it.state==ActivityState.BLOCKED && it.codexTitleAttention}.map {it.block}.toSet()
+        }
+        val value=if(policyOutput===raw.activity && inferredBlocks.isEmpty()) raw else raw.copy(activity=policyOutput,
+            workingBlocks=if(inferredBlocks.isEmpty()) raw.workingBlocks else raw.workingBlocks-inferredBlocks)
+        mutableState.value=value
+        mutableChrome.value=presentation.chrome(value).copy(revision=0,screen=null,previewFrames=emptyMap())
     }
     private fun setState(next: AppState) {mutableState.value=next;mutableChrome.value=presentation.chrome(next).copy(revision=0,screen=null,previewFrames=emptyMap())}
     private fun command(type: String, vararg args: Pair<String, Any>): Boolean {
@@ -415,7 +435,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         setState(state.value.copy(controlled = false, phase = if (state.value.connected) "paused" else state.value.phase))
         command("pause")
     }
-    fun resume() { if(!foreground) {activation.resume();restoreWorkspace=true};foreground = true; command("resume") }
+    fun resume() { policyInput=null;if(!foreground) {activation.resume();restoreWorkspace=true};foreground = true; command("resume") }
     fun toggleControl() { controlModifier = !controlModifier }
     fun toggleAlt() { altModifier = !altModifier }
     fun toggleShift() {shiftState=ShiftKeyState(latched=!shiftState.active)}
@@ -434,13 +454,6 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}
     fun scrollToBottom() {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"bottom" to true)}
     fun key(name: String) = type(TerminalInput.key(name))
-    internal fun pasteImagePath(session: String,block: String,path: String): Boolean {
-        val current=state.value
-        if(!visible || !foreground || !current.connected || !current.controlled || current.creating || navigationRequest.pending || current.selectedSession!=session || current.selectedBlock!=block) return false
-        val text=imagePathText(path)
-        resetModifiers()
-        return command("paste","text" to text,"session" to session,"block" to block,"navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch)
-    }
     fun paste(text: String) { if (visible && state.value.controlled && !navigationRequest.pending) command("paste", "text" to text,"session" to state.value.selectedSession,"block" to state.value.selectedBlock,"navigationId" to state.value.navigationId,"connectionEpoch" to state.value.connectionEpoch) }
     fun resize(columns: Int, rows: Int) {
         val size = columns.coerceIn(1, 512) to rows.coerceIn(1, 256)

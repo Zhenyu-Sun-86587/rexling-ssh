@@ -1,0 +1,23 @@
+{
+  "build": 86,
+  "checkpoint_bytes": 65536,
+  "max_in_flight_bytes": 4194304,
+  "progress_means": "Transport-level receipt checkpoints; file commit remains separately confirmed by final close",
+  "setup_phase": "preparing",
+  "unknown_progress": "indeterminate without 0 percent label",
+  "poll_interval_ms": 40,
+  "rust_upload_tests_passed": 7,
+  "android_tests_passed": 6,
+  "throttled_receiver_intermediate_progress_verified": true,
+  "live_host_evidence": "upload-progress-live-2026-11-07.json",
+  "release_lint_packaging_verified": true,
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 86,
+    "sha256": "dd8516f9e2e2960d7837a5441709e46142d327bfe868022237404a4dd658b3d7",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}

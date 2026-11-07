@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-05",
+  "version_code": 71,
+  "change": "Solid working bar with uniform brightness pulse at tab highlight cadence",
+  "apk": "dist/Rexling-2026.11.05-build71-47d06edf05-modified-arm64-release.apk",
+  "sha256": "5f4b4a1a14301f06d933a142a816e1c0cf773ce257ba12cdc1c58d012353188c",
+  "checks": {
+    "android_tests_passed": 6,
+    "working_brightness_changes_uniformly": true,
+    "working_bar_stays_visible": true,
+    "finished_bar_pixels_unchanged": true,
+    "bar_bounds_unchanged": true,
+    "icon_text_heights_centering_and_acknowledgment_stable": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "phone": "S22+ RFCT21390SD; settings preserved; app not launched"
+}

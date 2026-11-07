@@ -35,14 +35,14 @@ import kotlin.math.roundToInt
     var menu by remember {mutableStateOf(false)}
     val animated by animateFloatAsState(anchor,label="Session action reveal")
     val offset=if(dragging) position else animated
-    Box(Modifier.fillMaxWidth().padding(vertical=3.dp).clip(RoundedCornerShape(14.dp))
+    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
         .background(if(abs(offset)>1f) MaterialTheme.colorScheme.errorContainer else Color.Transparent)) {
         if(abs(offset)>1f) TextButton(onClick=onClose,enabled=!closing,
             modifier=Modifier.align(if(offset>0) Alignment.CenterStart else Alignment.CenterEnd).width(88.dp)) {
             Text("Close",color=MaterialTheme.colorScheme.error,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
         }
         Row(Modifier.fillMaxWidth().offset {IntOffset(offset.roundToInt(),0)}
-            .background(if(active) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=if(active) .8f else .35f))
             .draggable(rememberDraggableState {delta->position=(position+delta).coerceIn(-distance,distance)},Orientation.Horizontal,
                 enabled=!closing,onDragStarted={dragging=true;position=anchor},onDragStopped={
                     anchor=if(abs(position)>distance*.35f) if(position>0) distance else -distance else 0f
@@ -50,17 +50,17 @@ import kotlin.math.roundToInt
                 })
             .clickable(enabled=!closing){if(anchor!=0f) anchor=0f else onSelect()}
             .semantics {customActions=listOf(CustomAccessibilityAction("Rename session"){onRename();true},CustomAccessibilityAction("Close session"){onClose();true})}
-            .padding(start=11.dp,end=2.dp,top=12.dp,bottom=12.dp),
-            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(11.dp)) {
+            .heightIn(min=56.dp).padding(start=10.dp,end=2.dp,top=4.dp,bottom=4.dp),
+            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
             Column(Modifier.weight(1f)) {
-                Text(target.session.label,fontFamily=MonoUi,fontWeight=FontWeight.Bold,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(target.session.label,style=SettingsType.row,fontWeight=if(active) FontWeight.SemiBold else FontWeight.Normal,maxLines=1,overflow=TextOverflow.Ellipsis)
                 Text((target.detail?.let {"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded"),
-                    fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=2)
+                    style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
             }
             when {closing->CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=1.5.dp)
-                active->Text("current",color=MaterialTheme.colorScheme.primary,fontSize=9.sp,fontWeight=FontWeight.SemiBold)
-                last->Text("previous",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=9.sp)}
+                active->Text("current",color=MaterialTheme.colorScheme.primary,style=SettingsType.detail,fontWeight=FontWeight.SemiBold)
+                last->Text("previous",color=MaterialTheme.colorScheme.onSurfaceVariant,style=SettingsType.detail)}
             Box {
                 ChromeButton(ChromeIcon.MORE,"Session actions for ${target.session.label} on ${target.server.label}",!closing){menu=true}
                 DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {

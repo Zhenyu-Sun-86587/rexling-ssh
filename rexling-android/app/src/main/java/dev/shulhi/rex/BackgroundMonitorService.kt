@@ -17,7 +17,7 @@ class BackgroundMonitorService: Service() {
     private val notifications by lazy {getSystemService(NotificationManager::class.java)}
     private val ledger by lazy {AttentionLedger(preferences.getString("attention_ledger",null))}
     private val destinations by lazy {AlertDestinations(preferences)}
-    private class Monitor(var profile: ServerProfile) {var job: Job?=null;@Volatile var handle=0L;var phase="connecting"}
+    private class Monitor(var profile: ServerProfile) {var job: Job?=null;@Volatile var handle=0L;var phase="connecting";var records: List<ActivityRecord> = emptyList();var complete=false}
     private val monitors=mutableMapOf<String,Monitor>()
     private val posted=linkedMapOf<String,Pair<ServerProfile,ActivityRecord>>()
     private var running=false
@@ -25,6 +25,7 @@ class BackgroundMonitorService: Service() {
     private val listener=SharedPreferences.OnSharedPreferenceChangeListener {_,key->scope.launch {
         if(key in setOf(BackgroundAlerts.ENABLED,"servers","connected_servers")) refresh()
         else if(key?.startsWith("activity_seen:")==true) cancelSeen()
+        else if(key==CodexAttentionPolicy.ENABLED) monitors.values.forEach {accept(it,it.records,it.complete)}
     }}
     private val screenReceiver=object:BroadcastReceiver() {override fun onReceive(context: Context,intent: Intent) {if(!background()) clearAlerts()}}
     private val network by lazy {NetworkMonitor(this) {change->scope.launch {
@@ -35,8 +36,8 @@ class BackgroundMonitorService: Service() {
         notifications.createNotificationChannel(NotificationChannel(BackgroundAlerts.MONITOR_CHANNEL,"Background monitoring",NotificationManager.IMPORTANCE_LOW).apply {
             description="Keeps your connected servers available for attention alerts";setShowBadge(false);setSound(null,null)
         })
-        notifications.createNotificationChannel(NotificationChannel(BackgroundAlerts.ATTENTION_CHANNEL,"Needs your attention",NotificationManager.IMPORTANCE_HIGH).apply {
-            description="A task needs input, approval, sign-in, or has failed"
+        notifications.createNotificationChannel(NotificationChannel(BackgroundAlerts.ATTENTION_CHANNEL,"Task updates",NotificationManager.IMPORTANCE_HIGH).apply {
+            description="A task finishes, needs input, approval, sign-in, or fails"
         })
         preferences.registerOnSharedPreferenceChangeListener(listener)
         val filter=IntentFilter().apply {addAction(Intent.ACTION_SCREEN_OFF);addAction(Intent.ACTION_USER_PRESENT)}
@@ -108,14 +109,18 @@ class BackgroundMonitorService: Service() {
     private fun seen(profile: ServerProfile,record: ActivityRecord): Boolean = record.attentionKey.isNotBlank() && runCatching {
         JSONObject(preferences.getString("activity_seen:${profile.endpoint}","{}")!!).optString(record.attentionKey)==record.attentionVersion
     }.getOrDefault(false)
-    private fun accept(monitor: Monitor,records: List<ActivityRecord>,complete: Boolean) {
+    private fun accept(monitor: Monitor,raw: List<ActivityRecord>,complete: Boolean) {
+        monitor.records=raw;monitor.complete=complete
+        val records=CodexAttentionPolicy.apply(preferences,monitor.profile.endpoint,raw,background())
         val before=ledger.encode()
-        val alerts=ledger.observe(monitor.profile,records,background()) {seen(monitor.profile,it)}
+        val alerts=ledger.observe(monitor.profile,records,background(),complete=complete) {seen(monitor.profile,it)}
         val after=ledger.encode();if(before!=after) preferences.edit().putString("attention_ledger",after).apply()
         // Reconnection/partial results must not dismiss an outstanding request.
         posted.toMap().forEach {(key,target)->if(target.first.id==monitor.profile.id && target.first.endpoint==monitor.profile.endpoint) {
             val current=records.firstOrNull {it.key==target.second.key}
-            if((current==null && complete) || (current!=null && (current.state !in listOf(ActivityState.BLOCKED,ActivityState.ERROR) || seen(monitor.profile,current)))) cancel(key)
+            // A finished report may disappear immediately; keep its notification until seen.
+            if(seen(monitor.profile,target.second) || (target.second.state!=ActivityState.DONE &&
+                ((current==null && complete) || (current!=null && (!current.state.notifiable || seen(monitor.profile,current)))))) cancel(key)
         }}
         if(!background()) {clearAlerts();return}
         alerts.forEach {post(monitor.profile,it)}
@@ -129,7 +134,7 @@ class BackgroundMonitorService: Service() {
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java).setData(uri).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val title="${record.stateLabel} · ${record.label.ifBlank {record.program.label}}"
         val text=listOf(profile.label,record.sessionLabel.ifBlank {record.session}).joinToString(" · ")
-        val public=Notification.Builder(this,BackgroundAlerts.ATTENTION_CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentTitle("Rexling needs your attention").build()
+        val public=Notification.Builder(this,BackgroundAlerts.ATTENTION_CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentTitle(if(record.state==ActivityState.DONE) "Rexling task finished" else "Rexling needs your attention").build()
         val notification=Notification.Builder(this,BackgroundAlerts.ATTENTION_CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title).setContentText(text).setStyle(Notification.BigTextStyle().bigText(listOf(text,record.message).filter {it.isNotBlank()}.joinToString("\n")))
             .setContentIntent(open).setAutoCancel(true).setCategory(Notification.CATEGORY_MESSAGE).setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(public).build()
@@ -149,7 +154,7 @@ class BackgroundMonitorService: Service() {
         val open=PendingIntent.getActivity(this,1,Intent(this,MainActivity::class.java).setAction("dev.shulhi.rex.OPEN_MONITOR").addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val stop=PendingIntent.getService(this,2,Intent(this,BackgroundMonitorService::class.java).setAction(STOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         return Notification.Builder(this,BackgroundAlerts.MONITOR_CHANNEL).setSmallIcon(R.drawable.ic_notification).setContentTitle("Rexling · $title")
-            .setContentText("Alerts when a task needs you").setContentIntent(open).setOngoing(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE)
+            .setContentText("Task completions and attention alerts").setContentIntent(open).setOngoing(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE)
             .addAction(Notification.Action.Builder(null,"Stop",stop).build()).build()
     }
     override fun onTaskRemoved(rootIntent: Intent?) {stopSelf()}

@@ -105,6 +105,15 @@ pane used in each tab, and restores them when reopened. Closed terminals fall
 back to an existing pane.
 Check **⋮ → Preferences → About Rexling** for the date-based app version, build number and
 commit; **Copy build info** copies these details for bug reports.
+The Sessions drawer provides compact, searchable server groups without a second
+session carousel above it. Activity uses the same compact drawer styling.
+Unseen finished tasks, input requests and failures light the Activity dot;
+**Mark seen** clears a report without opening its terminal. Reports for the pane
+you are actively viewing are acknowledged automatically, so they do not light
+the eye badge. Other panes and tabs retain their unread indication. Activity uses a solid
+blue bar for finished tasks, a blue bar with a moving highlight for working tasks, pulsing amber for
+attention and red for failures; seen reports are muted.
+
 The bottom dock switches tabs and opens Activity. Its tab/pane button opens a
 switcher directly: tap **Tabs** or **Panes**, or swipe between them. **Panes**
 shows a map of the current layout on the server, including nested splits and
@@ -215,44 +224,44 @@ ready; viewing another client's pane shows a contextual takeover notice. Manual
 Take/Release remain in the overflow menu. Input is paused during reconnection and
 uncertain input is never replayed.
 
-### Image attachments through Portside
+### Image attachments
 
-Image uploads use [Portside](https://github.com/shulhi/portside), a separate
-project for Tailscale port forwarding and file uploads. Install Portside 0.3+
-on the same machine or filesystem where Codex/Claude runs, and enable uploads
-on its server. See the Portside repository for installation and hosting setup.
+Updated Rex servers (API revision 11+) receive images directly. Copy an image
+and use **Paste** from your keyboard or Rexling's menu, or choose **⋮ → Attach
+image**. PNG, JPEG, GIF and WebP images are streamed
+with progress and cancellation, up to 100 MiB and the server's own limits.
+Progress appears in a compact bottom-right pill, briefly turns green on success,
+then disappears automatically.
 
-Open **⋮ → Preferences → Portside**, select a Rex server, and enter the Portside
-address and optional relative upload folder. The **Use image uploads** switch
-turns uploads on or off while keeping the address and folder; tap **Save** to apply.
-These rows are Rex connections,
-not an imported Portside server list. Enter the actual Portside address: a bare
-hostname defaults to port 9417. Rex's service tailnet address may differ from the
-Mac's Portside address even when both run on the same machine.
-**Check connection** shows the destination and size limit. Portside authenticates your Tailscale
-identity; no upload token is stored. **Open Portside** launches its Android app
-if installed; Rexling uploads directly to the server and does not need that app.
+Rex stores the file on the terminal's host and inserts its path into the original
+pane without pressing Enter. Switching panes during an upload does not change
+its destination. Rex manages storage and removes older terminal uploads as needed.
+If confirmation is lost while finishing, check the original pane before trying
+again; Rexling does not automatically repeat an upload with an uncertain result.
 
-Copy an image and use **Paste** from your keyboard or Rexling's menu, or choose
-**⋮ → Attach image** to open the system photo picker. PNG, JPEG, GIF and WebP
-images are streamed, up to the server's limit or 100 MiB, whichever is smaller.
-The returned server path is inserted into the active Codex/Claude prompt without
-pressing Enter. If you switch panes or servers, the result stays ready for
-explicit insertion into the original pane. Other programs also require explicit
-insertion. Upload progress overlays the terminal without changing its grid size.
-You can cancel, retry a failed transfer, or copy the completed server path.
+Image attachments require a Rex server with API revision 11 or newer. Update
+older servers to enable uploads; there is no separate upload service to configure.
 
 Keep Tailscale connected. On Android 17+, allow local network access when asked.
-The feature does not change Rex or the Portside server, configure port forwards,
-or share settings with the separate Portside app.
+
+### Experimental Codex attention
+
+**Preferences → Experimental → Codex title attention** is off by default. When
+on, Rexling treats Codex’s explicit `[!] Action Required` title (including its
+animated bracket variant) as Needs you if the structured report remains Working.
+It is limited to the same verified Codex process and root task. This workaround
+depends on Codex’s title format; Claude and explicit Done/Error reports keep their
+normal status behavior.
 
 ### Background alerts
 
-Enable **⋮ → Preferences → Background alerts** to receive attention notifications while the app
+Enable **⋮ → Preferences → Background alerts** to receive task notifications while the app
 is backgrounded or the phone is locked. Allow notifications when Android asks.
 A quiet ongoing notification shows monitoring status and a **Stop** action.
-Only input/approval/sign-in requests and errors alert; running and finished tasks
-do not. Tapping an alert opens its server, session and pane. Terminal control is
+Finished tasks, input/approval/sign-in requests and errors alert. Running and idle
+tasks do not. Existing completions are baselined when monitoring starts, so they
+are not replayed as new notifications. Foreground updates are consumed without
+delayed alerts. Tapping an alert opens its server, session and pane. Terminal control is
 released and rendering pauses in the background; monitoring is read-only.
 
 Monitoring stops when you remove Rexling from Recents, force-stop it, or tap Stop.

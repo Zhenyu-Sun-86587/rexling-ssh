@@ -45,7 +45,7 @@ private val arrowIcons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN
     val latest by rememberUpdatedState(onKey)
     val haptics=LocalHapticFeedback.current
     val configuration=LocalViewConfiguration.current
-    val deadZone=maxOf(with(LocalDensity.current) {10.dp.toPx()},configuration.touchSlop)
+    val deadZone=maxOf(with(LocalDensity.current) {(if(keyboardVisible) 14.dp else 10.dp).toPx()},configuration.touchSlop)
     val popupProvider=rememberSpeechBubblePositioner()
     val provider=remember {object: PopupPositionProvider {
         override fun calculatePosition(anchorBounds: IntRect,windowSize: IntSize,layoutDirection: LayoutDirection,popupContentSize: IntSize)=
@@ -118,7 +118,7 @@ private val arrowIcons=mapOf("left" to ChromeIcon.LEFT,"down" to ChromeIcon.DOWN
         ChromeSymbol(ChromeIcon.ARROWS,Modifier.size(20.dp),
             (if(active || popupOpen) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface).copy(alpha=if(readable) 1f else .38f))
         if(active && enabled && useJoystick && !popupOpen) Popup(popupPositionProvider=provider,properties=PopupProperties(focusable=false,dismissOnClickOutside=false,dismissOnBackPress=false,clippingEnabled=false)) {
-            ArrowJoystickFace(direction,displacement,if(keyboardVisible) 88.dp else 52.dp)
+            ArrowJoystickFace(direction,displacement,if(keyboardVisible) 88.dp else 52.dp,if(keyboardVisible) 14.dp else 12.dp)
         }
         if(popupOpen && enabled) Popup(popupPositionProvider=popupProvider,onDismissRequest={popupOpen=false},
             properties=PopupProperties(focusable=false,dismissOnClickOutside=false,dismissOnBackPress=false)) {
@@ -138,7 +138,7 @@ private fun joystickDirection(delta: Offset,deadZone: Float,previous: String?): 
     return if(x>y) {if(delta.x<0) "left" else "right"} else {if(delta.y<0) "up" else "down"}
 }
 
-@Composable private fun ArrowJoystickFace(direction: String?,displacement: Offset,diameter: Dp) {
+@Composable private fun ArrowJoystickFace(direction: String?,displacement: Offset,diameter: Dp,neutralRadius: Dp) {
     val accent=MaterialTheme.colorScheme.primary
     Box(Modifier.size(diameter).semantics {contentDescription="Arrow joystick";stateDescription=direction ?: "Neutral"}) {
         Canvas(Modifier.fillMaxSize()) {
@@ -149,7 +149,7 @@ private fun joystickDirection(delta: Offset,deadZone: Float,previous: String?): 
                 drawArc(accent,startAngle=angle-45f,sweepAngle=90f,useCenter=true)
             }
             drawCircle(Color.White.copy(alpha=.4f),r-1.dp.toPx(),style=Stroke(1.dp.toPx()))
-            drawCircle(Color(0xFF171C25),minOf(12.dp.toPx(),r*.36f))
+            drawCircle(Color(0xFF171C25),minOf(neutralRadius.toPx(),r*.36f))
             val distance=displacement.getDistance()
             val knob=if(distance>0) displacement*(minOf(r*.16f,distance*.18f)/distance) else Offset.Zero
             drawCircle(Color.White.copy(alpha=.55f),minOf(4.dp.toPx(),r*.12f),center+knob)

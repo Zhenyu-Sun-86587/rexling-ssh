@@ -1,0 +1,20 @@
+{
+  "date": "2026-11-05",
+  "version_code": 70,
+  "change": "State rails with working snake animation, actual matched icon/text heights and filtered generated window descriptions",
+  "apk": "dist/Rexling-2026.11.05-build70-47d06edf05-modified-arm64-release.apk",
+  "sha256": "a05cf5df5334df2e3784c1bb1803306d0aea67fb87a816e0917b7a5ef4132e24",
+  "checks": {
+    "jvm_tests_passed": 162,
+    "optional_benchmark_skipped": 1,
+    "android_tests_passed": 6,
+    "working_snake_pixels_move_finished_pixels_stay_solid": true,
+    "same_pass_icon_text_height_and_center": true,
+    "acknowledgment_does_not_move_title": true,
+    "generated_window_labels_hidden_meaningful_names_and_ids_preserved": true,
+    "light_dark_visual_review": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "phone": "S22+ RFCT21390SD; settings preserved; app not launched"
+}

@@ -1,0 +1,22 @@
+{
+  "build": 80,
+  "apk": "dist/Rexling-2026.11.06-build80-47d06edf05-modified-arm64-release.apk",
+  "sha256": "d1bdb43bdf0b5bb85a8bbd8b30c3809851a1e346b86d60f0cb3c8e615249de59",
+  "native_only": true,
+  "portside_classes_absent": true,
+  "okhttp_runtime_removed": true,
+  "jvm_tests_passed": 157,
+  "jvm_optional_skipped": 1,
+  "android_tests_passed": 10,
+  "signature_packaging_and_jni_verified": true,
+  "installed_on_phone": true,
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 80,
+    "sha256": "d1bdb43bdf0b5bb85a8bbd8b30c3809851a1e346b86d60f0cb3c8e615249de59",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}

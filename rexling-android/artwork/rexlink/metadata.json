@@ -10,12 +10,12 @@
   "launcher_layout": {
     "background": "white",
     "insets_percent": {
-      "left": 18,
-      "top": 26,
-      "right": 18,
-      "bottom": 10
+      "left": 16.5,
+      "top": 21.5,
+      "right": 16.5,
+      "bottom": 11.5
     },
-    "framing": "Portrait fills the bottom edge; side cropping is intentional; artwork keeps its square aspect ratio."
+    "framing": "Restored original transparent artwork. Insets account for the original canvas margins to retain similar visible dinosaur scale to build 77; bottom anchored."
   },
   "cleanup_prompt": "artwork/rexlink/cleanup-prompt.txt"
 }

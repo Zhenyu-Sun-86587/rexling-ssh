@@ -12,6 +12,13 @@ fn stable_title(value: &str)->String {
     let mut chars=value.chars();let first=chars.next();
     if first.is_some_and(|c|('\u{2800}'..='\u{28ff}').contains(&c)) && chars.clone().next().is_some_and(char::is_whitespace) {chars.as_str().trim_start().to_owned()} else {value.to_owned()}
 }
+/// Codex's explicit attention title, not arbitrary task text containing those words.
+pub(crate) fn codex_attention_title(title: &str)->bool {
+    let Some(rest)=title.strip_prefix('[') else {return false;};
+    let Some((marker,rest))=rest.split_once(']') else {return false;};
+    !marker.is_empty() && marker.len()<=8 && marker.chars().all(|c|c==' ' || c=='.' || c=='!') &&
+        marker.chars().any(|c|c=='.' || c=='!') && rest.trim_start().starts_with("Action Required | ")
+}
 pub fn records(process: &Value,status: &Value,title: &Value,session: &Value,window: &Value,block: &Value)->Vec<Value> {
     status["records"].as_array().into_iter().flatten().filter_map(|record| {
         let state=record["state"].as_str()?;
@@ -32,6 +39,10 @@ pub fn records(process: &Value,status: &Value,title: &Value,session: &Value,wind
             "id":plain(&record["id"],128),"app":app,"owner":plain(&owner["name"],64),"ownerPid":owner["pid"],"reportedTitle":plain(&record["title"],256),
             "title":label,"message":plain(&record["msg"],2048),"state":state,"kind":plain(&record["kind"],32),
             "progress":record["progress"].as_u64().filter(|p|*p<=100),"updatedAt":plain(&record["updated_at"],64)});
+        let eligible=root && state=="working" && owner["name"]=="codex" && owner["pid"].is_number() &&
+            owner["pid"]==foreground["pid"] && owner["name"]==foreground["name"];
+        item["codexTitleEligible"]=json!(eligible);
+        item["codexTitleAttention"]=json!(eligible && title["owner"]["pid"]==owner["pid"] && title["owner"]["name"]==owner["name"] && codex_attention_title(title["title"].as_str().unwrap_or("")));
         item["attentionKey"]=json!(json!([item["session"],item["block"],item["id"]]).to_string());
         let stamp=json!([item["state"],item["kind"],item["updatedAt"],item["message"],item["ownerPid"]]).to_string();
         let hash=stamp.bytes().fold(0xcbf29ce484222325u64,|h,b|(h^u64::from(b)).wrapping_mul(0x100000001b3));
@@ -49,6 +60,10 @@ pub fn apply_title(items: &mut Value,session: &str,block: &str,event: &Value)->b
             let title=stable_title(&plain(&event["title"],256));
             let next=if title.is_empty() {record["reportedTitle"].clone()} else {json!(title)};
             if record["title"]!=next {record["title"]=next;changed=true;}
+            if record["codexTitleEligible"]==true {
+                let attention=json!(codex_attention_title(event["title"].as_str().unwrap_or("")));
+                if record["codexTitleAttention"]!=attention {record["codexTitleAttention"]=attention;changed=true;}
+            }
         }
     }
     changed
@@ -56,7 +71,7 @@ pub fn apply_title(items: &mut Value,session: &str,block: &str,event: &Value)->b
 pub fn pane_key(session: &str,block: &str)->String {json!([session,block]).to_string()}
 pub fn attention_count(items: &Value,seen: &Value)->usize {
     items.as_array().into_iter().flatten().filter(|item| {
-        matches!(item["state"].as_str(),Some("blocked"|"error")) && item["attentionKey"].as_str().is_some_and(|key|seen.get(key)!=Some(&item["attentionVersion"]))
+        matches!(item["state"].as_str(),Some("blocked"|"error"|"done")) && item["attentionKey"].as_str().is_some_and(|key|seen.get(key)!=Some(&item["attentionVersion"]))
     }).count()
 }
 async fn open(endpoint: Endpoint)->Result<(Control,Value)> {
@@ -163,6 +178,41 @@ pub async fn refresh(endpoint: Endpoint,panes: Vec<Value>)->Result<Value> {
         assert_eq!(attention_count(&items,&seen),0);
         let changed=json!(records(&process,&report("A new approval"),&json!({}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
         assert_eq!(attention_count(&changed,&seen),1);
+    }
+
+    #[test] fn completions_badge_until_seen_and_new_finishes_relight_it() {
+        for app in ["codex","claude"] {
+            let process=json!({"foreground":{"pid":7,"name":app}});
+            let report=|state:&str,msg:&str|json!({"records":[{"state":state,"owner":{"pid":7,"name":app},"msg":msg}]});
+            let make=|state:&str,msg:&str|json!(records(&process,&report(state,msg),&json!({}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
+            let mut items=make("done","Result ready");
+            assert_eq!(attention_count(&items,&json!({})),1);
+            let key=items[0]["attentionKey"].as_str().unwrap().to_owned();let seen=json!({key:items[0]["attentionVersion"]});
+            assert_eq!(attention_count(&items,&seen),0);
+            apply_title(&mut items,"s","b",&json!({"owner":{"pid":7,"name":app},"title":"New animated title"}));
+            assert_eq!(attention_count(&items,&seen),0);
+            assert_eq!(attention_count(&make("done","Next result"),&seen),1);
+            for state in ["working","idle"] {assert_eq!(attention_count(&make(state,""),&json!({})),0);}
+        }
+    }
+
+    #[test] fn codex_attention_signal_is_explicit_owned_root_work_and_clears_on_resume() {
+        let process=json!({"foreground":{"pid":7,"name":"codex"}});
+        let status=json!({"records":[{"state":"working","owner":{"pid":7,"name":"codex"}},
+            {"state":"working","id":"child","owner":{"pid":7,"name":"codex"}}]});
+        for title in ["[!] Action Required | Task","[ . ] Action Required | Task","[.  ] Action Required | Task"] {
+            let mut items=json!(records(&process,&status,&json!({"title":title,"owner":{"pid":7,"name":"codex"}}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
+            assert_eq!(items[0]["state"],"working"); // Native emits a guarded signal; Kotlin preference controls inference.
+            assert_eq!(items[0]["codexTitleAttention"],true);assert_eq!(items[1]["codexTitleAttention"],false);
+            assert!(!apply_title(&mut items,"s","b",&json!({"title":"Normal","owner":{"pid":8,"name":"codex"}})));
+            assert!(apply_title(&mut items,"s","b",&json!({"title":"⠋ Task","owner":{"pid":7,"name":"codex"}})));
+            assert_eq!(items[0]["codexTitleAttention"],false);
+        }
+        for title in ["Action Required | Task","[abc] Action Required | Task","[!] Discuss Action Required | Task","[!] Action Required","[ ] Action Required | Task"] {assert!(!codex_attention_title(title));}
+        let wrong=json!(records(&process,&status,&json!({"title":"[!] Action Required | Task","owner":{"pid":8,"name":"codex"}}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
+        assert_eq!(wrong[0]["codexTitleAttention"],false);
+        let claude=json!(records(&json!({"foreground":{"pid":7,"name":"claude"}}),&json!({"records":[{"state":"working","owner":{"pid":7,"name":"claude"}}]}),&json!({"title":"[!] Action Required | Task","owner":{"pid":7,"name":"claude"}}),&json!({"session_id":"s"}),&json!({}),&json!({"block_id":"b"})));
+        assert_eq!(claude[0]["codexTitleEligible"],false);
     }
 
 }

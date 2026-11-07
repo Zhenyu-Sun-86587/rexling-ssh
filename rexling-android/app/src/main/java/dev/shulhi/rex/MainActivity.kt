@@ -24,6 +24,9 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -61,6 +64,7 @@ class MainActivity : ComponentActivity() {
         intent?.data=null
     }
     override fun onNewIntent(intent: Intent) {super.onNewIntent(intent);consumeAlert(intent)}
+    override fun onWindowFocusChanged(hasFocus: Boolean) {super.onWindowFocusChanged(hasFocus);model.windowFocusChanged(hasFocus)}
     override fun onStart(){super.onStart();BackgroundAlerts.foreground.value=true;model.resume()}
     override fun onStop(){if(!isChangingConfigurations) BackgroundAlerts.foreground.value=false;model.pause();super.onStop()}
 }
@@ -124,7 +128,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var about by remember {mutableStateOf(false)}
     var preferencesOpen by remember {mutableStateOf(false)}
     var neovimSettings by remember {mutableStateOf(false)}
-    var portsideOpen by remember {mutableStateOf(false)}
     var alerts by remember {mutableStateOf(false)}
     var closeTarget by remember {mutableStateOf<TerminalCloseTarget?>(null)}
     val fontSize=model.fontSize
@@ -135,10 +138,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var networkDenied by remember {mutableStateOf<(() ->Unit)?>(null)}
     val localNetwork=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted->
         val action=networkAction;val denied=networkDenied;networkAction=null;networkDenied=null
-        if(granted) action?.invoke() else {denied?.invoke();model.images.notice="Allow local network access to connect to Portside."}
+        if(granted) action?.invoke() else {denied?.invoke();model.images.notice="Allow local network access to upload images to Rex."}
     }
     DisposableEffect(Unit) {onDispose {networkDenied?.invoke();networkAction=null;networkDenied=null}}
-    fun withPortsideNetwork(action: ()->Unit,onDenied: ()->Unit={}) {
+    fun withUploadNetwork(action: ()->Unit,onDenied: ()->Unit={}) {
         if(Build.VERSION.SDK_INT>=37 && context.checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")!=android.content.pm.PackageManager.PERMISSION_GRANTED) {
             if(networkAction!=null) {onDenied();return}
             networkAction=action;networkDenied=onDenied;localNetwork.launch("android.permission.ACCESS_LOCAL_NETWORK")
@@ -146,23 +149,24 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     val imageCommit: (android.net.Uri,()->Unit)->Boolean={uri,release->
         val target=model.imageTarget()
-        if(target==null || model.portside[target.server]==null) model.attachImage(uri,target,release)
-        else {withPortsideNetwork({model.attachImage(uri,target,release)},release);true}
+        if(target==null) model.attachImage(uri,target,release)
+        else {withUploadNetwork({model.attachImage(uri,target,release)},release);true}
     }
     fun pasteClipboard(): Boolean = runCatching {
         pasteTerminalClipboard(context,{uri->imageCommit(uri,{})},client::paste)
     }.getOrElse {model.images.notice="Could not read the clipboard image. Try Attach image instead.";false}
     val photoPicker=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {uri->
         val target=model.pendingImageTarget;model.pendingImageTarget=null
-        if(uri!=null) withPortsideNetwork({model.attachImage(uri,target)})
+        if(uri!=null) withUploadNetwork({model.attachImage(uri,target)})
     }
     fun chooseImage() {
         val target=model.imageTarget()
         if(target==null) {model.images.notice="Take control of a pane before attaching an image.";return}
-        if(model.portside[target.server]==null) {model.images.notice="Set up image uploads in Preferences → Portside for this Rex server.";return}
         model.pendingImageTarget=target
         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
     }
+    SideEffect {model.setPaneObscured(model.activityVisible || picker.isNotEmpty() || preferencesOpen || servers || newSession || appearance || about || neovimSettings || alerts || fontPicker || closeTarget!=null)}
+    DisposableEffect(client) {onDispose {model.setPaneObscured(true)}}
     val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
@@ -197,7 +201,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
                 blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
-                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),expanded=picker=="sessions",menu={
+                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
@@ -280,27 +284,27 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         }
                     }
                 }
-                model.images.state?.let {status->ImageUploadOverlay(status,model.canInsertImage(status.target),model.images::insertReady,model.images::retry,
-                    onCopy={(getClipboard(context) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Uploaded image path",status.path))},onCancel=model.images::cancel,
-                    modifier=Modifier.align(Alignment.BottomCenter).padding(horizontal=12.dp).padding(bottom=if(state.connected) 112.dp else 12.dp),retryable=model.images.retryable)}
+                model.images.state?.let {status->ImageUploadOverlay(status,model.images::retry,model.images::cancel,
+                    modifier=Modifier.align(Alignment.BottomEnd).padding(horizontal=16.dp).padding(bottom=if(state.connected) 112.dp else 16.dp),retryable=model.images.retryable)}
                 // Loading feedback must not resize the terminal grid during navigation.
                 if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
                     LinearProgressIndicator(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp))
-                if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,model.closingSessionKey.ifBlank {model.renamingSessionKey},model.sessionActionError,model::closeSession,model::renameSession,
-                    onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true})
+
             }
         }
     }
+if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,state.connected&&!state.creating,model.closingSessionKey.ifBlank {model.renamingSessionKey},model.sessionActionError,model::closeSession,model::renameSession,
+                    onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true})
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen)
-    if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;portsideOpen=true},{preferencesOpen=false;about=true},
+    if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;about=true},
         onClose={preferencesOpen=false},shortcutGesture=model.shortcutGesture,onShortcutGesture=model::changeShortcutGesture,
-        onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick)
+        onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
+        codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention)
     if(neovimSettings) NeovimShortcutsSheet(model.neovimShortcuts,model::saveNeovimShortcuts,onClose={neovimSettings=false},
         enabled=model.neovimShortcutsEnabled,onEnabled=model::enableNeovimShortcuts,
         layout=model.neovimShortcutLayout,onLayout=model::changeNeovimShortcutLayout,effect=model.neovimShortcutEffect,onEffect=model::changeNeovimShortcutEffect,
         hapticsEnabled=model.neovimShortcutHaptics,onHaptics=model::changeNeovimShortcutHaptics)
-    if(portsideOpen) PortsideSettingsSheet(model,{action->withPortsideNetwork(action)}) {portsideOpen=false}
-    if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("Image upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}},dismissButton={TextButton(onClick={model.images.notice="";portsideOpen=true}) {Text("Portside settings")}})
+    if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("Image upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}})
     if(about) AboutSheet {about=false}
     if(alerts) BackgroundAlertsDialog(model) {alerts=false}
     if(servers) ServersSheet(model){servers=false}
@@ -329,44 +333,52 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
-@Composable private fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onRenameSession: (SessionTarget,String)->Boolean,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable internal fun SessionSwitcher(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onRenameSession: (SessionTarget,String)->Boolean,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit) {
     var search by rememberSaveable {mutableStateOf("")}
     var closeTarget by remember {mutableStateOf<SessionTarget?>(null)}
     var renameTarget by remember {mutableStateOf<SessionTarget?>(null)}
-    BackHandler(onBack=onClose)
-    Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.25f)).clickable(onClick=onClose))
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(.78f)
-            .clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface).padding(horizontal=15.dp)) {
-            Box(Modifier.align(Alignment.CenterHorizontally).padding(top=9.dp,bottom=13.dp).size(25.dp,4.dp)
-                .background(MaterialTheme.colorScheme.outline,RoundedCornerShape(2.dp)))
-            Row(Modifier.fillMaxWidth().padding(bottom=12.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("Sessions",Modifier.weight(1f),fontSize=19.sp,fontWeight=FontWeight.Bold)
-                Button(onClick=onNew,enabled=canCreate,contentPadding=PaddingValues(horizontal=14.dp,vertical=8.dp)) {
-                    ChromeSymbol(ChromeIcon.ADD,Modifier.size(15.dp),MaterialTheme.colorScheme.onPrimary);Spacer(Modifier.width(5.dp));Text("New")
+    val groups=remember(targets,current,search) {SessionCatalog.groups(targets,current,search)}
+    // Filtering does not resize the drawer or move the search field under the finger.
+    val panelHeight=(128+targets.size.coerceIn(1,7)*64+targets.map {it.server.id}.distinct().size.coerceAtMost(5)*24).dp.coerceIn(248.dp,600.dp)
+    val scheme=MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=scheme.surface,
+        dragHandle={Box(Modifier.fillMaxWidth().height(16.dp),contentAlignment=Alignment.Center) {
+            Box(Modifier.width(28.dp).height(3.dp).background(scheme.outlineVariant,RoundedCornerShape(3.dp)))
+        }}) {
+        Column(Modifier.fillMaxWidth().height(panelHeight).padding(bottom=4.dp)) {
+            Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("Sessions",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
+                TextButton(onClick=onNew,enabled=canCreate,contentPadding=PaddingValues(horizontal=8.dp)) {
+                    ChromeSymbol(ChromeIcon.ADD,Modifier.size(15.dp),scheme.primary)
+                    Spacer(Modifier.width(4.dp));Text("New",style=SettingsType.detail)
                 }
+                ChromeButton(ChromeIcon.CLOSE,"Close sessions",onClick=onClose)
             }
-            TextField(search,{search=it},Modifier.fillMaxWidth(),placeholder={Text("Jump to session…",fontSize=12.sp)},singleLine=true,
-                leadingIcon={ChromeSymbol(ChromeIcon.SEARCH,color=MaterialTheme.colorScheme.onSurfaceVariant)},shape=RoundedCornerShape(12.dp),
-                colors=TextFieldDefaults.colors(focusedContainerColor=MaterialTheme.colorScheme.surfaceVariant,unfocusedContainerColor=MaterialTheme.colorScheme.surfaceVariant,
-                    focusedIndicatorColor=Color.Transparent,unfocusedIndicatorColor=Color.Transparent))
-            Spacer(Modifier.height(9.dp))
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                val groups=SessionCatalog.groups(targets,current,search)
-                if(groups.isEmpty()) Text("No matching sessions",Modifier.padding(15.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)
-                groups.forEach {group->key(group.server.id) {
-                    Row(Modifier.fillMaxWidth().padding(start=11.dp,end=11.dp,top=13.dp,bottom=5.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text(group.server.label,Modifier.weight(1f),fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(group.sessions.size.toString(),fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            BasicTextField(search,{search=it},Modifier.fillMaxWidth().padding(horizontal=16.dp).heightIn(min=40.dp)
+                .clip(RoundedCornerShape(12.dp)).background(scheme.surfaceVariant.copy(alpha=.45f)).padding(horizontal=12.dp,vertical=10.dp),
+                textStyle=SettingsType.row.copy(color=scheme.onSurface),singleLine=true,
+                cursorBrush=androidx.compose.ui.graphics.SolidColor(scheme.primary),
+                decorationBox={field->Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    ChromeSymbol(ChromeIcon.SEARCH,Modifier.size(17.dp),scheme.onSurfaceVariant)
+                    Box(Modifier.weight(1f)) {if(search.isEmpty()) Text("Find session…",style=SettingsType.row,color=scheme.onSurfaceVariant);field()}
+                }})
+            LazyColumn(Modifier.fillMaxWidth().weight(1f),contentPadding=PaddingValues(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                if(groups.isEmpty()) item {Text("No matching sessions",Modifier.padding(vertical=16.dp),style=SettingsType.row,color=scheme.onSurfaceVariant)}
+                groups.forEach {group->
+                    item(key="server:${group.server.id}") {
+                        Row(Modifier.fillMaxWidth().padding(top=6.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Text(group.server.label,Modifier.weight(1f),style=SettingsType.section,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            Text(group.sessions.size.toString(),style=SettingsType.detail,color=scheme.onSurfaceVariant)
+                        }
                     }
-                    group.sessions.forEach {target->key(target.key) {
+                    items(group.sessions,key={it.key}) {target->
                         SessionRow(target,current==target.key,last==target.key,closing==target.key,
                             onSelect={onSelect(target.key)},onClose={closeTarget=target},onRename={renameTarget=target})
-                    }}
-                }}
+                    }
+                }
             }
-            if(error.isNotBlank()) Text(error,Modifier.padding(vertical=10.dp),color=MaterialTheme.colorScheme.error,fontSize=11.sp)
-            Spacer(Modifier.height(12.dp))
+            if(error.isNotBlank()) Text(error,Modifier.padding(horizontal=16.dp,vertical=4.dp),color=scheme.error,style=SettingsType.detail)
         }
     }
     renameTarget?.let {target->
@@ -401,11 +413,11 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     }
     AlertDialog(onDismissRequest=onClose,title={Text("Background alerts",style=SettingsType.title)},text={
         Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            Text("Get notified when a task needs input, approval, sign-in, or fails while Rexling is in the background or your phone is locked.",style=SettingsType.body)
+            Text("Get notified when a task finishes, needs input, approval, sign-in, or fails while Rexling is in the background or your phone is locked.",style=SettingsType.body)
             Text("A quiet monitoring notification stays visible. Stop it there, or turn this off. Closing Rexling stops monitoring.",style=SettingsType.body)
             Text("Your phone may delay alerts while sleeping.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                Text("Notify when I’m needed",Modifier.weight(1f),style=SettingsType.row)
+                Text("Notify about task updates",Modifier.weight(1f),style=SettingsType.row)
                 Switch(checked=model.backgroundAlerts,onCheckedChange={enabled->
                     if(!enabled) model.setBackgroundAlerts(false)
                     else if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)

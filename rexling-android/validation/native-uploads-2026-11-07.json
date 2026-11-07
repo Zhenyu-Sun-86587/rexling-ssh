@@ -1,0 +1,36 @@
+{
+  "hosts": [
+    {
+      "host": "MBP",
+      "bytes": 1813958,
+      "sha256": "e4ba37c7b8236405acb53a7de3b51021f7d30bed9ea9215699cbfefcd6a83f01",
+      "automatic_path_inserted": true,
+      "content_verified": true,
+      "completed": true,
+      "temporary_session_removed": true
+    },
+    {
+      "host": "Ubuntu",
+      "bytes": 1813958,
+      "sha256": "e4ba37c7b8236405acb53a7de3b51021f7d30bed9ea9215699cbfefcd6a83f01",
+      "automatic_path_inserted": true,
+      "content_verified": true,
+      "completed": true,
+      "temporary_session_removed": true
+    }
+  ],
+  "existing_user_panes_modified": false,
+  "build": 79,
+  "apk": "dist/Rexling-2026.11.06-build79-47d06edf05-modified-arm64-release.apk",
+  "sha256": "8fa63376d66924d36ebb4d7b1c4ce21ae4e488723cab6f9333679986e72b928d",
+  "installed_on_phone": false,
+  "rust_tests_passed": 23,
+  "rust_live_opt_in_skipped": 1,
+  "jvm_tests_passed": 165,
+  "jvm_optional_skipped": 1,
+  "android_flow_tests_passed": 9,
+  "release_lint_packaging_verified": true,
+  "native_upload_jni_exports_verified": true,
+  "android_distinct_tests_passed": 12,
+  "android_final_native_and_ui_tests_passed": 6
+}

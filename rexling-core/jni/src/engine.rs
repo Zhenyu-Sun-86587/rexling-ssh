@@ -187,6 +187,7 @@ struct Actor {
     activity_snapshot: Arc<Value>,
     activity_dirty: bool,
     activity_panes: Value,
+    activity_titles: BTreeMap<String,Value>,
     activity_full: bool,
     activity_inflight_full: bool,
     activity_pending: BTreeSet<String>,
@@ -242,7 +243,7 @@ impl Actor {
             preview_task: None,
             summary_task: None,
             activity_open:false,monitoring:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
-            activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
+            activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_titles:BTreeMap::new(),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
             program_task: None,
             programs: json!({}),
             directories: json!({}),
@@ -257,10 +258,9 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
-        if (self.activity_open || self.monitoring) && self.activity_dirty {self.activity_snapshot=Arc::new(self.activity.clone());self.activity_dirty=false;}
+        if self.activity_dirty {self.activity_snapshot=Arc::new(self.activity.clone());self.activity_dirty=false;}
         if let Ok(mut shared) = self.shared.lock() {
-            if self.activity_open || self.monitoring {shared.activity=self.activity_snapshot.clone();}
-            else if !shared.activity.is_null() {shared.activity=Arc::default();}
+            shared.activity=self.activity_snapshot.clone();
             shared.revision += 1;
             shared.frame=self.screen.clone();
             shared.key=format!("{}:{}",self.selected_session,self.selected_block);
@@ -384,7 +384,9 @@ impl Actor {
                         }
                     }
                     self.activity_inflight.clear();
-                    for (id,event) in &self.title_events {if crate::activity::apply_title(&mut self.activity,&self.selected_session,id,event) {self.activity_dirty=true;}}
+                    for cached in self.activity_titles.values() {
+                        if crate::activity::apply_title(&mut self.activity,cached["session"].as_str().unwrap_or(""),cached["block"].as_str().unwrap_or(""),&cached["event"]) {self.activity_dirty=true;}
+                    }
                     self.attention_count=crate::activity::attention_count(&self.activity,&self.activity_seen);
                     self.publish();
                 },
@@ -453,7 +455,7 @@ impl Actor {
         self.activity_task=None;
         self.program_task = None;
         self.preview_updates.clear();
-        self.session_details = json!({});self.activity=json!([]);self.activity_dirty=true;self.activity_panes=json!([]);self.attention_count=0;self.activity_pending.clear();self.activity_inflight.clear();self.activity_full=false;self.activity_error.clear();self.activity_partial=false;
+        self.session_details = json!({});self.activity=json!([]);self.activity_dirty=true;self.activity_panes=json!([]);self.activity_titles.clear();self.attention_count=0;self.activity_pending.clear();self.activity_inflight.clear();self.activity_full=false;self.activity_error.clear();self.activity_partial=false;
         self.programs = json!({});
         self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
         self.retry = None;
@@ -708,10 +710,14 @@ impl Actor {
                         if self.activity_panes.as_array().into_iter().flatten().any(|p|
                             p["session"]["session_id"]==sid && p["block"]["block_id"]==id) {self.activity_pending.insert(key);} else {self.activity_full=true;}
                     }
+                    if name=="title_changed" {
+                        self.activity_titles.insert(crate::activity::pane_key(sid,id),json!({"session":sid,"block":id,"event":block["payload"]}));
+                        if self.activity_titles.len()>1024 {if let Some(key)=self.activity_titles.keys().next().cloned() {self.activity_titles.remove(&key);}}
+                    }
                     if sid==self.selected_session {
                         self.program_event(id,name,&block["payload"]);
                         if matches!(name,"title_changed"|"process_changed"|"program_status_changed"|"program_status_removed"|"child_exited") {self.publish();}
-                    } else if name=="title_changed" && self.activity_open && crate::activity::apply_title(&mut self.activity,sid,id,&block["payload"]) {
+                    } else if name=="title_changed" && crate::activity::apply_title(&mut self.activity,sid,id,&block["payload"]) {
                         self.activity_dirty=true;self.publish();
                     }
                 }
@@ -2744,14 +2750,16 @@ while True:
         assert!(!actor.controlled && actor.data.is_none() && actor.replica.is_none());
     }
 
-    #[test] fn hidden_activity_is_cached_without_copying_it_into_terminal_updates() {
+    #[test] fn hidden_activity_is_shared_for_focus_policy_without_recopied_snapshots() {
         let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
         actor.activity=json!([{"title":"Cached task"}]);actor.publish();
         let published=||{let shared=shared.lock().unwrap();let mut value:Value=serde_json::from_str(&shared.json).unwrap();value["activity"]=shared.activity.as_ref().clone();value};
-        assert!(published()["activity"].is_null());assert_eq!(actor.activity[0]["title"],"Cached task");
+        assert_eq!(published()["activity"][0]["title"],"Cached task");
+        let cached=shared.lock().unwrap().activity.clone();
         actor.activity_open=true;actor.publish();assert_eq!(published()["activity"][0]["title"],"Cached task");
-        actor.activity_open=false;actor.publish();assert!(published()["activity"].is_null());
+        actor.activity_open=false;actor.publish();assert_eq!(published()["activity"][0]["title"],"Cached task");
+        assert!(Arc::ptr_eq(&cached,&shared.lock().unwrap().activity));
     }
 
     #[test] fn stale_or_hidden_take_and_resize_commands_cannot_target_the_new_pane() {

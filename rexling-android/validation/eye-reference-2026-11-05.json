@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-05",
+  "version_code": 67,
+  "change": "Match unread eye glyph and badge to user reference",
+  "apk": "dist/Rexling-2026.11.05-build67-47d06edf05-modified-arm64-release.apk",
+  "sha256": "366e4f19a0709f51e9d2795130417458e4b6a2f5d935624f993a8297e6e28a21",
+  "checks": {
+    "focused_android_tests_passed": 2,
+    "light_dark_reference_review": true,
+    "badge_overlaps_glyph_with_background_cutout": true,
+    "clear_preserves_touch_target_bounds": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "phone": "S22+ RFCT21390SD; settings preserved; app not launched"
+}

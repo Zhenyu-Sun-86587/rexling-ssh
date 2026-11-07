@@ -21,34 +21,19 @@ class SettingsScreensTest {
     @get:Rule val ui=createComposeRule()
     @Test fun settingsRemainReadableInBothThemes() {
         var dark by mutableStateOf(false)
-        var page by mutableIntStateOf(0)
-        val mac=ServerProfile("mac","Shulhi MBP","https://shulhi-mbp-rex.taildaac1.ts.net")
-        val linux=ServerProfile("linux","Linux","https://rex.taildaac1.ts.net")
-        val config=PortsideConfig.create("shulhi-mbp.taildaac1.ts.net","screenshots")
         ui.setContent {
             RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
                 Surface(Modifier.fillMaxSize()) {
-                    when(page) {
-                        0->PreferencesSheet({},{},{},{page=1},{},{})
-                        1->ModalBottomSheet(onDismissRequest={},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
-                            PortsideSettingsContent(listOf(mac,linux),mapOf(mac.id to config),{page=2},{},{})
-                        }
-                        else->PortsideEditor(mac,config,{it()},{_,_,_->null},{})
-                    }
+                    PreferencesSheet({},{},{},{},{})
                 }
             }
         }
         for(isDark in listOf(false,true)) {
-            ui.runOnIdle {dark=isDark;page=0}
-            ui.onNodeWithText("Portside").performScrollTo().assertIsDisplayed()
+            ui.runOnIdle {dark=isDark}
+            ui.onNodeWithText("Background alerts").performScrollTo().assertIsDisplayed()
+            ui.onNodeWithText("Portside").assertDoesNotExist()
             capture("preferences",isDark)
-            ui.onNodeWithText("Portside").performClick()
-            ui.onNodeWithText("Shulhi MBP").assertIsDisplayed()
-            capture("portside",isDark)
-            ui.onNodeWithText("Shulhi MBP").performClick()
-            ui.onNodeWithText("Use image uploads").assertIsOn()
-            ui.onNodeWithText("Save").assertIsDisplayed()
-            capture("uploads",isDark)
+
         }
     }
     private fun capture(name: String,dark: Boolean) {

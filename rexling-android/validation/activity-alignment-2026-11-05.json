@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-05",
+  "version_code": 68,
+  "change": "Align Activity statuses with Mark seen below; neutral eye with colored badge",
+  "apk": "dist/Rexling-2026.11.05-build68-47d06edf05-modified-arm64-release.apk",
+  "sha256": "84a5e31e2d15e6400a290d65bfd320f21c4bd4a0984b50a1c5c733f2fa858c89",
+  "checks": {
+    "android_tests_passed": 5,
+    "text_trailing_edges_and_action_placement": true,
+    "light_dark_visual_review": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "phone": "S22+ RFCT21390SD; settings preserved; app not launched"
+}

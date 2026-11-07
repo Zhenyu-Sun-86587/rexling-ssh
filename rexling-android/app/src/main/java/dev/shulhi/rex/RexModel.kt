@@ -28,7 +28,22 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     internal var networkAvailable by mutableStateOf<Boolean?>(null)
         private set
+    private var paneObscured=true
+    internal fun setPaneObscured(value: Boolean) {paneObscured=value;updateActivity()}
+    private fun watchedPane(): WatchedPane? {
+        val client=connections[activeServerId] ?: return null
+        val state=client.state.value
+        val app=getApplication<Application>()
+        return ActivityFocusPolicy.watched(activeServer,state,foreground && windowFocused,paneObscured || activityVisible,client.hasScreen && state.screen!=null,client.navigationRequest.pending,
+            app.getSystemService(android.os.PowerManager::class.java).isInteractive,app.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+    }
     private fun updateActivity() {
+        val watched=watchedPane()
+        if(watched!=null) connections[watched.server]?.let {client->
+            val profile=servers.firstOrNull {it.id==watched.server}
+            if(profile!=null) ActivityFocusPolicy.acknowledge(profile,client.state.value.activity,watched,client::isActivitySeen).takeIf {it.isNotEmpty()}?.let(client::markActivitySeen)
+        }
+        attentionCount=connections.values.sumOf {client->if(client.state.value.connected) ActivityFocusPolicy.unread(client.state.value.activity,client::isActivitySeen) else 0}
         activitySources=servers.mapNotNull {server->connections[server.id]?.state?.value?.let {state->
             if(state.phase in listOf("disconnected","preview")) null else ActivitySource(server,state.connected,state.activityLoading,
                 if(state.connected) state.activityError else "Connection interrupted",state.activityPartial,state.activity,state.activity.filter {connections[server.id]?.isActivitySeen(it)==true}.map {it.key}.toSet())
@@ -50,18 +65,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         markActivitySeen(target);rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
     }
     private val preferences=application.getSharedPreferences(preferenceName,0)
-    internal var portside by mutableStateOf(PortsideConfig.decode(preferences.getString("portside_uploads",null)))
-        private set
     private var serverSwitchSerial=0L
     internal var pendingImageTarget: ImageTarget?=null
-    internal val images=ImageUploads(application,viewModelScope,::autoInsertImage,::insertImage)
-    internal fun savePortside(id: String,endpoint: String,folder: String,enabled: Boolean=true): String? = runCatching {
-        require(servers.any {it.id==id}) {"This Rex server is no longer saved"}
-        val value=if(endpoint.isBlank()) null else PortsideConfig.create(endpoint,folder,enabled)
-        images.forget(id)
-        portside=if(value==null) portside-id else portside+(id to value)
-        preferences.edit {putString("portside_uploads",PortsideConfig.encode(portside))}
-    }.exceptionOrNull()?.message
+    internal val images=ImageUploads(application,viewModelScope)
     internal fun imageTarget(): ImageTarget? {
         val client=activeClient;val state=client.state.value
         if(!foreground || !state.connected || !state.controlled || state.creating || client.navigationRequest.pending || state.selectedBlock.isBlank()) return null
@@ -71,18 +77,15 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal fun attachImage(uri: android.net.Uri,target: ImageTarget?,onCopied: ()->Unit={}): Boolean {
         if(target==null) {onCopied();images.notice="Take control of a pane before attaching an image.";return false}
         val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint}
-        val config=portside[target.server]
-        if(profile==null || config==null) {onCopied();images.notice="Set up image uploads in Preferences → Portside for this Rex server.";return false}
-        if(!config.enabled) {onCopied();images.notice="Image uploads are turned off for this Rex server. Enable them in Preferences → Portside.";return false}
-        return images.start(uri,target,config,onCopied)
+        if(profile==null) {onCopied();images.notice="The original Rex server is no longer available.";return false}
+        return images.start(uri,target,onCopied)
     }
-    internal fun canInsertImage(target: ImageTarget): Boolean {
-        val current=activeClient.state.value
-        return foreground && activeServerId==target.server && activeServer.endpoint==target.endpoint && current.selectedSession==target.session && current.selectedBlock==target.block && current.connected && current.controlled && !current.creating && !activeClient.navigationRequest.pending
+    internal var experimentalCodexAttention by mutableStateOf(preferences.getBoolean(CodexAttentionPolicy.ENABLED,false))
+        private set
+    internal fun changeCodexAttention(enabled: Boolean) {
+        experimentalCodexAttention=enabled;preferences.edit {putBoolean(CodexAttentionPolicy.ENABLED,enabled)}
+        connections.values.forEach {it.refreshActivityPolicy()};updateActivity()
     }
-    private fun insertImage(target: ImageTarget,path: String): Boolean = canInsertImage(target) && activeClient.pasteImagePath(target.session,target.block,path)
-    private fun autoInsertImage(target: ImageTarget,path: String): Boolean = target.serverSwitch==serverSwitchSerial && target.navigation==activeClient.selectionVersion &&
-        activeClient.state.value.programs[target.block]?.kind==target.program && insertImage(target,path)
     internal var backgroundAlerts by mutableStateOf(preferences.getBoolean(BackgroundAlerts.ENABLED,false))
         private set
     internal var notificationNotice by mutableStateOf("")
@@ -184,6 +187,8 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private val observers=mutableMapOf<String,Job>()
     private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
     private var palette: TerminalPalette?=null
+    private var windowFocused=false
+    internal fun windowFocusChanged(focused: Boolean) {windowFocused=focused;updateActivity()}
     private var foreground=true
     private var networkJob: Job?=null
     private val networkMonitor=NetworkMonitor(application) {change->viewModelScope.launch {
@@ -212,10 +217,10 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                 client.chromeState.collect {state->
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
-                    attentionCount=connections.values.sumOf {if(it.state.value.connected) it.state.value.attentionCount else 0}
-                    updateSessionTargets();images.tryAutoInsert()
+
+                    updateSessionTargets()
                     if(profile.id==pendingAlert?.serverId) tryOpenAlert()
-                    if(activityVisible) updateActivity()
+                    updateActivity()
                     if(renamingSessionKey.isNotBlank() && profile.id==renameServerId) {
                         if(!state.creating && state.sessions.any {it.id==renameSessionId && it.label==renameLabel}) renamingSessionKey=""
                         else if(state.error.isNotBlank() || !state.connected || state.sessions.none {it.id==renameSessionId}) {
@@ -310,7 +315,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         require(servers.none {it.id!=profile.id && it.endpoint==profile.endpoint}) {"That server is already saved"}
         val old=servers.firstOrNull {it.id==profile.id}
         if(old!=null && old.endpoint!=profile.endpoint) {
-            images.forget(old.id);portside=portside-old.id;preferences.edit {putString("portside_uploads",PortsideConfig.encode(portside))}
+            images.forget(old.id)
             connections.remove(old.id)?.let {it.releaseControl();it.disconnect();it.close()}
             observers.remove(old.id)?.cancel();serverStatuses=serverStatuses-old.id
         }
@@ -326,7 +331,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         connections[id]?.let {it.releaseControl();it.disconnect()}
     }
     fun forgetServer(id: String) {
-        images.forget(id);portside=portside-id;preferences.edit {putString("portside_uploads",PortsideConfig.encode(portside))}
+        images.forget(id)
         if(activeServerId==id) serverSwitchSerial++
         disconnectServer(id)
         observers.remove(id)?.cancel();connections.remove(id)?.close()
@@ -343,7 +348,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }
     fun updateTerminalTheme(value: TerminalPalette) {palette=value;connections.values.forEach {it.updateTerminalTheme(value)}}
     fun changeAppearance(value: Appearance) {appearance=value;preferences.edit {putString("appearance",value.name)}}
-    fun pause() {foreground=false;networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
+    fun pause() {foreground=false;updateActivity();networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
     fun resume() {foreground=true;networkMonitor.start();connections.values.forEach {it.resume()};tryOpenAlert();BackgroundAlerts.reconcile(getApplication())}
     override fun onCleared() {images.close();preferences.unregisterOnSharedPreferenceChangeListener(alertsListener);networkJob?.cancel();networkMonitor.stop();observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
 }

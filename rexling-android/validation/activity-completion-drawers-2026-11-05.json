@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-05",
+  "change": "Compact Activity/Sessions drawers, completion badges and background notifications",
+  "base_revision": "47d06edf05",
+  "local_changes": true,
+  "version_code": 66,
+  "apk": "dist/Rexling-2026.11.05-build66-47d06edf05-modified-arm64-release.apk",
+  "release_sha256": "5b566a95569ad1aad21fc460c841fa35b932948d69044220298f3f36742eeb44",
+  "checks": {
+    "jvm_tests_passed": 161,
+    "optional_jvm_benchmark_skipped": 1,
+    "rust_tests_passed": 59,
+    "live_opt_in_rust_tests_ignored": 15,
+    "android_tests_passed": 18,
+    "live_opt_in_android_test_skipped": 1,
+    "light_and_dark_drawers_visually_reviewed": true,
+    "session_filter_select_rename_new_and_looping_navigation": true,
+    "done_badges_for_codex_and_claude_clear_when_seen_and_relight_for_new_finish": true,
+    "foreground_suppression_and_background_screen_off_completion_delivery": true,
+    "old_completion_baseline_partial_startup_deduplication_and_restart": true,
+    "completion_notification_retained_after_report_clears": true,
+    "monitor_never_owns_types_or_resizes": true,
+    "release_build_lint_signature_abi_profiles_alignment_passed": true,
+    "installed_apk_checksum_matches": true
+  },
+  "phone_install": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 66,
+    "apk": "rexling-android/dist/Rexling-2026.11.05-build66-47d06edf05-modified-arm64-release.apk",
+    "sha256": "5b566a95569ad1aad21fc460c841fa35b932948d69044220298f3f36742eeb44",
+    "installed_sha256": "5b566a95569ad1aad21fc460c841fa35b932948d69044220298f3f36742eeb44",
+    "settings_preserved": true,
+    "app_launched": false
+  },
+  "test_isolation": "Emulator and loopback WebSocket RPC peer only. No user sessions, panes or server configuration were changed by tests. Phone used only for install -r and checksum verification.",
+  "source_commit": "Uncommitted changes based on signed 47d06edf05"
+}

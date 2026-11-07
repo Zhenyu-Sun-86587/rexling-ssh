@@ -1,0 +1,22 @@
+{
+  "build": 85,
+  "font_size_sp": 12,
+  "line_height_sp": 18,
+  "same_as_tab_labels": true,
+  "visual_height_dp": 32,
+  "ring_diameter_dp": 14,
+  "leading_padding_dp": 8,
+  "content_spacing_dp": 6,
+  "android_layout_action_check_passed": true,
+  "visual_review": true,
+  "release_lint_packaging_verified": true,
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 85,
+    "sha256": "3bf9538204178a4a6fa996b03f1d727f20853666d8fdc6806e860ecc71c1ad28",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}

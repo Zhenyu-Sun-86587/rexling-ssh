@@ -1,0 +1,23 @@
+{
+  "date": "2026-11-06",
+  "version_code": 74,
+  "apk": "dist/Rexling-2026.11.06-build74-47d06edf05-modified-arm64-release.apk",
+  "sha256": "917ee466f36978cc1f7e1a9d63b987bcbfdd3bb4e6e9ad50c5b9308352905f33",
+  "checks": {
+    "jvm_tests_passed": 165,
+    "optional_benchmark_skipped": 1,
+    "rust_tests_passed": 60,
+    "live_rust_tests_ignored": 15,
+    "android_tests_passed": 12,
+    "exact_watched_identity_and_background_exclusions": true,
+    "experimental_default_off_and_reversible": true,
+    "codex_owner_root_marker_guards": true,
+    "reconnect_animation_dedup_and_new_episode_versions": true,
+    "actual_background_and_locked_notification_fixture": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "settings_preserved": true,
+  "app_launched": false,
+  "experiment_default": false
+}

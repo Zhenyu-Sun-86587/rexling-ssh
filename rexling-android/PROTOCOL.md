@@ -688,3 +688,150 @@ cargo test --locked --manifest-path rexlink-core/Cargo.toml \
 ```
 
 Only disposable fixture sessions are created and destroyed.
+
+
+## Completion alerts and compact drawers (2026-11-05)
+
+The Activity unread count includes unseen done, blocked and error records. Working
+and idle do not badge. Done reports can be marked seen individually or together;
+Needs you still filters only blocked/error, and Finished filters done. Stable
+attention versions exclude title animation, so changing titles does not relight
+a seen completion. The dot sits above the eye’s upper-right edge, outside its
+background clipping layer. The eye stays neutral; only its unread dot uses the
+accent color. Activity rows use state bars instead of status words: solid blue for done, a
+blue bar with the tab’s moving highlight for working, pulsing amber for blocked, red for error, and muted
+bars once seen. Explicit status/progress remains in accessibility and filters.
+
+Background monitoring uses the existing attention channel (renamed Task updates)
+for new done reports as well as requests/errors. A complete first snapshot
+baselines historical completions; partial startup snapshots do not replay them.
+Work observed during this service run can finish before the baseline completes.
+Once baselined, first-seen fast completions also alert. Foreground and seen
+versions are consumed without delayed alerts, and persisted stamps prevent
+reconnection duplicates. A completion notification remains until seen, foreground
+return or dismissal even if its report clears. Private content uses a redacted
+“Rexling task finished” lock-screen title. No push server, auto-start, input,
+terminal ownership or resize behavior changes.
+
+Activity and Sessions use compact modal drawers, matching typography, small
+headers and tighter cards. Sessions no longer expands a duplicate carousel
+above its drawer. Search, cross-server navigation, New, Rename, Close and normal
+workspace session swipes remain available.
+
+
+### Activity state bars and descriptions — release 70
+
+Rows use a stable two-line title/description block and vector program tile of
+matching height, including font scaling. The subtitle combines report message
+and human context into one ellipsized line. Generated window labels matching
+Window followed by a hexadecimal ID are omitted from presentation; meaningful
+window names and routing IDs remain unchanged. Mark seen retains its own fixed
+action slot, so acknowledgment does not move or resize the title column.
+
+Only working bars own an infinite animation. Its linear phase is read during
+drawing; a short blue segment wraps down the left rail without recomposition,
+layout changes or flashing the row. Done is steady blue, blocked amber, error
+red and acknowledged/idle muted. Activity disposal removes its animation clock.
+Notification eligibility, report stamps and exact-pane navigation are unchanged.
+
+
+### Activity working pulse — release 71
+
+The working rail now stays filled and changes brightness uniformly between
+45% and 100%, on the same 1.2-second cadence as the tab working highlight. It
+uses the shared working-phase helper, with a smooth cosine cycle observed during
+drawing. No segment travels along the rail, and it never disappears. Finished
+remains steady blue; other colors, row geometry and notification behavior are
+unchanged.
+
+
+### Shared working highlight and quiet refresh — release 72
+
+Working now uses the tab’s actual drawing function: a filled blue bar with a
+white translucent highlight moving along its long axis. Activity applies it
+vertically, tabs horizontally, with identical colors, gradient proportions and
+1.2-second phase. Unseen blocked/Needs you reports use the uniform amber pulse;
+finished remains steady blue and acknowledged attention stops animating.
+
+The extra blue line immediately under the Activity filters was its own metadata
+refresh LinearProgressIndicator, not a leaked tab underline. It is removed while
+its two-pixel layout gap remains stable. Existing rows refresh without flashing
+a second indicator; the empty-state Checking activity text still explains the
+first load. Per-report progress and accessibility metadata remain available.
+
+
+## Focus-aware attention and experimental Codex titles — release 74
+
+A pane is watched only when Rexling’s window is focused, foregrounded, interactive
+and unlocked, its current screen is ready, navigation is settled and no drawer or
+preferences panel obscures it. The active server, endpoint, session and block
+must all match. Unseen notifiable reports for that pane are acknowledged using
+their current versions before computing the eye count. Other panes/tabs/servers
+retain their unread indication. Background/locked monitoring has no watched pane
+and keeps the existing background-only notification policy.
+
+Native activity snapshots remain available while the drawer is closed so Kotlin
+can apply watched-pane and optional title policies. Unchanged snapshots share the
+same Arc, and the wire layer retains revision/identity shortcuts. Normal terminal
+frames reuse cached policy results; they do not repeatedly parse episode data.
+Off-session/monitor title events update activity and override stale scan titles
+with cached events, guarded by the record’s process owner.
+
+The default-off Experimental setting recognizes only the explicit bracketed
+Action Required title, including [!] and observed dot/space variants followed by
+Action Required |. Native metadata marks only a root Working report owned by the
+current Codex foreground process, with matching title owner. It does not alter
+the server’s report. Kotlin infers generic Blocked only with the setting on;
+explicit Blocked/Done/Error and other programs retain their reported states.
+Disabling immediately restores raw states. Raw working metadata is preserved so
+the active tab also stops showing Working while inferred attention is active.
+
+Per-endpoint, per-record attention episodes persist in app preferences. Title
+animation and reconnect retain a version; returning to ordinary work closes the
+episode and a new question receives a fresh version. UI and monitoring service
+share the policy; foreground UI is authoritative while visible, the service in
+background, with non-authoritative observations predicting the same next epoch.
+The existing attention ledger consumes foreground reports and deduplicates alerts.
+This remains a title-format-dependent compatibility feature, not an upstream fix.
+
+
+## Native terminal image uploads (API revision 11)
+
+Build 79 prefers `com.superlogical.terminal.upload_begin` and a separate
+`rex.data.bytes.v1` data connection. The dedicated upload control connection
+negotiates 7–11; live terminal negotiation remains 7–8. A server below revision
+11, or one returning method_not_found/revision_too_low, prompts the user to update
+Rex. Build 80 removes the alternate upload backend; errors never change destination.
+
+Staged images stream as 16 KiB binary chunks with an exact byte count. An empty
+binary message half-closes the upload; only a successful server close after EOF
+confirms completion. The server inserts the path into the originally captured
+session/block, so Kotlin never pastes it again or sends Enter. Native transfers
+run in a separate cancellable worker; metadata polling does not block the
+terminal actor. Closing the upload cancels before completion; an error/loss after
+attempting EOF is treated as uncertain and disables Retry. Images remain capped
+at 100 MiB locally, with server limits authoritative.
+
+Picker, clipboard and IME image input use native Rex directly. Build 80 removes
+Portside settings, client code, path-insertion handoff and app-launch integration. Full investigation and
+wire evidence are recorded in `../docs/REX_UPLOADS.md`.
+
+
+### Upload progress checkpoints (build 86)
+
+File bytes and EOF framing remain unchanged. Every 64 KiB, and after the final
+partial chunk, the client sends a standard WebSocket Ping containing `rex-upload`
+plus the sent-byte offset as little-endian u64. Only matching Pongs for emitted,
+outstanding offsets advance progress. A later checkpoint covers earlier ones,
+allowing coalesced responses. Up to 4 MiB can be in flight; there is no round trip
+per file chunk. Stream replies are drained while writing and while awaiting the
+last checkpoint. Cancellation remains active throughout.
+
+This measures transport receipt of preceding data frames, not file validation
+or durable storage. Only successful EOF/server-close completion means the path
+was inserted. Unknown Pongs do not advance progress; a checkpoint timeout before
+EOF is a transfer failure, while lost confirmation after EOF remains uncertain.
+The existing native metadata field `sent` now carries confirmed progress.
+
+Ping/Pong behavior follows [RFC 6455 sections 5.5.2–5.5.3](https://www.rfc-editor.org/rfc/rfc6455#section-5.5.2).
+It was verified against both configured Rex servers and throttled loopback peers.

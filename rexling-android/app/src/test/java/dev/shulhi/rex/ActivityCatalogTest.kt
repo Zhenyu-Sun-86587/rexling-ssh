@@ -34,4 +34,16 @@ class ActivityCatalogTest {
         assertEquals(working.key,ActivityCatalog.records(source,ActivityFilter.ALL).first().key)
     }
 
+    @Test fun generatedWindowLabelsDoNotLeakIntoDescriptionsOrChangeTargets() {
+        val item=record("done").copy(sessionLabel="Rexling development")
+        for(label in listOf("Window e4617c1d","window-0123456789abcdef","Window 01234567-89ab-cdef-0123-456789abcdef")) {
+            val generated=item.copy(windowLabel=label)
+            assertEquals("Rexling development",generated.context)
+            assertEquals(item.key,generated.key)
+        }
+        for(label in listOf("shell","Build logs","Window layouts","Window deadbeef notes")) {
+            assertEquals("Rexling development · $label",item.copy(windowLabel=label).context)
+        }
+    }
+
 }

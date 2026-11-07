@@ -11,7 +11,7 @@ replace licenses or grant trademark rights for the following upstream material.
 | Simple Icons logos | CC0-1.0; `simple-icons-CC0.txt` and `program-icons.json` in the same license assets; brand marks remain their owners' property |
 | User-supplied Superlogical program tiles and Cloudflare glyph | Retained SVG sources, source catalog and checksums in `rexling-android/artwork/program-icons/superlogical/metadata.json`; trademarks and logos remain their owners' property |
 | Rex theme color projection | Original provenance and source hash retained in `rexling-android/app/src/main/assets/themes/SOURCE.json`; Apache 2.0 is not asserted over upstream Rex material |
-| OkHttp / Okio upload transport | Apache 2.0; pinned OkHttp 4.12.0 and its resolved Okio dependency in the Gradle manifests and Maven metadata |
+| OkHttp / Okio test fixtures (not shipped in the release app) | Apache 2.0; pinned OkHttp 4.12.0 and its resolved Okio dependency in the Gradle manifests and Maven metadata |
 | Rust / AndroidX / other dependencies | Their respective upstream licenses; pinned dependency versions in Cargo.lock and the Gradle manifests |
 
 The launcher artwork supplied for Rexling is retained with its preparation

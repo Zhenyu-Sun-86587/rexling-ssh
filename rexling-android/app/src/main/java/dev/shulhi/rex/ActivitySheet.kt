@@ -1,93 +1,158 @@
 package dev.shulhi.rex
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
+import kotlin.math.PI
+import kotlin.math.cos
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun ActivitySheet(sources: List<ActivitySource>,onRefresh: ()->Unit,onSelect: (ActivityTarget)->Unit,onClose: ()->Unit,onSeen: (ActivityTarget)->Unit={},onMarkAll: ()->Unit={}) {
     var filter by remember {mutableStateOf(ActivityFilter.ALL)}
     val filtered=remember(sources,filter) {sources.map {it to ActivityCatalog.records(it,filter)}}
-    ModalBottomSheet(onDismissRequest=onClose,containerColor=MaterialTheme.colorScheme.surface) {
-        Column(Modifier.fillMaxWidth().heightIn(max=640.dp).padding(bottom=20.dp)) {
-            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("Activity",Modifier.weight(1f),fontSize=20.sp,fontWeight=FontWeight.Bold)
-                TextButton(onClick=onMarkAll,enabled=sources.any {source->source.connected && source.items.any {it.state in listOf(ActivityState.BLOCKED,ActivityState.ERROR) && it.key !in source.seen}}) {Text("Mark seen",fontSize=11.sp)}
-                TextButton(onClick=onRefresh,enabled=sources.any {it.connected}) {Text("Refresh")}
+    val panelHeight=remember(sources) {
+        val count=sources.sumOf {it.items.distinctBy {record->record.key}.size}
+        val groups=sources.count {it.items.isNotEmpty() || it.error.isNotBlank() || it.partial}
+        (112+count.coerceIn(1,7)*72+groups.coerceAtMost(5)*24+sources.count {it.error.isNotBlank() || it.partial}*32).dp.coerceIn(208.dp,620.dp)
+    }
+    val scheme=MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=scheme.surface,
+        dragHandle={Box(Modifier.fillMaxWidth().height(16.dp),contentAlignment=Alignment.Center) {
+            Box(Modifier.width(28.dp).height(3.dp).background(scheme.outlineVariant,RoundedCornerShape(3.dp)))
+        }}) {
+        Column(Modifier.fillMaxWidth().height(panelHeight).padding(bottom=4.dp).semantics {paneTitle="Activity"}) {
+            Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("Activity",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
+                TextButton(onClick=onMarkAll,contentPadding=PaddingValues(horizontal=8.dp),enabled=sources.any {source->source.connected && source.items.any {it.state.notifiable && it.key !in source.seen}}) {Text("Mark seen",style=SettingsType.detail)}
+                ChromeButton(ChromeIcon.REFRESH,"Refresh activity",sources.any {it.connected},onClick=onRefresh)
                 ChromeButton(ChromeIcon.CLOSE,"Close activity",onClick=onClose)
             }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=16.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                ActivityFilter.entries.forEach {entry->FilterChip(selected=filter==entry,onClick={filter=entry},label={Text(entry.label)})}
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).height(40.dp).clip(RoundedCornerShape(12.dp))
+                .background(scheme.surfaceVariant.copy(alpha=.45f)).padding(4.dp).selectableGroup()) {
+                ActivityFilter.entries.forEach {entry->
+                    val active=filter==entry
+                    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp))
+                        .background(if(active) scheme.primaryContainer else Color.Transparent)
+                        .selectable(active,role=Role.Tab,onClick={filter=entry}),contentAlignment=Alignment.Center) {
+                        Text(entry.label,style=SettingsType.section,color=if(active) scheme.onPrimaryContainer else scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    }
+                }
             }
-            Box(Modifier.fillMaxWidth().height(2.dp)) {
-                if(sources.any {it.loading}) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
-            }
-            LazyColumn(Modifier.fillMaxWidth().weight(1f,fill=false),contentPadding=PaddingValues(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+            // Routine metadata refreshes keep existing rows quiet. The empty
+            // state already says Checking activity during the first load.
+            Spacer(Modifier.height(2.dp))
+            LazyColumn(Modifier.fillMaxWidth().weight(1f),contentPadding=PaddingValues(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 filtered.forEach {(source,records)->
                     if(records.isNotEmpty() || source.error.isNotBlank() || source.partial) {
                         item(key="server:${source.server.id}") {
-                            Row(Modifier.fillMaxWidth().padding(top=12.dp,bottom=4.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Text(source.server.label,Modifier.weight(1f),fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(if(source.connected) "${records.size}" else "Offline",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(Modifier.fillMaxWidth().padding(top=6.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Text(source.server.label,Modifier.weight(1f),style=SettingsType.section,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                                Text(if(source.connected) "${records.size}" else "Offline",style=SettingsType.detail,color=scheme.onSurfaceVariant)
                             }
-                            if(source.error.isNotBlank()) Text(source.error,Modifier.padding(bottom=6.dp),fontSize=11.sp,color=MaterialTheme.colorScheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
-                            else if(source.partial) Text("Some activity could not be refreshed.",fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            if(source.error.isNotBlank()) Text(source.error,Modifier.padding(bottom=4.dp),style=SettingsType.detail,color=scheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
+                            else if(source.partial) Text("Some activity could not be refreshed.",style=SettingsType.detail,color=scheme.onSurfaceVariant)
                         }
                         items(records,key={"${source.server.id}:${it.key}"}) {record->
-                            val attention=record.state in listOf(ActivityState.BLOCKED,ActivityState.ERROR)
-                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
-                                .semantics {contentDescription="${record.label}, ${record.stateLabel}, ${record.sessionLabel}, ${source.server.label}"}
-                                .clickable(enabled=source.connected){onSelect(ActivityTarget(source.server,record))}.padding(12.dp),
-                                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                ProgramStack(listOf(record.program),0,framed=true)
-                                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                                        Text(record.label,Modifier.weight(1f),fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=1,overflow=TextOverflow.Ellipsis)
-                                        Text(if(record.key in source.seen) "Seen" else record.stateLabel,fontSize=10.sp,color=if(record.key in source.seen) MaterialTheme.colorScheme.onSurfaceVariant else if(attention) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                                    }
-                                    if(record.message.isNotBlank()) Text(record.message,fontSize=12.sp,maxLines=2,overflow=TextOverflow.Ellipsis)
-                                    Text(listOf(record.sessionLabel,record.windowLabel,record.id).filter {it.isNotBlank()}.joinToString(" · "),fontSize=10.sp,
-                                        color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
-                                    record.progress?.let {progress->
-                                        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                            LinearProgressIndicator(progress={progress/100f},modifier=Modifier.weight(1f).height(3.dp))
-                                            Text("$progress%",fontSize=10.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
+                            val seen=record.state.notifiable && record.key in source.seen
+                            Row(Modifier.fillMaxWidth().heightIn(min=56.dp).clip(RoundedCornerShape(12.dp)).background(scheme.surfaceVariant.copy(alpha=.45f))
+                                .semantics {contentDescription="${record.label}, ${record.stateLabel}, ${record.sessionLabel}, ${source.server.label}"
+                                    stateDescription=listOf(record.stateLabel,if(seen) "Seen" else "",record.progress?.let {"$it%"}.orEmpty()).filter {it.isNotBlank()}.joinToString(" · ")}
+                                .clickable(enabled=source.connected,role=Role.Button){onSelect(ActivityTarget(source.server,record))}.padding(start=8.dp,end=4.dp,top=4.dp,bottom=4.dp),
+                                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                ActivityIdentity(record,seen,Modifier.weight(1f))
+                                Box(Modifier.width(68.dp),contentAlignment=Alignment.CenterEnd) {
+                                    if(record.state.notifiable && !seen) TextButton(
+                                        onClick={onSeen(ActivityTarget(source.server,record))},enabled=source.connected,
+                                        modifier=Modifier.height(36.dp).semantics {contentDescription="Mark ${record.label} seen"},
+                                        shape=RoundedCornerShape(8.dp),contentPadding=PaddingValues(0.dp),
+                                        colors=ButtonDefaults.textButtonColors(contentColor=scheme.onSurfaceVariant)
+                                    ) {Text("Mark seen",style=SettingsType.detail)}
                                 }
-                                if(attention && record.key !in source.seen) TextButton(
-                                    onClick={onSeen(ActivityTarget(source.server,record))},enabled=source.connected,
-                                    modifier=Modifier.semantics {contentDescription="Mark ${record.label} seen"},
-                                    shape=RoundedCornerShape(10.dp),contentPadding=PaddingValues(horizontal=8.dp,vertical=6.dp),
-                                    colors=ButtonDefaults.textButtonColors(contentColor=MaterialTheme.colorScheme.onSurfaceVariant)
-                                ) {Text("Mark seen",fontSize=10.sp,fontWeight=FontWeight.Medium)}
                             }
                         }
                     }
                 }
                 if(filtered.all {it.second.isEmpty()} && sources.none {it.error.isNotBlank() || it.partial}) item {
-                    Column(Modifier.fillMaxWidth().padding(24.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                        Text(if(sources.any {it.loading}) "Checking activity…" else "No activity to show",fontWeight=FontWeight.SemiBold)
-                        Text("Programs appear here when they report a status.",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(Modifier.fillMaxWidth().padding(vertical=20.dp,horizontal=8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                        Text(if(sources.any {it.loading}) "Checking activity…" else "No activity to show",style=SettingsType.row)
+                        Text("Programs appear here when they report a status.",style=SettingsType.detail,color=scheme.onSurfaceVariant)
                     }
                 }
             }
         }
+    }
+}
+
+
+/** Measure the real text column first; the icon and rail share that exact height. */
+@Composable private fun ActivityIdentity(record: ActivityRecord,seen: Boolean,modifier: Modifier) {
+    val scheme=MaterialTheme.colorScheme
+    val iconSlot=with(LocalDensity.current) {39.sp.toDp()}*(61f/48f)
+    Layout(modifier=modifier,content={
+        ActivityStateBar(record.state,seen,Modifier.semantics {testTag="Activity state ${record.key}"})
+        PaneProgramTile(record.program,Modifier.semantics {testTag="Activity program ${record.key}"},large=true,rotation=0f)
+        Column(verticalArrangement=Arrangement.spacedBy(1.dp)) {
+            Text(record.label,style=SettingsType.row,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(listOf(record.message,record.context).filter {it.isNotBlank()}.distinct().joinToString(" · "),style=SettingsType.detail,
+                color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+            record.progress?.let {progress->LinearProgressIndicator(progress={progress/100f},modifier=Modifier.fillMaxWidth().height(2.dp))}
+        }
+    }) {children,constraints->
+        val railWidth=3.dp.roundToPx();val gap=8.dp.roundToPx()
+        val slot=iconSlot.roundToPx().coerceAtMost((constraints.maxWidth-railWidth-2*gap).coerceAtLeast(0))
+        val text=children[2].measure(Constraints(maxWidth=(constraints.maxWidth-railWidth-slot-2*gap).coerceAtLeast(0)))
+        val height=text.height
+        val iconWidth=(height*61f/48f).roundToInt().coerceAtMost(slot)
+        val rail=children[0].measure(Constraints.fixed(railWidth,height))
+        val icon=children[1].measure(Constraints.fixed(iconWidth,height))
+        layout(constraints.maxWidth,height) {
+            rail.placeRelative(0,0)
+            icon.placeRelative(railWidth+gap+(slot-iconWidth)/2,0)
+            text.placeRelative(railWidth+gap+slot+gap,0)
+        }
+    }
+}
+
+/** Working and unseen attention animate; phase is read only while drawing. */
+@Composable internal fun ActivityStateBar(state: ActivityState,seen: Boolean,modifier: Modifier) {
+    val scheme=MaterialTheme.colorScheme
+    val working=state==ActivityState.WORKING
+    val needsYou=state==ActivityState.BLOCKED && !seen
+    val phase=rememberWorkingPhase(working || needsYou)
+    val color=when {
+        seen->scheme.onSurfaceVariant.copy(alpha=.22f)
+        state==ActivityState.BLOCKED->if(LocalTerminalPalette.current.dark) Color(0xffe6a947) else Color(0xffb77710)
+        state==ActivityState.ERROR->scheme.error
+        working || state==ActivityState.DONE->scheme.primary
+        else->scheme.onSurfaceVariant.copy(alpha=.22f)
+    }
+    Canvas(modifier) {
+        val radius=CornerRadius(size.width/2)
+        val brightness=if(working || needsYou) (.725-.275*cos(phase.value*2*PI)).toFloat() else 1f
+        drawWorkingBar(color.copy(alpha=color.alpha*brightness),Offset.Zero,size,
+            vertical=true,radius=radius)
     }
 }

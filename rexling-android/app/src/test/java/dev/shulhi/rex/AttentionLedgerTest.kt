@@ -28,8 +28,42 @@ class AttentionLedgerTest {
     @Test fun seenReportsAndNonAttentionStatesNeverAlert() {
         val ledger=AttentionLedger()
         assertTrue(ledger.observe(server,listOf(record()),true) {true}.isEmpty())
-        for(state in listOf("working","done","idle")) assertTrue(ledger.observe(server,listOf(record(state)),true) {false}.isEmpty())
+        for(state in listOf("working","idle")) assertTrue(ledger.observe(server,listOf(record(state)),true) {false}.isEmpty())
         assertEquals(1,ledger.observe(server,listOf(record("error")),true) {false}.size)
+    }
+    @Test fun newCompletionsAlertOnceButHistoricalCompletionsAreBaselined() {
+        val ledger=AttentionLedger()
+        assertTrue(ledger.observe(server,listOf(record("done")),true) {false}.isEmpty())
+        ledger.observe(server,listOf(record("working")),true) {false}
+        assertEquals(1,ledger.observe(server,listOf(record("done",version="v2")),true) {false}.size)
+        assertTrue(ledger.observe(server,listOf(record("done",version="v2",title="Animated")),true) {false}.isEmpty())
+        assertTrue(AttentionLedger(ledger.encode()).observe(server,listOf(record("done",version="v3")),true) {false}.isEmpty())
+    }
+    @Test fun partialStartupDoesNotReplayOtherOldCompletionsButObservedWorkCanFinish() {
+        val ledger=AttentionLedger()
+        assertTrue(ledger.observe(server,listOf(record("done")),true,complete=false) {false}.isEmpty())
+        val other=record("done").copy(id="other")
+        assertTrue(ledger.observe(server,listOf(other,record("working")),true,complete=false) {false}.isEmpty())
+        assertEquals(1,ledger.observe(server,listOf(other,record("done",version="v2")),true,complete=false) {false}.size)
+        assertTrue(ledger.observe(server,listOf(record("done").copy(id="third")),true) {false}.isEmpty())
+        assertEquals(1,ledger.observe(server,listOf(record("done").copy(id="new")),true) {false}.size)
+    }
+    @Test fun foregroundAndSeenCompletionsAreConsumedWithoutDelayedAlerts() {
+        val ledger=AttentionLedger()
+        ledger.observe(server,emptyList(),false) {false}
+        assertTrue(ledger.observe(server,listOf(record("done")),false) {false}.isEmpty())
+        assertTrue(ledger.observe(server,listOf(record("done")),true) {false}.isEmpty())
+        assertTrue(ledger.observe(server,listOf(record("done",version="v2")),true) {true}.isEmpty())
+        assertTrue(ledger.observe(server,listOf(record("done",version="v2")),true) {false}.isEmpty())
+        assertEquals(1,ledger.observe(server,listOf(record("done",version="v3")),true) {false}.size)
+    }
+    @Test fun migrationFromOldDoneStampsAndPersistedWorkingDoesNotReplayAtStartup() {
+        val key=AttentionLedger().key(server,record())
+        for(stamp in listOf("state:done","state:working")) {
+            val ledger=AttentionLedger(JSONObject().put(key,stamp).toString())
+            assertTrue(ledger.observe(server,listOf(record("done")),true) {false}.isEmpty())
+            assertTrue(ledger.observe(server,listOf(record("done")),true) {false}.isEmpty())
+        }
     }
     @Test fun targetsAreIsolatedByServerAndEndpoint() {
         val ledger=AttentionLedger();val item=record()

@@ -1,20 +1,20 @@
 {
-  "apk": "dist/Rexling-2026.11.05-build64-4d93bcda9f-modified-arm64-release.apk",
+  "apk": "dist/Rexling-2026.11.07-build87-47d06edf05-modified-arm64-release.apk",
   "application_label": "Rexling",
-  "version_name": "2026.11.05",
-  "version_code": 64,
-  "sha256": "45aefbd87acc12b5103f9a2b7e1d343da5914385b6815e36e2bfce198978fe4f",
-  "bytes": 17064328,
+  "version_name": "2026.11.07",
+  "version_code": 87,
+  "sha256": "357b462debd6ff1511485d25f70c3acfa2cdac97915a40e5d1a4ca8446bbf0f2",
+  "bytes": 16936785,
   "signature_verified": true,
   "debuggable": false,
   "art_profiles": [
     {
       "name": "assets/dexopt/baseline.prof",
-      "bytes": 7379
+      "bytes": 7070
     },
     {
       "name": "assets/dexopt/baseline.profm",
-      "bytes": 838
+      "bytes": 775
     }
   ],
   "zip_alignment_16k": true,
@@ -41,7 +41,7 @@
     },
     {
       "name": "lib/arm64-v8a/librex_android.so",
-      "bytes": 5188648,
+      "bytes": 5283256,
       "load_alignment": 16384
     }
   ],

@@ -11,9 +11,9 @@ import java.util.UUID
 
 internal data class ImageTarget(val server: String,val endpoint: String,val session: String,val block: String,
     val navigation: Long,val serverSwitch: Long,val program: ProgramKind,val label: String)
-internal enum class ImagePhase { PREPARING, UPLOADING, READY, FAILED }
-internal data class ImageUploadStatus(val target: ImageTarget,val config: PortsideConfig,val phase: ImagePhase,
-    val progress: Float=0f,val path: String="",val error: String="")
+internal enum class ImagePhase { PREPARING, UPLOADING, FINISHING, SUCCESS, FAILED }
+internal data class ImageUploadStatus(val target: ImageTarget,val phase: ImagePhase,
+    val progress: Float=0f,val error: String="",val retrySafe: Boolean=true)
 internal data class StagedImage(val file: File,val name: String)
 internal const val MAX_IMAGE_BYTES=100L*1024*1024
 internal val imageMimeTypes=arrayOf("image/png","image/jpeg","image/webp","image/gif")
@@ -27,23 +27,23 @@ internal fun imageExtension(header: ByteArray): String? = when {
 }
 
 internal class ImageUploads(private val context: Context,private val scope: CoroutineScope,
-    private val autoInsert: (ImageTarget,String)->Boolean,private val insert: (ImageTarget,String)->Boolean) {
+    private val native: RexUploadBackend=RexImageUpload()) {
     var state by mutableStateOf<ImageUploadStatus?>(null);private set
     var notice by mutableStateOf("")
-    private val api=PortsideClient()
     private var job: Job?=null
     private var staged: StagedImage?=null
-    val retryable: Boolean get()=staged!=null
+    val retryable: Boolean get()=staged!=null && state?.retrySafe==true
     private var operation=0L
     private val directory=File(context.cacheDir,"image-uploads")
     private var preparing: File?=null
-    fun start(uri: Uri,target: ImageTarget,config: PortsideConfig,onCopied: ()->Unit={}): Boolean {
+    fun start(uri: Uri,target: ImageTarget,onCopied: ()->Unit={}): Boolean {
+        if(state?.phase==ImagePhase.SUCCESS) clear()
         if(state!=null) {onCopied();notice="Finish or cancel the current image first.";return false}
         if(uri.scheme!="content") {onCopied();notice="Choose an image from your clipboard or photo picker";return false}
         val released=java.util.concurrent.atomic.AtomicBoolean(false)
         val release={if(released.compareAndSet(false,true)) onCopied()}
         val file=File(directory,UUID.randomUUID().toString());preparing=file
-        state=ImageUploadStatus(target,config,ImagePhase.PREPARING)
+        state=ImageUploadStatus(target,ImagePhase.PREPARING)
         val id=++operation
         job=scope.launch {
             try {
@@ -76,28 +76,36 @@ internal class ImageUploads(private val context: Context,private val scope: Coro
     private suspend fun upload(id: Long) {
         val current=state ?: return
         val image=staged ?: error("Choose the image again to retry")
-        state=current.copy(phase=ImagePhase.UPLOADING,error="",progress=0f)
-        val info=api.info(current.config)
-        require(image.file.length()<=info.maxBytes) {"This image exceeds the server's upload limit"}
-        val result=api.upload(current.config,image.file,image.name,minOf(info.maxBytes,MAX_IMAGE_BYTES)) {progress->scope.launch {
-            if(id==operation && state?.phase==ImagePhase.UPLOADING) state=state?.copy(progress=progress)
-        }}
+        state=current.copy(phase=ImagePhase.PREPARING,error="",progress=0f)
+        val result=native.upload(current.target,image) {phase,progress->
+            if(id==operation) state=state?.copy(phase=when(phase) {"preparing"->ImagePhase.PREPARING;"finishing"->ImagePhase.FINISHING;else->ImagePhase.UPLOADING},progress=progress)
+        }
         if(id!=operation) return
-        state=state?.copy(phase=ImagePhase.READY,path=result.path,progress=1f)
-        tryAutoInsert()
+        when(result.phase) {
+            "done"->{
+                state=state?.copy(phase=ImagePhase.SUCCESS,progress=1f)
+                delay(750)
+                if(id==operation) {job=null;clear()}
+                return
+            }
+            "uncertain"->{state=state?.copy(phase=ImagePhase.FAILED,error=result.error,retrySafe=false);return}
+            "failed"->{state=state?.copy(phase=ImagePhase.FAILED,error=result.error);return}
+            "canceled"->return
+            "unsupported"->{state=state?.copy(phase=ImagePhase.FAILED,error="Update the Rex server to enable image uploads (API revision 11 or newer).");return}
+            else->error("Unexpected upload state")
+        }
     }
-    fun tryAutoInsert() {
-        val current=state ?: return
-        if(current.phase==ImagePhase.READY && current.target.program in listOf(ProgramKind.CODEX,ProgramKind.CLAUDE) && autoInsert(current.target,current.path)) cancel()
-    }
-    fun insertReady() {val current=state ?: return;if(current.phase==ImagePhase.READY && insert(current.target,current.path)) cancel()}
     fun retry() {
-        if(state?.phase!=ImagePhase.FAILED) return
+        if(state?.phase!=ImagePhase.FAILED || !retryable) return
         if(staged==null) {notice="This image could not be prepared. Cancel and choose it again.";return}
         val id=++operation
         job=scope.launch {try {upload(id)} catch(error: CancellationException) {throw error} catch(error: Exception) {if(id==operation) state=state?.copy(phase=ImagePhase.FAILED,error=error.message ?: "Upload failed")}}
     }
     fun cancel() {
+        if(state?.phase==ImagePhase.FINISHING) notice="Upload stopped while finishing. Check the original pane before trying again."
+        clear()
+    }
+    private fun clear() {
         operation++;job?.cancel();job=null
         val files=listOfNotNull(preparing,staged?.file).distinct()
         preparing=null;staged=null;state=null

@@ -173,23 +173,22 @@ and monochrome alpha masks; unsupported SVG features fail generation. Original
 PNG renders are retained for visual regression comparisons. No browser or network
 is needed to regenerate the native commands.
 
-## Optional Portside upload integration check
+## Native upload checks
 
-Normal app builds do not depend on a Portside checkout. To test against its real
-Rust upload server, first build Portside 0.3+ in a separate checkout. With the
-Rexling debug and Android test APKs installed on an API 28+ arm64 emulator:
+Native image uploads use the Rex server directly (API revision 11+). No separate
+upload service or checkout is required. The Rust loopback protocol tests run with:
 
 ```sh
-python3 rexling-android/scripts/test_portside_upload.py \
-  --server-binary ../portside/server/target/release/portside-server \
-  --serial emulator-5554
+cargo test --manifest-path rexling-core/Cargo.toml --test uploads
 ```
 
-On API 37, grant the app's local network permission before this fixture test.
-The script starts a disposable loopback-only Portside instance with test identity
-responses, temporarily forwards its port through ADB, verifies actual uploaded
-image bytes and path insertion handoff, then removes the mapping, process and
-files. It never changes a running Portside service, Tailscale configuration or
-Rex session. No simulated identity provider is used by the app or production
-Portside service. Other Portside/keyboard/clipboard/settings checks run in the
-normal JVM and non-fixture emulator suites.
+With debug and Android test APKs installed on an arm64 emulator, run:
+
+```sh
+adb -s emulator-5554 shell am instrument -w -e class \
+  dev.shulhi.rex.NativeImageUploadTest,dev.shulhi.rex.TerminalImageInputTest,dev.shulhi.rex.ClipboardImagePasteTest \
+  dev.shulhi.rex.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+These use isolated loopback peers and test image content, progress/confirmation,
+cancellation, unsupported servers, and keyboard/clipboard behavior.

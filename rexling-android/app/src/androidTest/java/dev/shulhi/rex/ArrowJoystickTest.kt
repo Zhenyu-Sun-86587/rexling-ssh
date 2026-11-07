@@ -59,6 +59,20 @@ class ArrowJoystickTest {
         val ended=sent.size;ui.mainClock.advanceTimeBy(500);ui.runOnIdle {assertEquals(ended,sent.size)}
         ui.onNodeWithContentDescription("Arrow joystick").assertDoesNotExist()
     }
+    @Test fun returningFromUpWithSmallOvershootStaysNeutral() {
+        fixture();ui.mainClock.autoAdvance=false
+        val key=ui.onNodeWithContentDescription("Arrow keys")
+        key.performTouchInput {down(center);moveTo(center+Offset(0f,-40.dp.toPx()))}
+        ui.mainClock.advanceTimeByFrame()
+        ui.runOnIdle {assertEquals(listOf("one:up"),sent)}
+        key.performTouchInput {moveTo(center+Offset(0f,12.dp.toPx()))}
+        ui.mainClock.advanceTimeBy(600)
+        ui.runOnIdle {assertEquals("A small overshoot must pause without sending Down",listOf("one:up"),sent)}
+        key.performTouchInput {moveTo(center+Offset(0f,20.dp.toPx()))}
+        ui.mainClock.advanceTimeByFrame()
+        ui.runOnIdle {assertEquals(listOf("one:up","one:down"),sent)}
+        key.performTouchInput {up()}
+    }
     @Test fun changingDirectionCancelsThePreviousRepeatAndCancellationStopsEverything() {
         fixture();ui.mainClock.autoAdvance=false
         val key=ui.onNodeWithContentDescription("Arrow keys")

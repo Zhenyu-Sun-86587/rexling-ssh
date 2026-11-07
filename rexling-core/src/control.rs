@@ -115,6 +115,13 @@ pub struct Control {
 }
 impl Control {
     pub async fn connect(endpoint: Endpoint, token: Option<&str>, trace: Trace) -> Result<Self> {
+        Self::connect_revision(endpoint, token, trace, 8).await
+    }
+    /// Uploads use their own connection so revision 11 never changes the live terminal contract.
+    pub async fn connect_upload(endpoint: Endpoint) -> Result<Self> {
+        Self::connect_revision(endpoint, None, Trace::default(), 11).await
+    }
+    async fn connect_revision(endpoint: Endpoint, token: Option<&str>, trace: Trace, revision: u64) -> Result<Self> {
         let mut ws = endpoint.open("/api/control", CONTROL).await?;
         let platform = match std::env::consts::OS {
             "macos" => "macos",
@@ -122,7 +129,7 @@ impl Control {
             _ => "other",
         };
         // The common control/data shapes have been checked against revisions 7 and 8.
-        let mut hello = json!({"type":"hello","api_revision":8,"api_min_revision":7,"client":{"kind":"app","name":"rexling","platform":platform,"version":env!("CARGO_PKG_VERSION")}});
+        let mut hello = json!({"type":"hello","api_revision":revision,"api_min_revision":7,"client":{"kind":"app","name":"rexling","platform":platform,"version":env!("CARGO_PKG_VERSION")}});
         if let Some(token) = token {
             hello["reconnect_token"] = json!(token);
         }
@@ -145,7 +152,7 @@ impl Control {
             "invalid control welcome"
         );
         ensure!(
-            matches!(welcome["api_revision"].as_u64(), Some(7 | 8)),
+            welcome["api_revision"].as_u64().is_some_and(|n| (7..=revision).contains(&n)),
             "unsupported negotiated API revision"
         );
         ensure!(

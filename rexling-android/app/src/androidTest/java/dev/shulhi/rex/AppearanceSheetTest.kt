@@ -93,7 +93,7 @@ class AppearanceSheetTest {
     @Test fun preferencesChooseTheCtrlShortcutGesture() {
         val gesture=mutableStateOf(ControlShortcutGesture.HOLD)
         val joystick=mutableStateOf(true)
-        ui.setContent {MaterialTheme {PreferencesSheet({},{},{},{},{},{},gesture.value,{gesture.value=it},
+        ui.setContent {MaterialTheme {PreferencesSheet({},{},{},{},{},gesture.value,{gesture.value=it},
             arrowJoystickEnabled=joystick.value,onArrowJoystick={joystick.value=it})}}
         ui.onNodeWithText("Hold").performScrollTo().assertIsSelected()
         ui.onNodeWithText("Double tap").performClick().assertIsSelected()

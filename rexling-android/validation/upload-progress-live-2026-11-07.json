@@ -1,0 +1,27 @@
+{
+  "hosts": [
+    {
+      "host": "MBP",
+      "bytes": 1813958,
+      "sha256": "e4ba37c7b8236405acb53a7de3b51021f7d30bed9ea9215699cbfefcd6a83f01",
+      "transport_checkpoint_count": 28,
+      "monotonic_progress": true,
+      "final_checkpoint_matches_file_size": true,
+      "content_verified": true,
+      "elapsed_seconds": 0.517,
+      "temporary_session_removed": true
+    },
+    {
+      "host": "Ubuntu",
+      "bytes": 1813958,
+      "sha256": "e4ba37c7b8236405acb53a7de3b51021f7d30bed9ea9215699cbfefcd6a83f01",
+      "transport_checkpoint_count": 28,
+      "monotonic_progress": true,
+      "final_checkpoint_matches_file_size": true,
+      "content_verified": true,
+      "elapsed_seconds": 0.264,
+      "temporary_session_removed": true
+    }
+  ],
+  "existing_user_panes_modified": false
+}

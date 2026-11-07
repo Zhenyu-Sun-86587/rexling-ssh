@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-06",
+  "version_code": 73,
+  "change": "Large joystick neutral radius increased from 10dp to 14dp",
+  "apk": "dist/Rexling-2026.11.05-build73-47d06edf05-modified-arm64-release.apk",
+  "sha256": "3e25b73ebec034e7631b04e805e3c5c638d369f9ec4fa16b378c4b418a8a9b2a",
+  "checks": {
+    "android_joystick_tests_passed": 12,
+    "small_center_overshoot_sends_no_opposite_key": true,
+    "intentional_opposite_direction_works": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "settings_preserved": true,
+  "app_launched": false
+}

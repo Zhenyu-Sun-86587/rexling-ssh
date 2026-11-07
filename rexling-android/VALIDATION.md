@@ -2830,3 +2830,405 @@ See validation/panel-drag-reordering-2026-11-05.json.
 
 Installed release 64 on S22+ RFCT21390SD via USB. Installed checksum matches
 validation/apk.json; settings preserved and app not launched.
+
+
+## Compact drawers and completion alerts — 2026-11-05
+
+Activity now matches the compact Tabs/Panes drawer: small header/handle, segmented
+filters, sharp small program icons, tighter rows and inline progress percentages.
+Sessions uses a compact modal drawer with search and matching typography; the
+expanded duplicate session carousel above it is gone. Search, exact cross-server
+selection, New/Rename/Close and normal header/icon swipe navigation remain.
+Light and dark full-window emulator screenshots were visually reviewed.
+
+Unseen done reports now light the Activity badge and can be marked seen, with
+blocked/error still isolated by the Needs you filter. The dot is positioned at
+the eye’s upper right without clipping. New completions notify only in background
+or with the screen off/locked. Historical completions are baselined, foreground
+updates consumed, and stable report stamps prevent repeats. A completion alert
+survives immediate report clearing. The existing channel/privacy, exact-pane
+targeting, read-only monitoring and stop behavior remain.
+
+161 JVM tests passed (one optional benchmark skipped), 59 Rust checks passed
+(15 live opt-in cases ignored), and 18 Android tests passed (one live opt-in
+fixture skipped). An isolated loopback WebSocket peer exercises real native
+monitor RPCs and Android notifications for foreground suppression, background
+and screen-off completion delivery, duplicate suppression, historical baselining
+and notification retention after idle. It also checks there are no ownership,
+input or resize RPCs. UI coverage includes finished-report acknowledgment, dot
+bounds/accessibility, filters/exact targets, offline state and session drawer
+actions/navigation. Early test-only capture selection and peer cleanup failures
+were corrected; the full regression run then passed.
+
+Release build, lint, APK signature/release/profile/ABI/16KB-alignment checks and
+whitespace validation passed. Installed release 66 on S22+ RFCT21390SD via USB;
+installed checksum matches validation/apk.json, settings preserved, app not
+launched. No live user session/pane was modified during tests.
+See validation/activity-completion-drawers-2026-11-05.json.
+
+
+### Eye badge reference correction — release 67
+
+The reference badges the eye glyph itself, rather than the outer touch target.
+The badge now overlaps the upper-right eye contour with a small background
+cutout; the eye has a pointed outline and shares the unread accent color.
+The 41dp background and button geometry remain unchanged. Two focused Android
+checks pass for glyph-relative badge bounds, unread semantics, stable dimensions
+when cleared, and button behavior. Light/dark icon captures were visually compared
+with the supplied reference. Release build, lint, APK packaging/signature checks
+and whitespace validation pass. Release 67 installed on the S22+ with matching
+checksum, settings preserved and app not launched.
+
+
+### Activity status alignment and neutral eye — release 68
+
+Activity rows place status at a shared trailing edge with Mark seen below,
+keeping Finished aligned with Seen and the title baseline. The eye outline
+remains neutral for unread activity; only the dot uses the accent color. Five
+focused Android checks pass, including finished/seen text bounds, action placement,
+acknowledgment without navigation, exact target selection, offline rows and
+indicator bounds/accessibility. Light/dark captures were visually reviewed.
+Release build, lint, signature/packaging and whitespace checks pass. Release 68
+installed on S22+ RFCT21390SD; checksum matches validation/apk.json, settings
+preserved and app not launched.
+
+
+### Restore Activity title centering — release 69
+
+Removed the baseline alignment coupling between the whole title/context column
+and the trailing status/action column introduced in release 68. Each column is
+independently vertically centered again. Status text retains its common trailing
+edge, Mark seen stays below it, and the eye stays neutral with only its dot
+accented. Five focused Android checks pass, now including the title/context
+block center relative to the card and identical bounds before/after marking
+seen. Dark and light previews were reviewed. Release/lint/static packaging and
+whitespace checks pass. Installed release 69 on S22+ RFCT21390SD with matching
+checksum, settings preserved and app not launched.
+
+
+### Activity state bars, matching icons and clean descriptions — release 70
+
+Removed per-row Finished/Seen/Working status words. The left rail is solid blue
+for new completions, a looping blue segment for working, amber for attention,
+red for failures and muted when acknowledged/idle. Exact status/progress remains
+in filters and accessibility. Only working rows animate; phase is observed during
+drawing. A pixel comparison advances the clock and verifies the working segment
+moves while a finished bar stays unchanged and bounds stay fixed.
+
+Each row has a two-line title/description block. Its actual text column is measured
+first in the same Layout pass, and the vector program tile and rail receive that
+exact height. This avoids nominal line-height/font-trimming mismatch and delayed
+size changes. A reserved action slot keeps title bounds stable on acknowledgment.
+Descriptions combine report message and useful session/window context; generated
+Window hexadecimal labels are hidden without altering routing identity.
+
+162 JVM tests passed (one optional benchmark skipped), including generated-label
+filtering and retained meaningful names/targets. Six focused Android checks pass
+for exact icon/text height and center, stable acknowledgment layout, accessible
+state, exact navigation, offline behavior, button/dot behavior and moving-vs-static
+bar pixels. Light/dark full-window previews were reviewed. Release build, lint,
+APK signature/packaging and whitespace checks pass. Installed release 70 on
+S22+ RFCT21390SD with matching checksum, settings preserved and app not launched.
+No live user sessions or server configuration were changed by tests.
+
+
+### Solid working pulse — release 71
+
+Replaced the traveling snake segment with a filled blue rail whose brightness
+cycles smoothly from 45% to 100% on the shared tab highlight’s 1.2-second cadence.
+The phase is still observed only during drawing, and Finished remains steady.
+Six focused Android checks pass, including pixel comparisons proving the whole
+rail changes brightness uniformly, stays blue/visible, preserves its bounds and
+leaves finished pixels unchanged. Existing exact icon/text heights, centered
+rows, acknowledgment stability, navigation, offline and eye/dot checks pass.
+Release build, lint, APK signature/packaging and whitespace checks pass. Installed
+release 71 on S22+ RFCT21390SD with matching checksum, settings preserved and
+app not launched. No live user session/pane was changed by tests.
+
+
+### Shared tab highlight, attention pulse and quiet refresh — release 72 (2026-11-06)
+
+Working uses the same drawing helper as the actual tab indicator: solid blue with
+a translucent white highlight traveling along the long axis. The helper retains
+the tab’s original gradient/phase proportions; Activity applies it vertically.
+Unseen Needs you reports pulse amber uniformly. Finished stays solid blue, and
+acknowledged reports remain muted. The refresh line below All/Needs you/etc. was
+Activity’s own LinearProgressIndicator, not the tab. Removed it while retaining
+the layout gap; empty first loads still show Checking activity.
+
+17 unique Android checks passed across focused runs (8 Activity, 9 adaptive tab).
+Coverage includes working-vs-attention-vs-finished pixel behavior; tab/Activity
+highlight comparison along rotated axes with two-level per-channel GPU rounding
+tolerance; no second progress indicator or row movement during metadata refresh;
+empty loading feedback; and existing icon/text, acknowledgment, navigation and
+tab layout checks. Release/lint/static packaging/signature and whitespace checks
+pass. No live sessions were changed. Installed release 72 via wireless ADB at
+100.97.157.23:36789 on the S22+; installed checksum matches validation/apk.json,
+settings preserved and app not launched. APK’s UTC date version is 2026.11.05.
+
+
+### Larger joystick neutral zone — release 73 (2026-11-06)
+
+The keyboard-open large joystick has a 14dp neutral radius instead of 10dp;
+its visible center grows from 12dp to 14dp. The small joystick is unchanged.
+Twelve joystick instrumentation tests pass, including Up followed by a 12dp
+center overshoot (no Down/repeat), deliberate 20dp Down, repeat cancellation,
+release, pane/control changes, swipe capture and popup preferences/toggling.
+Release/lint/APK signature/packaging and whitespace checks pass. Installed
+release 73 over wireless ADB at 100.97.157.23:36789; checksum matches
+validation/apk.json, settings preserved and app not launched.
+
+
+## Watched-pane suppression and experimental Codex attention — release 74 (2026-11-06)
+
+165 JVM tests passed (one optional benchmark skipped), including exact focus
+identity, background/lock/dialog/navigation exclusions and watched completion
+acknowledgment while other panes keep their badge. 60 Rust checks passed (15 live
+opt-in ignored), including strict Codex marker/owner/root guards, resume clearing,
+other-program rejection and shared hidden activity snapshots without recopying.
+12 Android checks passed for the clearly labeled default-off preference, policy
+versions across reconnect/UI-service overlap/repeated questions, Activity layout
+and an isolated loopback service test. The latter verifies actual background and
+screen-off notifications, default-off suppression, live title-only Codex Needs
+you alerts, no animation reposts, clearing on resume, a second question alert and
+restoring Working when disabled. No user panes were mutated for tests.
+
+Release/lint/signature/ABI/profiles/16KB packaging and whitespace checks pass.
+Installed build 74 on S22+ RFCT21390SD via USB; checksum matches validation/apk.json,
+settings preserved, app not launched and experiment left off by default.
+
+A separate read-only comparison found both MBP and Ubuntu on Claude 2.1.318 and
+Rex 0.0.1793741575-g1b6654/API 10. MBP had a structured claude-code Done record;
+Ubuntu had no records while its terminal title began with the working circle.
+This confirms different signals, but not which configuration/runtime path causes
+them. No Claude or Rex configuration was changed. The protocol stores program
+reports and permits mapping legacy progress; the API alone does not identify
+which mechanism produced the MBP record.
+
+
+## Server status comparison and launcher artwork — release 75 (2026-11-06)
+
+Known OSC 7501 Working (progress 37), Blocked (question), Done, Error and Clear
+signals passed on both MBP and Ubuntu in isolated temporary sessions. Both also
+returned identical OSC 7501 capability and primary device-attribute replies.
+All temporary sessions were removed; existing user panes and configuration were
+unchanged. Evidence: validation/server-status-probe-2026-11-06.json. These tests
+rule out a basic parser/detection failure for these signals, but do not identify
+why the observed Claude sessions publish different signals.
+
+The supplied blue-tile dinosaur artwork replaces the launcher source. A
+reproducible 10% crop removes the image's outer black rounded frame; the adaptive
+foreground retains square proportions and bleeds past the mask over a matching
+blue background. Two launcher instrumentation checks pass, and the actual
+Android mask render was visually checked for filled edges and no bottom gap.
+Release build, lint, signature and packaging checks passed. Build 75 installed
+on S22+ via USB with matching installed APK checksum; settings preserved and app
+not launched. Notification monochrome artwork is unchanged.
+
+
+## Launcher head clearance — release 76 (2026-11-06)
+
+Reduced foreground artwork from 72% to 64% of its adaptive layer (approximately
+11% smaller), preserving its downward offset. Insets are now 18/20/18/16 percent
+(left/top/right/bottom). The actual Android launcher render shows the full head
+with top clearance and filled bottom edges. Both focused launcher instrumentation
+checks passed; release build, lint, static signature/packaging and whitespace
+checks passed. Installed build 76 over USB with matching APK checksum, preserving
+settings without launching the app.
+
+
+## Breathing Activity Working and smaller launcher — release 77 (2026-11-06)
+
+Activity Working now breathes uniformly blue with the same cosine brightness
+curve and 1.2-second cycle used for unseen Needs you amber. Finished remains
+steady, and the tab's traveling highlight is unchanged. The focused animation
+check verifies changing, vertically uniform blue/amber brightness, steady Done
+and stable layout bounds. Both launcher checks also passed. The launcher art is
+another 6.25% smaller with 20/24/20/16 percent insets (left/top/right/bottom),
+anchored toward the bottom. Actual Android mask render was visually reviewed.
+Release build, lint and static signature/packaging checks passed. Build 77
+installed over USB with matching checksum, settings preserved, app not launched.
+
+
+## Original transparent artwork — release 78 (2026-11-06)
+
+Restored the original transparent dinosaur and white adaptive background. The
+new user attachment exactly matches the tracked original source SHA-256, so its
+existing clean alpha asset is reused without regenerating the artwork. Insets
+16.5/21.5/16.5/11.5 percent account for the original canvas margins, maintaining
+similar visible scale to build 77 with bottom anchoring. Actual Android mask
+render visually reviewed: full head, no checkerboard and bottom fill. Both
+launcher instrumentation checks, release/lint and static APK checks passed.
+Build 78 installed via USB with checksum verified; settings preserved, app not
+launched. Activity breathing indicators are unchanged from build 77.
+
+
+## Native Rex image uploads — release 79 (2026-11-07)
+
+The actual upload implementation sent a 1,813,958-byte PNG to both Mac and Ubuntu
+servers, verified automatic path insertion and server-side SHA-256 in isolated
+fixture panes, and removed all temporary sessions. User panes/configuration were
+unchanged. Evidence: validation/native-uploads-2026-11-07.json; API schema:
+validation/rex-upload-schema-r11.json; protocol: ../docs/REX_UPLOADS.md.
+
+23 Rust checks passed (one opt-in live pipeline check skipped): includes six
+loopback upload tests for real binary framing/chunks/EOF, target identity,
+old-server and missing-method fallback, quota rejection, cancellation and lost
+confirmation. 165 JVM checks passed (one optional benchmark skipped). Twelve
+distinct Android checks passed for the native JNI/image flow, waiting for server
+confirmation, no duplicate paste or Enter, lost-confirmation retry suppression,
+cancellation, legacy upload behavior/target guards, saved fallback settings,
+IME input, clipboard images and preferences. The final native/UI subset of six
+also passed against the final debug build.
+
+Release build and lint passed. Static APK signature, ABI, alignment, baseline
+profile and all nine JNI exports (including the three upload entry points) were
+verified. Build 79 and checksum/verification sidecars are in dist. Phone is
+currently disconnected; this release has not been installed there. The tracked
+validation/apk.json continues to describe the previously installed build.
+
+
+## Native uploads only — release 80 (2026-11-07)
+
+Removed the Portside client/configuration/preferences and app-launch package
+query, the legacy path-quoting/insertion handoff, its integration fixture/script
+and its production OkHttp dependency. Preferences and image progress UI now live
+in dedicated files. Existing native picker/clipboard/IME entry points remain;
+unsupported servers show a Rex update message. README and build/protocol docs
+now describe native uploads only. Historical reports remain as evidence.
+
+157 JVM tests passed (one optional benchmark skipped). Ten focused Android tests
+passed: native content/confirmation, no duplicate paste, cancellation, uncertain
+completion, unsupported-server upgrade, keyboard/clipboard and preference
+controls in both themes. Release build, lint and static APK signature/packaging/
+JNI checks passed. Release DEX contains no Portside classes or OkHttp runtime.
+Build 80 APK, checksum and verification sidecars are in dist. The phone is not
+connected, so this build is not installed there. See
+validation/native-only-uploads-2026-11-07.json.
+
+Build 80 subsequently installed on S22+ RFCT21390SD over USB. Installed APK
+checksum matches validation/apk.json; settings preserved, app not launched.
+
+
+## Upload success auto-dismiss — release 81 (2026-11-07)
+
+After successful native completion the image state and staged image are cleared
+immediately, without a completed overlay, Dismiss action, notice or dialog.
+Progress/finishing and error handling remain. Seven Android checks passed,
+including waiting for actual server confirmation, clearing without a notice,
+accepting the next image, cancellation, uncertain completion, unsupported servers
+and clipboard/IME behavior. Release/lint/static signature/packaging checks pass.
+Build 81 is ready in dist; the phone is disconnected and not updated yet.
+
+Separately investigated cross-client seen state. Rexling stores seen versions in
+per-endpoint local preferences. Fresh server help exposes program_status but no
+shared acknowledgment method or seen/read field. The installed Mac app also has
+a ProgramActivity SeenLedger. No supported path to mirror its acknowledgments
+was found, so no heuristic based on Mac ownership/focus was introduced. Shared
+seen-state synchronization remains unimplemented pending an upstream API.
+
+Build 81 subsequently installed on S22+ RFCT21390SD over USB. Installed APK
+checksum matches validation/apk.json; settings preserved, app not launched.
+
+
+## Bottom-right upload pill — release 82 (2026-11-07)
+
+Upload progress is now a compact, outlined capsule anchored above the bottom
+controls with a 16dp right inset. A blue ring animates determinate progress or
+rotates during preparing/finishing; percentage digits roll individually with
+fixed-width slots. Content-size changes expand toward the left/up from the fixed
+bottom-right anchor. Typography and colors use the shared app settings styles.
+The close control retains a 48dp touch target. Errors expand the same surface,
+keep the close button aligned to the right, and expose Retry only when safe.
+Successful uploads still clear automatically without a completion dialog.
+
+Five Android checks passed: the visual/action test covers both themes, progress
+and phase changes, stable pill/action right edges, cancel/dismiss/retry and
+uncertain-error retry suppression; four native flow checks cover completion,
+cancellation, lost confirmation and unsupported servers. Light/dark pill/error
+captures were visually reviewed. Release/lint/static packaging and JNI checks
+passed. Installed build 82 on S22+ RFCT21390SD over USB with matching checksum;
+settings preserved, app not launched. Evidence: validation/upload-pill-2026-11-07.json.
+
+
+## Compact blue upload pill and brief green success — release 83 (2026-11-07)
+
+The pill uses a light-blue #e5edff fill without a border or shadow, with the
+existing app-primary progress ring. Visual height shrinks from 52dp to 40dp,
+leading padding from 16dp to 12dp, and gaps from 10dp to 8dp; percentage layout
+no longer reserves blank leading digits. Labels and changed digits use short
+vertical motion plus soft blur/fade, replacing the previous full-height slide.
+Size remains anchored at the bottom right. On confirmed success, the container,
+label and completed-ring check animate green for 750ms, then clear without any
+dismissal action. A new attachment can replace that transient success immediately.
+
+Five Android checks passed, covering right-edge/action anchoring, both themes,
+progress and phase transitions, success display/no cancel action, error safety,
+and real native confirmation/success/auto-dismiss, cancellation, lost confirmation
+and unsupported servers. Fifty-eight animation frames and static light/dark/
+success captures were reviewed; a GIF preview is in dist. Release/lint/static
+packaging checks passed. Installed build 83 via USB on S22+ RFCT21390SD, verified
+installed checksum, preserved settings and did not launch the app. Evidence:
+validation/upload-pill-refinement-2026-11-07.json.
+
+
+## Lighter success mark — release 84 (2026-11-07)
+
+Success ring stroke transitions from 2.5dp to 1.4dp over 180ms; the check
+stroke is reduced to 1.2dp. Blue progress remains 2.5dp. Release, lint, static
+APK and whitespace checks passed. Installed build 84 via USB with matching
+checksum, settings preserved and app not launched.
+
+
+## Tab-sized upload pill — release 85 (2026-11-07)
+
+Pill text now matches tab labels at 12sp/18sp with zero letter spacing.
+Height shrinks from 40dp to 32dp; leading padding 12dp to 8dp; gaps 8dp to 6dp;
+ring diameter 18dp to 14dp. Digit slots/blur, close glyph and ring strokes scale
+proportionally; the existing 32dp close control is retained. Error content caps
+at 280dp instead of 320dp. The bottom-right anchor, blue fill/ring and brief green
+success remain. The existing both-theme layout/action check passed and compact
+progress/success captures were visually reviewed. Release, lint, static APK and
+whitespace checks passed. Installed build 85 on S22+ RFCT21390SD via USB with
+matching checksum; settings preserved and app not launched. Evidence:
+validation/upload-pill-tab-sizing-2026-11-07.json.
+
+
+## Network-confirmed upload progress — release 86 (2026-11-07)
+
+Fixed setup incorrectly mapping to Uploading 0%: staging/connection/handshake now
+remain Preparing, and Uploading shows an indeterminate ring until its first
+confirmed checkpoint. Socket-buffer writes no longer advance the displayed byte
+count. Standard WebSocket Ping/Pong checkpoints follow every 64 KiB (and the final
+partial chunk); a matching emitted checkpoint advances the transport-received
+counter. Checkpoints are pipelined with a 4 MiB in-flight bound, not awaited per
+chunk. Finishing starts only after all file bytes are transport-confirmed. This
+is not a disk-commit acknowledgment; the final server close still confirms path
+insertion. Kotlin polls progress every 40ms instead of 80ms. No fake time-based
+percentage or minimum upload duration was introduced.
+
+Seven Rust upload tests passed, including a throttled 512 KiB receiver with
+multiple monotonic intermediate updates and an assertion that reported progress
+never precedes bytes observed by the peer. Six Android tests passed, including
+a throttled native/JNI/Kotlin receiver with at least three intermediate values,
+Preparing during a held handshake, zero-percent suppression, confirmation,
+cancellation, failure handling and the existing pill/action checks. Actual 1.8MB
+uploads to Mac and Ubuntu each produced 28 checkpoints, automatic path insertion
+and matching server-side SHA-256; all disposable sessions were removed. Existing
+user panes were untouched. Evidence: validation/upload-progress-live-2026-11-07.json.
+
+Release/lint/static packaging/whitespace checks passed. Installed build 86 on
+S22+ RFCT21390SD via USB with matching checksum; settings preserved, app not
+launched. See validation/upload-progress-2026-11-07.json. Small files may still
+finish too quickly for many percentage frames; connection delay is shown as
+Preparing rather than stalled zero-percent progress.
+
+
+## Upload text baseline and semibold weight — release 87 (2026-11-07)
+
+Animated digit slots no longer use a fixed height. Both the slots and percent
+sign align by the first text baseline. Labels and percentages use semibold (600)
+at the existing 12sp/18sp size. The existing both-theme layout/action check and
+visual review passed, along with release/lint/static APK and whitespace checks.
+Installed build 87 via USB with matching checksum; settings preserved and app
+not launched. Evidence: validation/upload-text-baseline-2026-11-07.json.

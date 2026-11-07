@@ -1,0 +1,19 @@
+{
+  "date": "2026-11-06",
+  "read_only": true,
+  "claude_version_both": "2.1.318",
+  "rex_version_both": "0.0.1793741575-g1b6654",
+  "api_revision_both": 10,
+  "mbp": {
+    "record_state": "done",
+    "app": "claude-code",
+    "title_has_working_glyph": false
+  },
+  "ubuntu": {
+    "records": [],
+    "title_prefix": "\u25d1"
+  },
+  "publisher_mechanism": "Not established; program reports or mapped legacy signals cannot be distinguished by this response alone",
+  "configuration_changed": false,
+  "protocol_reference": "https://www.superlogical.com/rex/docs/build/program-status"
+}

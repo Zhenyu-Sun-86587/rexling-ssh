@@ -1,0 +1,17 @@
+{
+  "date": "2026-11-05",
+  "version_code": 69,
+  "change": "Restore vertically centered Activity title/context independently of status/actions",
+  "apk": "dist/Rexling-2026.11.05-build69-47d06edf05-modified-arm64-release.apk",
+  "sha256": "8f01ba33082df86344306f6ff08017e6a9bef6837c5b9b3de41eab2fbae8333c",
+  "checks": {
+    "android_tests_passed": 5,
+    "title_context_centered_in_row": true,
+    "acknowledgment_does_not_move_title": true,
+    "statuses_keep_shared_trailing_edge": true,
+    "light_dark_visual_review": true,
+    "release_lint_packaging_signature_passed": true,
+    "installed_checksum_matches": true
+  },
+  "phone": "S22+ RFCT21390SD; settings preserved; app not launched"
+}

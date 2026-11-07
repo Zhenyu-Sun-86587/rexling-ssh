@@ -8,23 +8,29 @@ import android.app.NotificationManager
 import org.json.JSONObject
 import java.util.UUID
 
-/** Title animation must never turn one attention request into many alerts. */
+/** Consume foreground updates and baseline old completions without replaying them. */
 internal class AttentionLedger(saved: String?=null) {
     private val stamps=linkedMapOf<String,String>()
+    private val baselinedServers=mutableSetOf<String>()
+    private val observedThisRun=mutableSetOf<String>()
     init {runCatching {JSONObject(saved ?: "{}").let {o->o.keys().forEach {key->stamps[key]=o.getString(key)}}}}
     fun key(server: ServerProfile,record: ActivityRecord)=listOf(server.id,server.endpoint,record.key).joinToString("") {"${it.length}:$it"}
-    fun observe(server: ServerProfile,records: List<ActivityRecord>,background: Boolean,seen: (ActivityRecord)->Boolean): List<ActivityRecord> {
+    fun observe(server: ServerProfile,records: List<ActivityRecord>,background: Boolean,complete: Boolean=true,seen: (ActivityRecord)->Boolean): List<ActivityRecord> {
         val alerts=mutableListOf<ActivityRecord>()
+        val source=listOf(server.id,server.endpoint).joinToString("") {"${it.length}:$it"}
         records.forEach {record->
-            val attention=record.state==ActivityState.BLOCKED || record.state==ActivityState.ERROR
-            val stamp=if(attention) "attention:${record.attentionVersion.ifBlank {listOf(record.state.wire,record.kind,record.updated,record.message).joinToString("\u0000")}}" else "state:${record.state.wire}"
+            val version=record.attentionVersion.ifBlank {listOf(record.state.wire,record.kind,record.updated,record.message).joinToString("\u0000")}
+            val stamp=when {record.state==ActivityState.DONE->"done:$version";record.state.notifiable->"attention:$version";else->"state:${record.state.wire}"}
             val key=key(server,record)
             if(stamps[key]!=stamp) {
                 stamps.remove(key);stamps[key]=stamp
-                if(attention && background && !seen(record)) alerts+=record
+                val freshCompletion=record.state!=ActivityState.DONE || source in baselinedServers || key in observedThisRun
+                if(record.state.notifiable && freshCompletion && background && !seen(record)) alerts+=record
             }
+            observedThisRun+=key
         }
-        while(stamps.size>2048) stamps.remove(stamps.keys.first())
+        if(complete) baselinedServers+=source
+        while(stamps.size>2048) {val oldest=stamps.keys.first();stamps.remove(oldest);observedThisRun.remove(oldest)}
         return alerts
     }
     fun encode()=JSONObject(stamps.toMap()).toString()

@@ -1,0 +1,29 @@
+{
+  "build": 83,
+  "apk": "dist/Rexling-2026.11.07-build83-47d06edf05-modified-arm64-release.apk",
+  "sha256": "d14cd3e5134fb5f5ae2e8c55499beb9e9afce5eeca7dd8c11ec7d73cb81387ad",
+  "light_blue_fill": "#e5edff",
+  "border": false,
+  "shadow": false,
+  "normal_ring_color": "Existing MaterialTheme primary",
+  "minimum_visual_height_dp": 40,
+  "inner_horizontal_spacing_dp": 8,
+  "leading_padding_dp": 12,
+  "success_hold_ms": 750,
+  "success_fill": "#def2e5",
+  "animation": "Short vertical motion with soft blur/fade for labels and changed digits; fixed bottom-right anchor",
+  "preview": "dist/Rexling-build83-upload-preview.gif",
+  "android_tests_passed": 5,
+  "animation_frames_reviewed": 58,
+  "light_dark_visual_review": true,
+  "release_lint_packaging_verified": true,
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 83,
+    "sha256": "d14cd3e5134fb5f5ae2e8c55499beb9e9afce5eeca7dd8c11ec7d73cb81387ad",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}

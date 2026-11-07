@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-06",
+  "method": "Known OSC 7501 signals and terminal detection queries in isolated temporary sessions",
+  "states": [
+    {
+      "host": "MBP",
+      "checks": {
+        "working": {
+          "state": "working",
+          "kind": null,
+          "progress": 37,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "Python"
+          }
+        },
+        "blocked": {
+          "state": "blocked",
+          "kind": "question",
+          "progress": null,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "Python"
+          }
+        },
+        "done": {
+          "state": "done",
+          "kind": null,
+          "progress": null,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "Python"
+          }
+        },
+        "error": {
+          "state": "error",
+          "kind": null,
+          "progress": null,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "Python"
+          }
+        },
+        "clear": true
+      },
+      "passed": true,
+      "cleaned_up": true
+    },
+    {
+      "host": "Ubuntu",
+      "checks": {
+        "working": {
+          "state": "working",
+          "kind": null,
+          "progress": 37,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "python3.14"
+          }
+        },
+        "blocked": {
+          "state": "blocked",
+          "kind": "question",
+          "progress": null,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "python3.14"
+          }
+        },
+        "done": {
+          "state": "done",
+          "kind": null,
+          "progress": null,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "python3.14"
+          }
+        },
+        "error": {
+          "state": "error",
+          "kind": null,
+          "progress": null,
+          "app": "rexling-probe",
+          "owner": {
+            "name": "python3.14"
+          }
+        },
+        "clear": true
+      },
+      "passed": true,
+      "cleaned_up": true
+    }
+  ],
+  "detection": [
+    {
+      "host": "MBP",
+      "reply": "\u001b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\u0007\u001b[?62;22c",
+      "status_supported": true,
+      "cleaned_up": true
+    },
+    {
+      "host": "Ubuntu",
+      "reply": "\u001b]7501;?:states=idle,working,done,blocked,error:kinds=permission,question,auth\u0007\u001b[?62;22c",
+      "status_supported": true,
+      "cleaned_up": true
+    }
+  ],
+  "configuration_changed": false,
+  "conclusion": "Both hosts accept Working, Blocked, Done, Error and Clear, and advertise identical status capabilities. This rules out a basic parser/detection failure for these signals, but does not establish why the observed Claude sessions differ."
+}

@@ -1,6 +1,7 @@
 mod activity;
 mod engine;
 mod updates;
+mod uploads;
 use engine::Session;
 use jni::{
     JNIEnv,
@@ -138,3 +139,17 @@ pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_readUpdate(
 }
 
 mod input_queue;
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadCreate(mut env:JNIEnv,_class:JClass,request:JString)->jlong {
+    let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||->anyhow::Result<u64>{
+        let request:String=env.get_string(&request)?.into();uploads::create(serde_json::from_str(&request)?)
+    }));
+    match result {Ok(Ok(id))=>id as jlong,_=>{let _=env.throw_new("java/lang/IllegalStateException","Could not start image upload");0}}
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadPoll(mut env:JNIEnv,_class:JClass,handle:jlong)->jstring {
+    string(&mut env,uploads::poll(handle as u64).to_string())
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadDestroy(_env:JNIEnv,_class:JClass,handle:jlong) {uploads::destroy(handle as u64);}

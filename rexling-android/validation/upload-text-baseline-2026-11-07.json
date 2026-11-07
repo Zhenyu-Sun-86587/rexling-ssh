@@ -1,0 +1,18 @@
+{
+  "build": 87,
+  "alignment": "Shared text baseline for animated digit slots and percent sign; no forced slot height",
+  "font_size_sp": 12,
+  "font_weight": 600,
+  "android_layout_action_check_passed": true,
+  "visual_review": true,
+  "release_lint_packaging_verified": true,
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 87,
+    "sha256": "357b462debd6ff1511485d25f70c3acfa2cdac97915a40e5d1a4ca8446bbf0f2",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}

@@ -151,7 +151,16 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             }
             ChromeIcon.ENTER -> {line(20f,5f,20f,12f);line(20f,12f,4f,12f);line(4f,12f,9f,7f);line(4f,12f,9f,17f)}
             ChromeIcon.ESCAPE -> {drawArc(color,-90f,270f,false,Offset(4f*u,4f*u),Size(16f*u,16f*u),style=Stroke(width));line(4f,4f,12f,12f);line(4f,4f,4f,9f);line(4f,4f,9f,4f)}
-            ChromeIcon.EYE -> {drawOval(color,Offset(2f*u,6f*u),Size(20f*u,12f*u),style=Stroke(width));drawCircle(color,3f*u,Offset(12f*u,12f*u),style=Stroke(width))}
+            ChromeIcon.EYE -> {
+                val eye=Path().apply {
+                    moveTo(2f*u,12f*u)
+                    cubicTo(7f*u,4f*u,17f*u,4f*u,22f*u,12f*u)
+                    cubicTo(17f*u,20f*u,7f*u,20f*u,2f*u,12f*u)
+                    close()
+                }
+                drawPath(eye,color,style=Stroke(width))
+                drawCircle(color,3f*u,Offset(12f*u,12f*u),style=Stroke(width))
+            }
             ChromeIcon.BACKSPACE -> {line(9f,5f,21f,5f);line(21f,5f,21f,19f);line(21f,19f,9f,19f);line(9f,19f,2f,12f);line(2f,12f,9f,5f);line(12f,9f,17f,15f);line(17f,9f,12f,15f)}
             ChromeIcon.POINTER -> {line(5f,3f,5f,20f);line(5f,20f,10f,15f);line(10f,15f,14f,22f);line(14f,22f,17f,20f);line(17f,20f,13f,13f);line(13f,13f,20f,13f);line(20f,13f,5f,3f)}
             ChromeIcon.CONTROL -> {line(6f,15f,12f,9f);line(12f,9f,18f,15f)}
@@ -309,7 +318,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 /** Call only for visible busy programs; idle chrome owns no animation clock. */
-@Composable private fun rememberWorkingPhase(working: Boolean): State<Float> {
+@Composable internal fun rememberWorkingPhase(working: Boolean): State<Float> {
     if(!working) return remember {mutableFloatStateOf(0f)}
     val transition=androidx.compose.animation.core.rememberInfiniteTransition(label="Program working")
     return transition.animateFloat(0f,1f,animationSpec=androidx.compose.animation.core.infiniteRepeatable(
@@ -459,12 +468,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             drawContent()
                             if(active) {
                                 val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
-                                drawRect(indicatorColor,origin,bar)
-                                if(busy && animateWorking) {
-                                    val x=(workPhase.value*1.5f-.5f)*size.width
-                                    drawRect(androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                        listOf(Color.Transparent,Color.White.copy(alpha=.85f),Color.Transparent),x,x+size.width*.5f),origin,bar)
-                                }
+                                drawWorkingBar(indicatorColor,origin,bar,phase=if(busy && animateWorking) workPhase.value else null)
                             }
                         }
                         .clip(RoundedCornerShape(16.dp))
@@ -508,9 +512,16 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0) {
     Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
         ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)
-        Box(Modifier.size(41.dp).clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant),contentAlignment=Alignment.Center) {
-            ChromeButton(ChromeIcon.EYE,"Activity",activityEnabled,modifier=Modifier.semantics {stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},onClick=onActivity)
-            if(attentionCount>0) Box(Modifier.align(Alignment.TopEnd).padding(7.dp).size(6.dp).background(MaterialTheme.colorScheme.primary,RoundedCornerShape(3.dp)))
+        Box(Modifier.size(41.dp),contentAlignment=Alignment.Center) {
+            Box(Modifier.matchParentSize().clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+            Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled=activityEnabled,role=Role.Button,onClick=onActivity)
+                .semantics {contentDescription="Activity";stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},contentAlignment=Alignment.Center) {
+                ChromeSymbol(ChromeIcon.EYE,color=MaterialTheme.colorScheme.onSurface.copy(alpha=if(activityEnabled) .85f else .3f))
+            }
+            // Badge the eye glyph, rather than the corner of its larger touch target.
+            if(attentionCount>0) Box(Modifier.align(Alignment.Center).offset(x=7.dp,y=(-4).dp).size(9.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant,RoundedCornerShape(5.dp)).padding(1.dp)
+                .background(MaterialTheme.colorScheme.primary,RoundedCornerShape(4.dp)).semantics {testTag="Activity unread dot"})
         }
     }
 }

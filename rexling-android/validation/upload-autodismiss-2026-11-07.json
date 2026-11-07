@@ -1,0 +1,26 @@
+{
+  "build": 81,
+  "apk": "dist/Rexling-2026.11.07-build81-47d06edf05-modified-arm64-release.apk",
+  "sha256": "94932ca77dcc4c0e9cf900f0de0c47c0d16e886ccd3a6e63b83c912512019674",
+  "success_overlay_auto_dismisses": true,
+  "success_dialog_or_notice": false,
+  "android_tests_passed": 7,
+  "release_lint_packaging_verified": true,
+  "installed_on_phone": true,
+  "activity_seen_sync": {
+    "implemented": false,
+    "local_seen_storage": "RexConnection preferences per endpoint",
+    "server_api_exposes_shared_acknowledgment": false,
+    "checked": "Fresh help.all / rex api list schema, 2026-11-07",
+    "limitation": "Current Rex API exposes program status but no shared client seen acknowledgment"
+  },
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 81,
+    "sha256": "94932ca77dcc4c0e9cf900f0de0c47c0d16e886ccd3a6e63b83c912512019674",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}

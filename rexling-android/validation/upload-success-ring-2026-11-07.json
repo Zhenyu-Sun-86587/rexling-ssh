@@ -1,0 +1,17 @@
+{
+  "build": 84,
+  "success_ring_dp": 1.4,
+  "progress_ring_dp": 2.5,
+  "success_check_stroke_dp": 1.2,
+  "stroke_transition_ms": 180,
+  "release_lint_packaging_verified": true,
+  "installation": {
+    "device": "RFCT21390SD",
+    "model": "SM-S906E",
+    "version_code": 84,
+    "sha256": "a0a8581678afdda08865ae6f3f90314583f2ef2eb5d85a730819aa7b69ff3b01",
+    "settings_preserved": true,
+    "app_launched": false,
+    "transport": "USB"
+  }
+}
