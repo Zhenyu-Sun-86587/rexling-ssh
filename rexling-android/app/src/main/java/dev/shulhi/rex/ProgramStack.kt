@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.dp
             .border(1.dp,MaterialTheme.colorScheme.outline.copy(alpha=.5f),shape))
         return
     }
-    val catalog=when(program.kind) {
+    val catalog=ProgramCatalog.tile(program.executable) ?: when(program.kind) {
         ProgramKind.CLAUDE -> "claude_code"
         ProgramKind.CODEX -> "codex"
         ProgramKind.NEOVIM -> "neovim"
