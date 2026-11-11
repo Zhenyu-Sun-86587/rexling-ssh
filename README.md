@@ -39,11 +39,11 @@ connection is shared by terminal panes, status monitoring and uploads. There is 
 TCP listener and no Tailscale requirement for SSH. An explicit socket path avoids discovery;
 otherwise the client discovers the remote UID/runtime directory once and tries the socket first.
 The remote Rex server or its `rex.socket` must already be configured. The app does not change
-server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Select **ProxyJump** in the editor and enter separate host, port, username and authentication for that hop. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address.
+server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Select **Jump** in the editor and enter separate host, port, username and authentication for that hop. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address.
 
 **Advanced options** starts collapsed and contains the port (default 22), key passphrase,
 OpenSSH certificate, jump-host details, socket override and trust reset. Hidden saved values
-are retained. **Direct** races IPv4/IPv6 addresses; **IPv6 direct** connects to the public IPv6
+are retained. **Direct** races IPv4/IPv6 addresses; **IPv6** connects to the public IPv6
 address or domain's AAAA records without a jump host. Both phone and server must have IPv6
 connectivity. Use `[2001:db8::1]:2222` for an address with a port; a bare IPv6 address is
 always treated as the whole address, with the separate/default port. Physical SSH sockets,
@@ -57,13 +57,26 @@ Rexling SSH remains an independent, unofficial client.
 
 The keyboard icon opens terminal input without suggestions. The adjacent **中** button
 opens normal text input with Chinese composition and suggestions. Tap the other button
-to switch modes, or tap the active mode again to hide the keyboard. Both modes advertise
-normal text, never a password field. Typing requests ownership when needed; it does not
+to switch modes, or tap the active mode again to hide the keyboard. The terminal button retains the upstream stateless visible-password IME mode; the **中**
+button uses normal text with a local editable buffer for Chinese composition. Typing requests ownership when needed; it does not
 silently discard the first key. `RexInput` logs target readiness and character counts, never
 input contents. Navigation unlocks after 1.5 seconds; buffered keys are delivered only to
 the acknowledged intended pane, with a bounded wait and an explicit error on expiry.
-Optional program metadata queries have a one-second deadline and stop after failure until
-reconnect, while terminal control remains on its independent connection.
+Optional program metadata requests have a one-second per-request deadline and a bounded
+five-second batch. A failed batch retries after 30 seconds on its independent connection.
+
+Multiple panes default to **Split**: portrait stacks panes vertically and landscape places
+them side by side. Each visible tile has its own live read-only subscription; tap its title
+or content to focus it for input. Only the focused pane claims ownership and resizes its PTY.
+Up to eight panes are displayed at once, including the selected pane. Use **Pane view** to
+switch to the original **Swipe** mode. Split tiles fit the existing terminal grid while the
+focused pane reflows to its available space.
+
+Brief background visits retain the existing connections for **10 minutes**, release input
+ownership and stop UI rendering. Returning within this grace period reuses the connection
+when it is healthy. Network replacement still reconnects; Android process termination can
+end connections. Repeated connections that immediately fail retain exponential backoff;
+a connection must remain stable for 30 seconds before resetting it.
 
 ## Install on Android
 

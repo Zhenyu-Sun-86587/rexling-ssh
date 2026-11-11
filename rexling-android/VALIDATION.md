@@ -3429,3 +3429,14 @@ Build 91 installation follow-up: installed over USB on S22+ `RFCT21390SD`; verif
 - Real isolated IPv6 OpenSSH → Rex Unix socket integration passed: target TOFU, three concurrent control WebSockets over one SSH connection, channel closure, and network invalidation/reconnect. Evidence: `/tmp/rexling-ipv6-live-3n7y4wm1/result.txt` and `/tmp/rexling-ipv6-live-result.log`.
 - Android ARM64 native compilation, release packaging, signature/JNI/ART/16 KiB static APK checks passed. The application ID and persistent signing identity are unchanged.
 - No attached Android device was available. OEM secure keyboard behavior and actual public IPv6/mobile routing still require phone validation; no production SSH configuration was modified.
+
+
+## 2026-11-11: Compact SSH settings, ten-minute grace and live split panes (build 113)
+
+- SSH settings use external field titles and equal-width single-line HTTP / WS, SSH and Direct / IPv6 / Jump choices. Removed route explanation paragraphs, shortened advanced labels and replaced optional-field middle dots with parentheses.
+- Background grace is ten minutes. Foreground restoration retains healthy physical SSH/control/data connections; ownership is released on hiding. This is application lifecycle behavior, not a guarantee against Android killing the process.
+- Added simultaneous live split panes (up to eight including the focused pane), with portrait stacking and landscape columns. Persistent read-only subscriptions use the existing shared SSH transport. Only the focused pane accepts input and canonical PTY resizing; other panes fit their current grids. Split/Swipe switching retains the prior carousel behavior.
+- Split subscriptions close normally when switching modes. Repeated short-lived control/data failures preserve backoff; reset requires 30 seconds of stability. Missing session IDs for session.view/session.attach are rejected locally. Error messages retain the underlying cause chain.
+- Supplied logs were reviewed against the client: session.view already includes session_id and this implementation generates numeric request IDs; control-1 cannot be attributed to it from the supplied excerpt. EOF alone does not establish packet loss or a missing NODELAY setting. NODELAY was already enabled. No production server configuration was changed.
+- Android ARM64 native build, release packaging and JVM suite succeeded (172 passed, one existing optional skip). Host Rust workspace tests passed, including short-lived reconnect backoff. Isolated Rex integration passed two live pane subscriptions, initial frames, subsequent writes to each pane, read-only ownership, same connection epoch after visibility changes, and local rejection of a missing session_id. Evidence: /tmp/rexling-split-live-cu63fxqc/result.log.
+- Instrumentation APK compiles; no attached device/emulator was available for layout, IME or multi-pane touch verification.

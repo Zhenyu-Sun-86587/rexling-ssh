@@ -476,6 +476,9 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun jumpLastSession() { if(state.value.sessions.any { it.id==lastSessionId }) selectSession(lastSessionId) }
     fun refreshSessionDetails() { if(state.value.connected) command("sessions_info") }
+    fun watchPanes(ids: List<String>) {
+        command("watch_panes","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
+    }
     fun prefetchPanes(ids: List<String>) {
         if(state.value.connected && !state.value.creating) command("peek","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
     }

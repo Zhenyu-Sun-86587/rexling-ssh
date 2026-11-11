@@ -241,6 +241,9 @@ impl Control {
             self.pending.len() < 32,
             "too many outstanding control requests"
         );
+        if matches!(method,"session.view" | "session.attach") {
+            ensure!(payload["session_id"].as_str().is_some_and(|id|!id.trim().is_empty()),"{method} requires a session_id");
+        }
         let id = self.next_id.to_string();
         self.next_id += 1;
         let request = json!({"type":"request","id":id,"method":method,"payload":payload});
@@ -326,7 +329,12 @@ impl Control {
     }
     pub async fn close(&mut self) -> Result<()> {
         self.pending.clear();
-        tokio::time::timeout(self.endpoint.timeout, self.ws.close())
+        tokio::time::timeout(self.endpoint.timeout, self.ws.send(Message::Close(Some(
+            tokio_tungstenite::tungstenite::protocol::CloseFrame {
+                code: tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal,
+                reason: "".into(),
+            },
+        ))))
             .await.context("Control close timed out")??;
         Ok(())
     }

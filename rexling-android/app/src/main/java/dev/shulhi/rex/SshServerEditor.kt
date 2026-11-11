@@ -3,6 +3,8 @@ package dev.shulhi.rex
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +19,29 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URI
 import java.util.UUID
+
+@Composable internal fun SshField(
+    value: String,onValueChange: (String)->Unit,modifier: Modifier=Modifier,title: String,
+    singleLine: Boolean=true,minLines: Int=1,maxLines: Int=if(singleLine) 1 else 4,
+    keyboardOptions: KeyboardOptions=KeyboardOptions.Default,
+    visualTransformation: VisualTransformation=VisualTransformation.None,enabled: Boolean=true,
+) {
+    Column(modifier,verticalArrangement=Arrangement.spacedBy(5.dp)) {
+        Text(title,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(value,onValueChange,Modifier.fillMaxWidth(),singleLine=singleLine,
+            minLines=minLines,maxLines=maxLines,keyboardOptions=keyboardOptions,visualTransformation=visualTransformation,enabled=enabled)
+    }
+}
+
+@Composable internal fun SshChoiceRow(labels: List<String>,selected: Int,enabled: Boolean,onSelect: (Int)->Unit) {
+    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+        labels.forEachIndexed {index,label->
+            FilterChip(selected==index,{onSelect(index)},modifier=Modifier.weight(1f).widthIn(min=64.dp),enabled=enabled,
+                label={Box(Modifier.fillMaxWidth(),contentAlignment=Alignment.Center) {Text(label,fontSize=12.sp,maxLines=1,softWrap=false)}},
+                border=FilterChipDefaults.filterChipBorder(enabled,selected==index))
+        }
+    }
+}
 
 @Composable internal fun ServerEditor(server: ServerProfile?,model: RexModel,onClose: ()->Unit) {
     val context=LocalContext.current
@@ -56,46 +81,36 @@ import java.util.UUID
     }
     AlertDialog(onDismissRequest={if(!busy) onClose()},title={Text(if(server==null) "Add server" else "Edit server")},text={
         Column(Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected=mode=="direct",onClick={mode="direct"},label={Text("Direct (HTTP/WS)")},enabled=!busy)
-                FilterChip(selected=mode=="ssh",onClick={mode="ssh"},label={Text("SSH")},enabled=!busy)
-            }
+            SshChoiceRow(listOf("HTTP / WS","SSH"),if(mode=="ssh") 1 else 0,!busy) {mode=if(it==1) "ssh" else "direct"}
             ServerIconPicker(icon) {icon=it}
-            OutlinedTextField(name,{name=it},Modifier.fillMaxWidth(),label={Text("Name")},singleLine=true,enabled=!busy)
+            SshField(name,{name=it},Modifier.fillMaxWidth(),title="Name",singleLine=true,enabled=!busy)
             if(mode=="direct") {
-                OutlinedTextField(endpoint,{endpoint=it;error=null},Modifier.fillMaxWidth(),label={Text("Server URL")},singleLine=true,
+                SshField(endpoint,{endpoint=it;error=null},Modifier.fillMaxWidth(),title="Server URL",singleLine=true,
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),enabled=!busy)
-                Text("Use an authenticated Rex HTTP/WS endpoint, such as its Tailscale HTTPS address.",fontSize=11.sp)
             } else {
-                OutlinedTextField(host,{host=it;error=null},Modifier.fillMaxWidth(),label={Text("Host")},singleLine=true,enabled=!busy)
-                OutlinedTextField(user,{user=it},Modifier.fillMaxWidth(),label={Text("Username")},singleLine=true,enabled=!busy)
-                FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    FilterChip(!useJump && !ipv6Direct,{useJump=false;ipv6Direct=false},label={Text("Direct")},enabled=!busy)
-                    FilterChip(ipv6Direct,{ipv6Direct=true;useJump=false},label={Text("IPv6 direct")},enabled=!busy)
-                    FilterChip(useJump,{useJump=true;ipv6Direct=false;advanced=true},label={Text("ProxyJump",maxLines=1,softWrap=false)},enabled=!busy)
+                SshField(host,{host=it;error=null},Modifier.fillMaxWidth(),title="Host",singleLine=true,enabled=!busy)
+                SshField(user,{user=it},Modifier.fillMaxWidth(),title="Username",singleLine=true,enabled=!busy)
+                SshChoiceRow(listOf("Direct","IPv6","Jump"),if(useJump) 2 else if(ipv6Direct) 1 else 0,!busy) {
+                    useJump=it==2;ipv6Direct=it==1;if(useJump) advanced=true
                 }
-                Text(if(ipv6Direct) "Connect directly to the host's IPv6 address or AAAA record. Your network must provide IPv6 connectivity."
-                    else "Direct uses IPv4 and IPv6 automatically. For an IPv6 address with a port, use [address]:port.",fontSize=11.sp)
                 TextButton(onClick={advanced=!advanced},enabled=!busy) {Text(if(advanced) "Hide advanced options" else "Advanced options")}
-                if(advanced) OutlinedTextField(port,{port=it},Modifier.fillMaxWidth(),label={Text("SSH port")},singleLine=true,
+                if(advanced) SshField(port,{port=it},Modifier.fillMaxWidth(),title="SSH port",singleLine=true,
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
                 Text("Target authentication",style=MaterialTheme.typography.labelLarge)
                 SshAuthentication(auth,busy,{busy=it},{error=it},advanced=advanced)
                 if(advanced) {
                     if(useJump) {
                         Text("Jump host",style=MaterialTheme.typography.labelLarge)
-                        OutlinedTextField(jumpHost,{jumpHost=it},Modifier.fillMaxWidth(),label={Text("Jump host address")},singleLine=true,enabled=!busy)
+                        SshField(jumpHost,{jumpHost=it},Modifier.fillMaxWidth(),title="Host",singleLine=true,enabled=!busy)
                         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(jumpPort,{jumpPort=it},Modifier.width(95.dp),label={Text("Port")},singleLine=true,
+                            SshField(jumpPort,{jumpPort=it},Modifier.width(95.dp),title="Port",singleLine=true,
                                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
-                            OutlinedTextField(jumpUser,{jumpUser=it},Modifier.weight(1f),label={Text("Jump username")},singleLine=true,enabled=!busy)
+                            SshField(jumpUser,{jumpUser=it},Modifier.weight(1f),title="Username",singleLine=true,enabled=!busy)
                         }
                         SshAuthentication(jumpAuth,busy,{busy=it},{error=it},advanced=true)
-                        Text("The jump host resolves and connects to the target address. Target SSH remains encrypted end to end.",fontSize=11.sp)
                     }
-                    OutlinedTextField(socket,{socket=it},Modifier.fillMaxWidth(),label={Text("Remote socket path · optional")},
-                        placeholder={Text("/run/user/<uid>/rex/server.sock",fontSize=11.sp)},singleLine=true,enabled=!busy)
-                    Text("Connects to Rex's Unix socket through SSH. Saved credentials are encrypted with Android Keystore.",fontSize=11.sp)
+                    SshField(socket,{socket=it},Modifier.fillMaxWidth(),title="Socket path (optional)",
+                        singleLine=true,enabled=!busy)
                     if(original!=null) Row {
                         Checkbox(resetTrust,{resetTrust=it},enabled=!busy)
                         Text("Reset host trust for configured hops on save",Modifier.padding(top=12.dp),fontSize=11.sp)

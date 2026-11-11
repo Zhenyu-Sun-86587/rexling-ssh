@@ -71,15 +71,12 @@ import org.json.JSONObject
     val keyPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->importFile(uri) {auth.privateKey=it;auth.publicKey=""}}
     val certPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->importFile(uri) {auth.certificate=it}}
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            FilterChip(auth.method=="key",{auth.method="key"},label={Text("Private key")},enabled=!busy)
-            FilterChip(auth.method=="password",{auth.method="password"},label={Text("Password")},enabled=!busy)
-        }
+        SshChoiceRow(listOf("Private key","Password"),if(auth.method=="key") 0 else 1,!busy) {auth.method=if(it==0) "key" else "password"}
         if(auth.method=="key") {
-            OutlinedTextField(auth.privateKey,{auth.privateKey=it;auth.publicKey=""},Modifier.fillMaxWidth(),
-                label={Text("Private key")},minLines=2,maxLines=4,enabled=!busy)
-            FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick={keyPicker.launch(arrayOf("*/*"))},enabled=!busy) {Text("Import key")}
+            SshField(auth.privateKey,{auth.privateKey=it;auth.publicKey=""},Modifier.fillMaxWidth(),
+                title="Private key",singleLine=false,minLines=2,maxLines=4,enabled=!busy)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick={keyPicker.launch(arrayOf("*/*"))},enabled=!busy) {Text("Import key",maxLines=1,softWrap=false)}
                 TextButton(enabled=!busy,onClick={
                     scope.launch {
                         onBusy(true)
@@ -93,7 +90,7 @@ import org.json.JSONObject
                         } catch(e: Exception) {onError(e.message)}
                         finally {onBusy(false)}
                     }
-                }) {Text("Generate Ed25519")}
+                }) {Text("Generate",maxLines=1,softWrap=false)}
             }
             if(auth.publicKey.isNotBlank()) {
                 Text(auth.publicKey,fontFamily=MonoUi,fontSize=10.sp)
@@ -103,14 +100,14 @@ import org.json.JSONObject
                 Text("Authorize this key for this hop's user, or import its CA-signed user certificate below.",fontSize=11.sp)
             }
             if(advanced) {
-            OutlinedTextField(auth.passphrase,{auth.passphrase=it},Modifier.fillMaxWidth(),label={Text("Passphrase · optional")},
+            SshField(auth.passphrase,{auth.passphrase=it},Modifier.fillMaxWidth(),title="Passphrase (optional)",
                 singleLine=true,visualTransformation=PasswordVisualTransformation(),enabled=!busy)
-            OutlinedTextField(auth.certificate,{auth.certificate=it},Modifier.fillMaxWidth(),label={Text("OpenSSH user certificate · optional")},
-                minLines=1,maxLines=3,enabled=!busy)
-            TextButton(onClick={certPicker.launch(arrayOf("*/*"))},enabled=!busy) {Text("Import certificate (*-cert.pub)")}
+            SshField(auth.certificate,{auth.certificate=it},Modifier.fillMaxWidth(),title="Certificate (optional)",
+                singleLine=false,minLines=1,maxLines=3,enabled=!busy)
+            TextButton(onClick={certPicker.launch(arrayOf("*/*"))},enabled=!busy) {Text("Import certificate")}
             }
         } else {
-            OutlinedTextField(auth.password,{auth.password=it},Modifier.fillMaxWidth(),label={Text("Password")},singleLine=true,
+            SshField(auth.password,{auth.password=it},Modifier.fillMaxWidth(),title="Password",singleLine=true,
                 visualTransformation=PasswordVisualTransformation(),enabled=!busy)
         }
     }

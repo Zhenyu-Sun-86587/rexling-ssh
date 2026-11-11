@@ -88,8 +88,8 @@ class TerminalView(context: Context) : View(context) {
     internal fun presentFrame(value: TerminalScreen?,token: String?=null) {setScreen(value,true);frameTraceToken=token}
     private fun setScreen(value: TerminalScreen?,onDisplayFrame: Boolean) {
         if(currentScreen===value) return
-        val columns=currentScreen?.columns;currentScreen=value;frameTraceToken=null
-        if(columns!=value?.columns) configureRendering()
+        val grid=currentScreen?.let {it.columns to it.rows};currentScreen=value;frameTraceToken=null
+        if(grid!=value?.let {it.columns to it.rows}) configureRendering()
         if(onDisplayFrame) invalidate() else postInvalidateOnAnimation()
     }
     var controlled: Boolean = false
@@ -164,10 +164,15 @@ class TerminalView(context: Context) : View(context) {
         desiredCellWidth=grid.cellWidth;desiredCellHeight=grid.cellHeight;desiredTextSize=paint.textSize
         configureRendering();reportDimensions()
     }
+    var fitToPane: Boolean=false
+        set(value) {if(field!=value) {field=value;configureRendering();invalidate()}}
     private fun configureRendering() {
-        // Keep the user's font fixed. Reflow comes from the canonical PTY resize.
-        val fitted=desiredCellWidth
-        val size=desiredTextSize
+        // Split tiles fit the current grid; PTY resize still uses the requested font metrics.
+        val frame=screen
+        val scale=if(fitToPane && frame!=null && contentWidth>0 && contentHeight>0)
+            minOf(1f,contentWidth/(frame.columns*desiredCellWidth).coerceAtLeast(1f),contentHeight/(frame.rows*desiredCellHeight).coerceAtLeast(1f)) else 1f
+        val fitted=desiredCellWidth*scale
+        val size=desiredTextSize*scale
         if(cellWidth==fitted && paint.textSize==size) return
         cellWidth=fitted;paint.textSize=size;paint.typeface=fonts.regular;paint.textScaleX=1f
         paint.textScaleX=fitted/paint.measureText("M").coerceAtLeast(.01f)

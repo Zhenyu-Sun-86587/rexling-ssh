@@ -418,7 +418,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         connections.values.forEach {it.visible=false;it.cancelKeyRepeats()}
         backgroundPause?.cancel()
         backgroundPause=viewModelScope.launch {
-            delay(120_000)
+            delay(600_000)
             if(!foreground) {networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
         }
     }

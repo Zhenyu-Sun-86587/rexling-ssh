@@ -120,7 +120,7 @@ import dev.chrisbanes.haze.hazeSource
                             factory={TerminalView(it)},modifier=Modifier.fillMaxSize().clipToBounds(),
                             update={view ->
                                 view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
-                                view.setTerminalPaddingDp(12,8,if(blocks.size>1 || bottomControlsInset>0.dp) 36 else 6)
+                                view.fitToPane=false;view.setTerminalPaddingDp(12,8,if(blocks.size>1 || bottomControlsInset>0.dp) 36 else 6)
                                 view.palette=palette;view.textSp=fontSize
                                 if(block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
                                 view.interactive=center
