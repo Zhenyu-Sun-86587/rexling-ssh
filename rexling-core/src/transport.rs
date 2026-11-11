@@ -84,7 +84,7 @@ impl Endpoint {
                 .await.context("WebSocket upgrade over SSH timed out")??;
             ensure!(response.headers().get("Sec-WebSocket-Protocol").and_then(|h|h.to_str().ok()) == Some(protocol),
                 "server did not negotiate {protocol}");
-            return Ok(Box::new(ws));
+            return Ok(crate::socket_driver::drive(Box::new(ws)));
         }
         let unix = self.url.scheme() == "unix";
         let mut url = if unix {
@@ -145,7 +145,7 @@ impl Endpoint {
                     == Some(protocol),
                 "server did not negotiate {protocol}"
             );
-            Ok(socket)
+            Ok(crate::socket_driver::drive(socket))
         };
         tokio::time::timeout(self.timeout, operation)
             .await

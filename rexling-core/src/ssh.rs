@@ -242,6 +242,7 @@ impl Profile {
             "phase":status.phase,"error":status.error,"fingerprint":status.fingerprint,"algorithm":status.algorithm})
     }
     fn publish(&self, phase: &str, error: impl Into<String>) {
+        crate::diagnostics::record("ssh",format!("phase={phase}"));
         let mut status = self.status.lock().unwrap_or_else(|e| e.into_inner());
         status.phase = phase.into();
         status.error = error.into();

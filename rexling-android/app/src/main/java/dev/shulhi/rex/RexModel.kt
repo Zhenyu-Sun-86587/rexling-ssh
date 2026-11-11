@@ -213,7 +213,13 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
     val connectedCount: Int get()=serverStatuses.values.count {it.connected}
 
-    init {preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
+    var developMode by mutableStateOf(preferences.getBoolean("develop_mode",false))
+        private set
+    fun changeDevelopMode(value: Boolean) {
+        developMode=value;preferences.edit {putBoolean("develop_mode",value)}
+        DevelopLog.configure(getApplication(),value)
+    }
+    init {DevelopLog.configure(getApplication(),developMode);preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
 
     private fun connection(profile: ServerProfile): RexConnection = connections.getOrPut(profile.id) {
         RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences,profile.storageKey,profile).also {client->
@@ -414,14 +420,15 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     fun changeAppearance(value: Appearance) {appearance=value;preferences.edit {putString("appearance",value.name)}}
     private var backgroundPause: Job?=null
     fun pause() {
+        DevelopLog.event("lifecycle","background graceMs=600000")
         foreground=false;updateActivity()
         connections.values.forEach {it.visible=false;it.cancelKeyRepeats()}
         backgroundPause?.cancel()
         backgroundPause=viewModelScope.launch {
             delay(600_000)
-            if(!foreground) {networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
+            if(!foreground) {DevelopLog.event("lifecycle","background grace expired");networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
         }
     }
-    fun resume() {backgroundPause?.cancel();backgroundPause=null;foreground=true;networkMonitor.start();connections.values.forEach {it.resume()};activeClient.visible=true;tryOpenAlert();BackgroundAlerts.reconcile(getApplication())}
+    fun resume() {DevelopLog.event("lifecycle","foreground");backgroundPause?.cancel();backgroundPause=null;foreground=true;networkMonitor.start();connections.values.forEach {it.resume()};activeClient.visible=true;tryOpenAlert();BackgroundAlerts.reconcile(getApplication())}
     override fun onCleared() {images.close();preferences.unregisterOnSharedPreferenceChangeListener(alertsListener);networkJob?.cancel();networkMonitor.stop();observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
 }

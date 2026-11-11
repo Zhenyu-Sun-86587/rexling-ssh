@@ -15,7 +15,8 @@ import androidx.compose.ui.unit.dp
 @Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
     shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={},
     arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
-    minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={}) {
+    minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},developMode: Boolean=false,onDevelopMode: (Boolean)->Unit={},
+    onCopyLogs: ()->Unit={},onExportLogs: ()->Unit={}) {
     ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max=680.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             SettingsHeader("Preferences","Close preferences",onClose)
@@ -68,6 +69,18 @@ import androidx.compose.ui.unit.dp
                         Text("Use Codex’s explicit Action Required title when its status stays Working. Depends on Codex’s title format.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked=codexTitleAttention,onCheckedChange=null)
+                }
+            }
+            SettingsSection("Development") {
+                Row(Modifier.fillMaxWidth().toggleable(value=developMode,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onDevelopMode)
+                    .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text("Develop mode",Modifier.weight(1f),style=SettingsType.row)
+                    Switch(developMode,onCheckedChange=null)
+                }
+                Text("Record connection, navigation and input delivery diagnostics. Input text and credentials are excluded.",Modifier.padding(horizontal=16.dp),style=SettingsType.detail)
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick=onCopyLogs) {Text("Copy logs")}
+                    TextButton(onClick=onExportLogs) {Text("Export logs")}
                 }
             }
             SettingsSection("App") {

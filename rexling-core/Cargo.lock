@@ -1672,6 +1672,7 @@ dependencies = [
  "anyhow",
  "base64",
  "cc",
+ "futures-channel",
  "futures-util",
  "percent-encoding",
  "rand 0.10.3",

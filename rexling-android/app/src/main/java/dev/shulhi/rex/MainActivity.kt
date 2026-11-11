@@ -3,6 +3,7 @@ package dev.shulhi.rex
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 
+import kotlinx.coroutines.launch
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -144,6 +145,18 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var terminalView by remember {mutableStateOf<TerminalView?>(null)}
     var textKeyboard by rememberSaveable {mutableStateOf(false)}
     val context=LocalContext.current
+    val diagnosticScope=rememberCoroutineScope()
+    val diagnosticExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) {uri->
+        if(uri!=null) diagnosticScope.launch {
+            try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val text=DevelopLog.snapshot()
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {it.write(text)} ?: error("Cannot open log file")
+                }
+                android.widget.Toast.makeText(context,"Logs exported",android.widget.Toast.LENGTH_SHORT).show()
+            } catch(e: Exception) {android.widget.Toast.makeText(context,"Log export failed: ${e.message}",android.widget.Toast.LENGTH_LONG).show()}
+        }
+    }
     var networkAction by remember {mutableStateOf<(() ->Unit)?>(null)}
     var networkDenied by remember {mutableStateOf<(() ->Unit)?>(null)}
     val localNetwork=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {granted->
@@ -336,7 +349,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                 model.images.state?.let {status->ImageUploadOverlay(status,model.images::retry,model.images::cancel,
                     modifier=Modifier.align(Alignment.BottomEnd).padding(horizontal=16.dp).padding(bottom=if(state.connected) if(floating.isNotEmpty()) 152.dp else 112.dp else 16.dp),retryable=model.images.retryable,hazeState=terminalHaze)}
                 // Loading feedback must not resize the terminal grid during navigation.
-                if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
+                if(state.creating || state.phase=="connecting" || state.phase=="reconnecting")
                     LinearProgressIndicator(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp))
 
             }
@@ -349,7 +362,16 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
         onClose={preferencesOpen=false},shortcutGesture=model.shortcutGesture,onShortcutGesture=model::changeShortcutGesture,
         onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
-        minimizeFloatingPanes=model.minimizeFloatingPanes,onMinimizeFloatingPanes=model::changeMinimizeFloatingPanes)
+        minimizeFloatingPanes=model.minimizeFloatingPanes,onMinimizeFloatingPanes=model::changeMinimizeFloatingPanes,
+        developMode=model.developMode,onDevelopMode=model::changeDevelopMode,
+        onExportLogs={diagnosticExport.launch("rexling-build${BuildConfig.VERSION_CODE}-logs.txt")},
+        onCopyLogs={diagnosticScope.launch {
+            try {
+                val logs=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {DevelopLog.clipboardText()}
+                (getClipboard(context) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rexling diagnostics",logs))
+                android.widget.Toast.makeText(context,"Recent logs copied",android.widget.Toast.LENGTH_SHORT).show()
+            } catch(e: Exception) {android.widget.Toast.makeText(context,"Cannot copy logs: ${e.message}",android.widget.Toast.LENGTH_LONG).show()}
+        }})
     if(neovimSettings) NeovimShortcutsSheet(model.neovimShortcuts,model::saveNeovimShortcuts,onClose={neovimSettings=false},
         enabled=model.neovimShortcutsEnabled,onEnabled=model::enableNeovimShortcuts,
         layout=model.neovimShortcutLayout,onLayout=model::changeNeovimShortcutLayout,effect=model.neovimShortcutEffect,onEffect=model::changeNeovimShortcutEffect,

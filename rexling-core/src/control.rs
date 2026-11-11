@@ -226,6 +226,7 @@ impl Control {
                 } else {
                     Ok(message.get("payload").cloned().unwrap_or(Value::Null))
                 };
+                crate::diagnostics::record("rpc",format!("reply id={id} success={}",result.is_ok()));
                 // Dropping a waiter does not make a late wire reply invalid.
                 let _ = waiting.sender.send(result);
             }
@@ -246,6 +247,7 @@ impl Control {
         }
         let id = self.next_id.to_string();
         self.next_id += 1;
+        crate::diagnostics::record("rpc",format!("send id={id} method={method} pending={}",self.pending.len()));
         let request = json!({"type":"request","id":id,"method":method,"payload":payload});
         let text = serde_json::to_string(&request)?;
         let max = self.welcome["limits"]["max_message_bytes"]

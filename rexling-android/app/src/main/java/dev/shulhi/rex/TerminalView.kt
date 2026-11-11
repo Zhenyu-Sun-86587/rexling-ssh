@@ -97,7 +97,7 @@ class TerminalView(context: Context) : View(context) {
             if (field != value) {
                 field = value
                 // Acquiring ownership must not invalidate the IME opened to request it.
-                if(!value || !inputAvailable) {
+                if(!inputAvailable) {
                     inputGeneration++
                     if (!value) composing = ""
                     (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
@@ -537,22 +537,80 @@ class TerminalView(context: Context) : View(context) {
     override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate()};return true }
     override fun onCheckIsTextEditor() = acceptsInput
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
-        if (!acceptsInput) return null
+        if (!acceptsInput) {DevelopLog.event("ime","create blocked interactive=$interactive owned=$controlled available=$inputAvailable");return null}
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL or
             if(textInput) (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) else (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
-        outAttrs.initialSelStart=0;outAttrs.initialSelEnd=0
+        outAttrs.initialSelStart=if(textInput) 0 else -1;outAttrs.initialSelEnd=outAttrs.initialSelStart
         outAttrs.contentMimeTypes=imageMimeTypes.copyOf()
         val imageTarget=imageInputTarget()
-        val generation=++inputGeneration
-        composing=""
+        val generation=inputGeneration
+        DevelopLog.event("ime","create textMode=$textInput generation=$generation owned=$controlled available=$inputAvailable focused=${hasFocus()}")
+        // Preserve the upstream dummy editor for terminal IMEs. Never call the
+        // BaseInputConnection composing methods here: dummy mode synthesizes key
+        // events and clears its buffer, which loses composed text in this view.
+        if(!textInput) return object : BaseInputConnection(this,false) {
+            private var closed=false
+            private var preedit=""
+            private fun valid(): Boolean {
+                val valid=!closed && acceptsInput && generation==inputGeneration && imageTarget==imageInputTarget()
+                if(!valid) DevelopLog.event("ime","terminal callback rejected closed=$closed available=$acceptsInput generation=$generation/$inputGeneration targetMatches=${imageTarget==imageInputTarget()}")
+                return valid
+            }
+            private fun submit(text: String) {if(text.isNotEmpty()) {DevelopLog.event("ime","terminal submit chars=${text.length}");onInput(text.replace("\r\n","\r").replace("\n","\r"))}}
+            override fun commitText(text: CharSequence?,newCursorPosition: Int): Boolean {
+                if(!valid()) return false
+                preedit="";composing="";submit(text?.toString().orEmpty());invalidate();return true
+            }
+            override fun setComposingText(text: CharSequence?,newCursorPosition: Int): Boolean {
+                if(!valid()) return false
+                preedit=text?.toString().orEmpty();composing=preedit;invalidate();return true
+            }
+            override fun finishComposingText(): Boolean {
+                if(!valid()) return false
+                val text=preedit;preedit="";composing="";submit(text);invalidate();return true
+            }
+            private fun delete(before: Int,after: Int,codePoints: Boolean): Boolean {
+                if(!valid() || before<0 || after<0) return false
+                if(preedit.isNotEmpty()) {
+                    val start=if(codePoints) Character.offsetByCodePoints(preedit,preedit.length,-before.coerceAtMost(preedit.codePointCount(0,preedit.length))) else (preedit.length-before).coerceAtLeast(0)
+                    preedit=preedit.substring(0,start);composing=preedit;invalidate();return true
+                }
+                repeat(before.coerceAtMost(128)) {onInput("\u007f")}
+                repeat(after.coerceAtMost(128)) {onInput("\u001b[3~")};return true
+            }
+            override fun deleteSurroundingText(beforeLength: Int,afterLength: Int)=delete(beforeLength,afterLength,false)
+            override fun deleteSurroundingTextInCodePoints(beforeLength: Int,afterLength: Int)=delete(beforeLength,afterLength,true)
+            override fun sendKeyEvent(event: KeyEvent): Boolean {
+                if(!valid()) return false
+                if(event.action!=KeyEvent.ACTION_DOWN) return true
+                DevelopLog.event("ime","terminal key printable=${event.unicodeChar!=0}")
+                if(event.keyCode==KeyEvent.KEYCODE_ENTER) finishComposingText()
+                return onKeyDown(event.keyCode,event)
+            }
+            override fun performEditorAction(actionCode: Int): Boolean {if(!valid()) return false;finishComposingText();onInput("\r");return true}
+            override fun performContextMenuAction(id: Int): Boolean=if(id==android.R.id.paste || id==android.R.id.pasteAsPlainText) valid() && onPaste() else super.performContextMenuAction(id)
+            override fun commitContent(info: android.view.inputmethod.InputContentInfo,flags: Int,opts: android.os.Bundle?): Boolean {
+                if(!valid() || imageMimeTypes.none {info.description.hasMimeType(it)}) return false
+                val granted=flags and InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION!=0
+                try {if(granted) info.requestPermission()} catch(_: Exception) {return false}
+                val released=java.util.concurrent.atomic.AtomicBoolean(false)
+                val release={if(granted && released.compareAndSet(false,true)) runCatching {info.releasePermission()};Unit}
+                return try {onImage(info.contentUri,release).also {if(!it) release()}} catch(_: Exception) {release();false}
+            }
+            override fun closeConnection() {closed=true;if(generation==inputGeneration) {composing="";invalidate()};super.closeConnection()}
+        }
         // A real editable buffer lets CJK IMEs inspect and replace their preedit text.
         // Only committed text is sent to the remote terminal; no prompt text is exposed.
-        return object : BaseInputConnection(this, textInput) {
+        return object : BaseInputConnection(this, true) {
             private val editBuffer=SpannableStringBuilder().apply {Selection.setSelection(this,0)}
             override fun getEditable(): Editable=editBuffer
             private var closed=false
-            private fun valid()=!closed && acceptsInput && generation==inputGeneration && imageTarget==imageInputTarget()
+            private fun valid(): Boolean {
+                val valid=!closed && acceptsInput && generation==inputGeneration && imageTarget==imageInputTarget()
+                if(!valid) DevelopLog.event("ime","text callback rejected closed=$closed available=$acceptsInput generation=$generation/$inputGeneration targetMatches=${imageTarget==imageInputTarget()}")
+                return valid
+            }
             private fun refreshComposition() {
                 composing=editBuffer.toString();invalidate()
                 val buffer=editBuffer
@@ -577,17 +635,18 @@ class TerminalView(context: Context) : View(context) {
             }
             override fun performContextMenuAction(id: Int): Boolean = if(id==android.R.id.paste || id==android.R.id.pasteAsPlainText) valid() && onPaste() else super.performContextMenuAction(id)
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                if(!valid()) {android.util.Log.d("RexInput","IME commit rejected: stale input target");return false}
-                android.util.Log.d("RexInput","IME commit chars="+(text?.length ?: 0))
-                if(!textInput) {clearBuffer();if(!text.isNullOrEmpty()) onInput(text.toString().replace("\r\n","\r").replace("\n","\r"));return true}
+                if(!valid()) {DevelopLog.d("RexInput","IME commit rejected: stale input target");return false}
+                DevelopLog.d("RexInput","IME commit chars="+(text?.length ?: 0))
                 super.commitText(text ?: "",newCursorPosition);sendBuffer();return true
             }
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 if(!valid()) return false
+                DevelopLog.event("ime","text composing chars=${text?.length ?: 0}")
                 super.setComposingText(text ?: "",newCursorPosition);refreshComposition();return true
             }
             override fun finishComposingText(): Boolean {
                 if(!valid()) return false
+                DevelopLog.event("ime","text finish composing chars=${editBuffer.length}")
                 super.finishComposingText();sendBuffer();return true
             }
             private fun deleteText(before: Int,after: Int,codePoints: Boolean): Boolean {
@@ -621,6 +680,7 @@ class TerminalView(context: Context) : View(context) {
         }
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        DevelopLog.event("key","hardware printable=${event.unicodeChar!=0} available=$acceptsInput owned=$controlled")
         if(event.isShiftPressed && keyCode in listOf(KeyEvent.KEYCODE_PAGE_UP,KeyEvent.KEYCODE_PAGE_DOWN)) {
             onScroll((if(keyCode==KeyEvent.KEYCODE_PAGE_UP) -1 else 1)*(screen?.rows ?: 24));return true
         }

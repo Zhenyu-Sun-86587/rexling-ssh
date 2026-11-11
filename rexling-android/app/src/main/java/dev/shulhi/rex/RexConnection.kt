@@ -151,7 +151,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         navigationState=NavigationRequest()
         recoveringNavigation=request
         restoreWorkspace=false
-        android.util.Log.w("RexInput","Navigation acknowledgement exceeded 1500ms; recovering target")
+        DevelopLog.w("RexInput","Navigation acknowledgement exceeded 1500ms; recovering target")
         queueDisplay(state.value)
         navigationTimer=scope.launch {
             delay(3500)
@@ -168,7 +168,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     private var claimTarget=""
     private var claimAt=0L
     private fun discardWaitingInput(reason: String) {
-        if(waitingInput.isNotEmpty()) android.util.Log.w("RexInput","Unsent input cleared: "+reason)
+        if(waitingInput.isNotEmpty()) DevelopLog.w("RexInput","Unsent input cleared: "+reason)
         waitingInput.clear();waitingInputTimer?.cancel();waitingInputTimer=null
     }
     private fun deliverInput(kind: String,text: String): Boolean {
@@ -176,7 +176,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         val current=state.value
         if(text.isEmpty()) return false
         if(!visible || !foreground || !current.connected || current.creating || current.selectedBlock.isBlank()) {
-            android.util.Log.w("RexInput","Input blocked: terminal is not active/connected")
+            DevelopLog.w("RexInput","Input blocked: terminal is not active/connected")
             return false
         }
         val request=navigationRequest.takeIf {it.pending} ?: recoveringNavigation
@@ -186,17 +186,17 @@ internal class RexConnection(application: Application, private val scope: Corout
             }
             waitingInput.add(WaitingInput(kind,text,request.session ?: current.selectedSession,
                 request.block ?: current.selectedBlock.takeIf {request.session==null || request.session==current.selectedSession},request.id,current.connectionEpoch))
-            android.util.Log.d("RexInput","Input queued for navigation; chars="+text.length)
+            DevelopLog.d("RexInput","Input queued for navigation; chars="+text.length)
             if(waitingInputTimer==null) waitingInputTimer=scope.launch {
                 delay(5000);discardWaitingInput("navigation timeout");recoveringNavigation=null
                 setState(state.value.copy(error="Pane switch timed out. Unsent input was cleared; check the active pane and retry."))
             }
             return true
         }
-        if(!current.controlled) {android.util.Log.d("RexInput","Claiming ownership for input");claimActivePane(force=true)}
+        if(!current.controlled) {DevelopLog.d("RexInput","Claiming ownership for input");claimActivePane(force=true)}
         val sent=command(kind,"text" to text,"session" to current.selectedSession,"block" to current.selectedBlock,
             "navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch)
-        android.util.Log.d("RexInput","Native input enqueue="+sent+" chars="+text.length)
+        DevelopLog.d("RexInput","Native input enqueue="+sent+" chars="+text.length)
         return sent
     }
     private fun drainWaitingInput() {
@@ -209,7 +209,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             val item=waitingInput.removeFirst()
             if(item.epoch==current.connectionEpoch && item.navigation==current.navigationId && item.session==current.selectedSession && (item.block==null || item.block==current.selectedBlock)) {
                 deliverInput(item.kind,item.text)
-            } else android.util.Log.w("RexInput","Unsent input discarded: target changed")
+            } else DevelopLog.w("RexInput","Unsent input discarded: target changed")
         }
         waitingInputTimer?.cancel();waitingInputTimer=null
     }
@@ -229,7 +229,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         expireNavigation()
         val current=state.value
         val input=NeovimShortcuts.input(current.copy(controlled=true),item,target,keyTarget(),visible && foreground,navigationRequest.pending || recoveringNavigation!=null)
-            ?: run {android.util.Log.w("RexInput","Neovim shortcut blocked: target not ready");return false}
+            ?: run {DevelopLog.w("RexInput","Neovim shortcut blocked: target not ready");return false}
         resetModifiers()
         if(!deliverInput("input",input)) return false
         keyboardRequest=""
@@ -284,6 +284,8 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 pendingTabOrder=pendingTabOrder?.keepFor(next)
                                 pendingPaneOrder=pendingPaneOrder?.keepFor(next)
                                 val old=state.value
+                                if(old.phase!=next.phase || old.controlled!=next.controlled || old.navigationId!=next.navigationId || old.connectionEpoch!=next.connectionEpoch || old.error!=next.error)
+                                    DevelopLog.event("state","handle=$handle phase=${next.phase} owned=${next.controlled} epoch=${next.connectionEpoch} nav=${next.navigationId} pane=${next.selectedBlock} screen=${next.screen!=null} hasError=${next.error.isNotBlank()}")
                                 if(old.selectedSession!=next.selectedSession) presentation.flush()
                                 if(old.connectionEpoch!=next.connectionEpoch) {
                                     discardWaitingInput("connection replaced");recoveringNavigation=null
@@ -349,7 +351,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         if (handle == 0L) return false
         val request = JSONObject().put("type", type)
         args.forEach { (key, value) -> request.put(key, value) }
+        DevelopLog.event("command","handle=$handle type=$type session=${request.optString("session")} block=${request.optString("block")} navigation=${request.optLong("navigationId")} chars=${request.optString("text").length}")
         val error = NativeBridge.command(handle, request.toString())
+        DevelopLog.event("command","handle=$handle type=$type accepted=${error.isEmpty()}")
         if (error.isNotEmpty()) {
             navigationRequest = NavigationRequest()
             pendingTabOrder=null;pendingPaneOrder=null

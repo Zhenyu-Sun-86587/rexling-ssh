@@ -26,6 +26,7 @@ internal class NetworkMonitor(context: Context,private val onChange: (NetworkCha
     private fun report(network: Network?,caps: NetworkCapabilities?) {
         val transports=if(caps==null) 0 else listOf(NetworkCapabilities.TRANSPORT_WIFI,NetworkCapabilities.TRANSPORT_CELLULAR,
             NetworkCapabilities.TRANSPORT_ETHERNET,NetworkCapabilities.TRANSPORT_VPN).fold(0) {mask,t->if(caps.hasTransport(t)) mask or (1 shl t) else mask}
+        DevelopLog.event("network","handle=${network?.networkHandle} transports=$transports validated=${caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)}")
         if(running) SshTransport.network((network?.networkHandle?.toString() ?: "offline")+":"+transports)
         if(running) tracker.update(NetworkRoute(network?.networkHandle?.toString(),transports,caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)==true))?.let(onChange)
     }

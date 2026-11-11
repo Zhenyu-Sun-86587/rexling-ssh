@@ -78,6 +78,18 @@ when it is healthy. Network replacement still reconnects; Android process termin
 end connections. Repeated connections that immediately fail retain exponential backoff;
 a connection must remain stable for 30 seconds before resetting it.
 
+In **Preferences → Development**, enable **Develop mode** before reproducing an issue.
+The app saves bounded diagnostic logs privately across restarts. **Copy logs** copies recent
+Android and native events; **Export logs** saves the complete retained log to a text file.
+Logs include IME acceptance/rejection, input counts and acknowledgements, navigation,
+connection epochs, RPC status, network changes and WebSocket Ping/Pong. They exclude
+keystroke text, terminal contents and credentials. Logging is off by default.
+
+Tab/pane navigation reuses up to eight recently visited live data channels in the same
+session. First-time opens still fetch the terminal state; switching panes does not reopen
+the shared SSH connection. WebSocket I/O and health probes run independently of terminal
+navigation and RPC waits, so server Ping replies do not depend on rendering or input.
+
 ## Install on Android
 
 Rexling currently supports **64-bit ARM phones running Android 9 or newer**,

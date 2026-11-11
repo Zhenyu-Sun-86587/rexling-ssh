@@ -9,7 +9,7 @@ import org.junit.Test
 class TerminalTextInputTest {
     private val instrumentation=InstrumentationRegistry.getInstrumentation()
 
-    @Test fun terminalInputWorksBeforeAndAfterOwnershipWithoutPasswordFlags() {
+    @Test fun terminalInputRetainsUpstreamFlagsAndWorksAcrossOwnership() {
         instrumentation.runOnMainSync {
             val sent=mutableListOf<String>()
             val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;onInput={sent+=it}}
@@ -20,6 +20,23 @@ class TerminalTextInputTest {
             assertTrue(input.commitText("\n",1))
             assertTrue(input.deleteSurroundingText(1,0))
             assertEquals(listOf("a","\r","\u007f"),sent)
+        }
+    }
+    @Test fun terminalCompositionAndRepeatedConnectionProbesDoNotLoseInput() {
+        instrumentation.runOnMainSync {
+            val sent=mutableListOf<String>()
+            val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;onInput={sent+=it}}
+            val input=view.onCreateInputConnection(EditorInfo())!!
+            assertTrue(input.setComposingText("abc",1))
+            val probe=view.onCreateInputConnection(EditorInfo())!!
+            probe.closeConnection()
+            assertTrue(input.finishComposingText())
+            assertTrue(input.finishComposingText())
+            assertTrue(view.onCreateInputConnection(EditorInfo())!!.commitText("你好",1))
+            assertEquals(listOf("abc","你好"),sent)
+            view.controlled=true;view.controlled=false
+            assertTrue(input.commitText("z",1))
+            assertEquals(listOf("abc","你好","z"),sent)
         }
     }
     @Test fun chineseCompositionCommitsOnlyTheSelectedCandidateOnce() {

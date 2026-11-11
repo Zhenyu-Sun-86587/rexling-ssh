@@ -154,3 +154,16 @@ pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadPoll(mut env:JNIEn
 }
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadDestroy(_env:JNIEnv,_class:JClass,handle:jlong) {uploads::destroy(handle as u64);}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_setDevelop(
+    mut env:JNIEnv,_class:JClass,enabled:jni::sys::jboolean,path:JString,
+) {
+    let path:Option<String>=env.get_string(&path).ok().map(Into::into);
+    rex_core::diagnostics::set_file(path.filter(|p|!p.is_empty()).map(Into::into));
+    rex_core::diagnostics::set_enabled(enabled!=0);
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_readDevelopLog(
+    mut env:JNIEnv,_class:JClass,
+)->jstring {string(&mut env,rex_core::diagnostics::snapshot())}

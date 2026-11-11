@@ -7,3 +7,6 @@ pub mod transport;
 pub mod ssh;
 
 pub mod upload;
+
+pub mod diagnostics;
+mod socket_driver;
