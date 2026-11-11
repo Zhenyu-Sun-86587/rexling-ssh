@@ -269,7 +269,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                     Button(onClick={connectionError=model.connect(endpoint)},enabled=state.phase!="connecting" && endpoint.isNotBlank()){Text("Connect")}
                                     TextButton(onClick={servers=true}) {Text("Servers / SSH")}
                                     if(state.connected || state.phase=="reconnecting") TextButton(onClick={model.disconnectServer(model.activeServerId)}){Text("Disconnect")}
-                                    else TextButton(onClick={model.previewServer(model.activeServerId)}){Text("Try preview")}
                                     if(client.hasScreen) TextButton(onClick={showServer=false}){Text("Hide")}
                                 }
                             }
@@ -315,16 +314,16 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                 TerminalActions(state.connected && state.selectedSession.isNotBlank(),model.connectedCount>0,
                                     {model.showActivity(true)},{picker="tabs"},attentionCount=model.attentionCount)
                             })
-                            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
+                            KeyboardBar(ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen),ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
                                 client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,
                                 textKeyboard=textKeyboard,onTextKeyboard={
                                     val hide=keyboardVisible && textKeyboard;textKeyboard=true
                                     terminalView?.textInput=true
-                                    if(!controlled) client.takeControl() else if(hide) terminalView?.hideKeyboard() else terminalView?.keyboard(true)
+                                    if(!controlled) {client.takeControl();terminalView?.keyboard(true)} else if(hide) terminalView?.hideKeyboard() else terminalView?.keyboard(true)
                                 }) {
                                 val hide=keyboardVisible && !textKeyboard;textKeyboard=false
                                 terminalView?.textInput=false
-                                if(!controlled) client.takeControl() else if(hide) terminalView?.hideKeyboard() else terminalView?.keyboard(false)
+                                if(!controlled) {client.takeControl();terminalView?.keyboard(false)} else if(hide) terminalView?.hideKeyboard() else terminalView?.keyboard(false)
                             }
                         }
                     }

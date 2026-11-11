@@ -33,6 +33,8 @@ import java.util.UUID
     val auth=remember {SshAuthState(original?.authMethod ?: "key")}
     var socket by remember {mutableStateOf(original?.socketPath.orEmpty())}
     var useJump by remember {mutableStateOf(original?.jumpHost!=null)}
+    var ipv6Direct by remember {mutableStateOf(original?.addressFamily=="ipv6")}
+    var advanced by remember {mutableStateOf(false)}
     var jumpHost by remember {mutableStateOf(original?.jumpHost?.host.orEmpty())}
     var jumpPort by remember {mutableStateOf((original?.jumpHost?.port ?: 22).toString())}
     var jumpUser by remember {mutableStateOf(original?.jumpHost?.user.orEmpty())}
@@ -65,35 +67,39 @@ import java.util.UUID
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),enabled=!busy)
                 Text("Use an authenticated Rex HTTP/WS endpoint, such as its Tailscale HTTPS address.",fontSize=11.sp)
             } else {
-                OutlinedTextField(host,{host=it;error=null},Modifier.fillMaxWidth(),label={Text("Host")},singleLine=true,enabled=!busy)
-                Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(port,{port=it},Modifier.width(95.dp),label={Text("Port")},singleLine=true,
-                        keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
-                    OutlinedTextField(user,{user=it},Modifier.weight(1f),label={Text("Username")},singleLine=true,enabled=!busy)
+                OutlinedTextField(host,{host=it;error=null},Modifier.fillMaxWidth(),label={Text("Host · domain / IPv4 / IPv6")},singleLine=true,enabled=!busy)
+                OutlinedTextField(user,{user=it},Modifier.fillMaxWidth(),label={Text("Username")},singleLine=true,enabled=!busy)
+                Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                    FilterChip(!useJump && !ipv6Direct,{useJump=false;ipv6Direct=false},label={Text("Direct")},enabled=!busy)
+                    FilterChip(ipv6Direct,{ipv6Direct=true;useJump=false},label={Text("IPv6 direct")},enabled=!busy)
+                    FilterChip(useJump,{useJump=true;ipv6Direct=false;advanced=true},label={Text("ProxyJump")},enabled=!busy)
                 }
+                Text(if(ipv6Direct) "Connect directly to the host's IPv6 address or AAAA record. Your network must provide IPv6 connectivity."
+                    else "Direct uses IPv4 and IPv6 automatically. For an IPv6 address with a port, use [address]:port.",fontSize=11.sp)
+                TextButton(onClick={advanced=!advanced},enabled=!busy) {Text(if(advanced) "Hide advanced options" else "Advanced options · port, keys, jump host, socket")}
+                if(advanced) OutlinedTextField(port,{port=it},Modifier.fillMaxWidth(),label={Text("SSH port")},singleLine=true,
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
                 Text("Target authentication",style=MaterialTheme.typography.labelLarge)
-                SshAuthentication(auth,busy,{busy=it},{error=it})
-                Row {
-                    Checkbox(useJump,{useJump=it},enabled=!busy)
-                    Text("Use jump host (ProxyJump)",Modifier.padding(top=12.dp),fontSize=12.sp)
-                }
-                if(useJump) {
-                    Text("Jump host",style=MaterialTheme.typography.labelLarge)
-                    OutlinedTextField(jumpHost,{jumpHost=it},Modifier.fillMaxWidth(),label={Text("Jump host address")},singleLine=true,enabled=!busy)
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(jumpPort,{jumpPort=it},Modifier.width(95.dp),label={Text("Port")},singleLine=true,
-                            keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
-                        OutlinedTextField(jumpUser,{jumpUser=it},Modifier.weight(1f),label={Text("Jump username")},singleLine=true,enabled=!busy)
+                SshAuthentication(auth,busy,{busy=it},{error=it},advanced=advanced)
+                if(advanced) {
+                    if(useJump) {
+                        Text("Jump host",style=MaterialTheme.typography.labelLarge)
+                        OutlinedTextField(jumpHost,{jumpHost=it},Modifier.fillMaxWidth(),label={Text("Jump host address")},singleLine=true,enabled=!busy)
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(jumpPort,{jumpPort=it},Modifier.width(95.dp),label={Text("Port")},singleLine=true,
+                                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
+                            OutlinedTextField(jumpUser,{jumpUser=it},Modifier.weight(1f),label={Text("Jump username")},singleLine=true,enabled=!busy)
+                        }
+                        SshAuthentication(jumpAuth,busy,{busy=it},{error=it},advanced=true)
+                        Text("The jump host resolves and connects to the target address. Target SSH remains encrypted end to end.",fontSize=11.sp)
                     }
-                    SshAuthentication(jumpAuth,busy,{busy=it},{error=it})
-                    Text("The jump host resolves and connects to the target address. Target SSH remains encrypted end to end.",fontSize=11.sp)
-                }
-                OutlinedTextField(socket,{socket=it},Modifier.fillMaxWidth(),label={Text("Remote socket path · optional")},
-                    placeholder={Text("/run/user/<uid>/rex/server.sock",fontSize=11.sp)},singleLine=true,enabled=!busy)
-                Text("Connects to Rex's Unix socket through SSH. Saved credentials are encrypted with Android Keystore.",fontSize=11.sp)
-                if(original!=null) Row {
-                    Checkbox(resetTrust,{resetTrust=it},enabled=!busy)
-                    Text("Reset host trust for configured hops on save",Modifier.padding(top=12.dp),fontSize=11.sp)
+                    OutlinedTextField(socket,{socket=it},Modifier.fillMaxWidth(),label={Text("Remote socket path · optional")},
+                        placeholder={Text("/run/user/<uid>/rex/server.sock",fontSize=11.sp)},singleLine=true,enabled=!busy)
+                    Text("Connects to Rex's Unix socket through SSH. Saved credentials are encrypted with Android Keystore.",fontSize=11.sp)
+                    if(original!=null) Row {
+                        Checkbox(resetTrust,{resetTrust=it},enabled=!busy)
+                        Text("Reset host trust for configured hops on save",Modifier.padding(top=12.dp),fontSize=11.sp)
+                    }
                 }
             }
             if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -108,16 +114,17 @@ import java.util.UUID
                 scope.launch {
                     busy=true
                     try {
-                        val cleanHost=host.trim().removeSurrounding("[","]").lowercase(java.util.Locale.ROOT)
+                        val address=SshAddress.parse(host,port.toIntOrNull() ?: error("Enter a valid SSH port"))
+                        val cleanHost=address.host
                         val cleanUser=user.trim()
-                        val number=port.toIntOrNull() ?: error("Enter a valid SSH port")
+                        val number=address.port
                         auth.validate("Target")
                         val jump=if(useJump) {
                             jumpAuth.validate("Jump host")
-                            val jumpNumber=jumpPort.toIntOrNull() ?: error("Enter a valid jump host port")
-                            SshJumpHost(jumpHost.trim().removeSurrounding("[","]").lowercase(java.util.Locale.ROOT),jumpNumber,jumpUser.trim(),jumpAuth.method)
+                            val jumpAddress=SshAddress.parse(jumpHost,jumpPort.toIntOrNull() ?: error("Enter a valid jump host port"))
+                            SshJumpHost(jumpAddress.host,jumpAddress.port,jumpUser.trim(),jumpAuth.method)
                         } else null
-                        val ssh=SshOptions(cleanHost,number,cleanUser,auth.method,"ssh:"+UUID.randomUUID(),socket.trim(),jumpHost=jump)
+                        val ssh=SshOptions(cleanHost,number,cleanUser,auth.method,"ssh:"+UUID.randomUUID(),socket.trim(),jumpHost=jump,addressFamily=if(ipv6Direct) "ipv6" else "auto")
                         val url=URI("ssh",cleanUser,cleanHost,number,null,null,null).toASCIIString()
                         val profile=ServerProfile.create(name,url,id,icon,ssh)
                         val payload=auth.json()

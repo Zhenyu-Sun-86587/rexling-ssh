@@ -25,7 +25,7 @@ internal object SshTransport {
         entries[profile.id]?.takeIf {it.profile.connectionKey==profile.connectionKey}?.let {return it.handle}
         val secret=SshCredentials(context).load(ssh.credentialRef)
         val config=JSONObject().put("host",ssh.host.removeSurrounding("[","]")).put("port",ssh.port).put("user",ssh.user)
-            .put("socketPath",ssh.socketPath).put("jumpHost",ssh.jumpHost?.let {jump->
+            .put("addressFamily",ssh.addressFamily).put("socketPath",ssh.socketPath).put("jumpHost",ssh.jumpHost?.let {jump->
                 jump.json().put("fingerprint",trustStore(context).getString(hostKey(jump.host,jump.port),""))
             })
             .put("fingerprint",trustStore(context).getString(targetKey(ssh),""))
@@ -51,7 +51,7 @@ internal object SshTransport {
         check(!challenge.changed) {"Changed host keys must be verified and removed explicitly"}
         check(entries[challenge.profile.id]?.handle==challenge.transport) {"SSH confirmation is stale"}
         val ssh=challenge.profile.ssh ?: error("SSH configuration missing")
-        val key=if(challenge.hop=="jump") hostKey(challenge.host,challenge.port) else targetKey(ssh)
+        val key=if(challenge.hop=="jump") ssh.jumpHost!!.let {hostKey(it.host,it.port)} else targetKey(ssh)
         val store=trustStore(context)
         val previous=store.getString(key,null)
         check(store.edit().putString(key,challenge.fingerprint).commit()) {"Could not save host trust"}

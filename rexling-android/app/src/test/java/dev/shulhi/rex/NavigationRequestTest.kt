@@ -5,6 +5,15 @@ import org.junit.Test
 
 class NavigationRequestTest {
     private val emptyScreen = TerminalScreen(80, 24, null, null, -1, 0xff000000.toInt(), emptyList())
+    @Test fun recoveryRequiresTheExactNavigationAndAReadyScreen() {
+        val request=NavigationRequest(session="session",block="pane",id=8)
+        val current=AppState(phase="connected",selectedSession="session",selectedBlock="pane",navigationId=8,screen=emptyScreen)
+        assertTrue(request.matchesTarget(current))
+        assertFalse(request.matchesTarget(current.copy(navigationId=7)))
+        assertFalse(request.matchesTarget(current.copy(selectedBlock="other")))
+        assertFalse(request.matchesTarget(current.copy(screen=null)))
+        assertFalse(request.matchesTarget(current.copy(phase="disconnected")))
+    }
     @Test fun anEarlierTabReplyCannotClearTheLatestTap() {
         val pending = NavigationRequest(block = "latest")
         val oldReply = AppState(phase = "connected", selectedBlock = "earlier", screen = emptyScreen)

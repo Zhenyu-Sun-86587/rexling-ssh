@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ServersTest {
+    @Test fun sshAddressSeparatesOnlyUnambiguousPorts() {
+        assertEquals(SshAddress("2001:db8::22",22),SshAddress.parse("2001:db8::22"))
+        assertEquals(SshAddress("2001:db8::22",2222),SshAddress.parse("[2001:db8::22]:2222"))
+        assertEquals(SshAddress("::1",2222),SshAddress.parse("[::1]",2222))
+        assertEquals(SshAddress("rex.example",2222),SshAddress.parse("REX.example:2222"))
+        assertEquals(SshAddress("rex.example",22),SshAddress.parse("rex.example"))
+        for(value in listOf("[::1]:0","[::1]:65536","::wrong","host:no","[::1]junk","user@host"))
+            assertTrue(value,runCatching {SshAddress.parse(value)}.isFailure)
+    }
+    @Test fun ipv6DirectProfileSurvivesPersistence() {
+        val ssh=SshOptions("2001:db8::1",22,"user","key","key-ref",addressFamily="ipv6")
+        val profile=ServerProfile.create("IPv6","ssh://user@[2001:db8::1]",ssh=ssh)
+        assertEquals(profile,SavedServers.decode(SavedServers.encode(listOf(profile)),"").single())
+    }
+
     @Test fun sshMetadataEditsPreserveConnectionIdentityButRouteChangesDoNot() {
         val original=SshOptions("target",user="dev",credentialRef="old",revision="old")
         val edited=original.copy(credentialRef="new",revision="new")

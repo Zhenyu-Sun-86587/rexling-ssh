@@ -96,11 +96,17 @@ class TerminalView(context: Context) : View(context) {
         set(value) {
             if (field != value) {
                 field = value
-                inputGeneration++
-                if (!value) composing = ""
-                (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
+                // Acquiring ownership must not invalidate the IME opened to request it.
+                if(!value || !inputAvailable) {
+                    inputGeneration++
+                    if (!value) composing = ""
+                    (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
+                }
             }
         }
+    var inputAvailable: Boolean = false
+        set(value) {if(field!=value) {field=value;inputGeneration++;if(!value) composing="";(context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)}}
+    private val acceptsInput: Boolean get()=interactive && (controlled || inputAvailable)
     private var inputGeneration=0L
     var textInput: Boolean = false
         set(value) {
@@ -330,7 +336,7 @@ class TerminalView(context: Context) : View(context) {
     }
     fun keyboard(textMode: Boolean=textInput) {
         textInput=textMode
-        if (!controlled) return
+        if (!acceptsInput) return
         requestFocus()
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(this, 0)
     }
@@ -524,11 +530,11 @@ class TerminalView(context: Context) : View(context) {
         }
     }
     override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate()};return true }
-    override fun onCheckIsTextEditor() = controlled
+    override fun onCheckIsTextEditor() = acceptsInput
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
-        if (!controlled) return null
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-            if(textInput) InputType.TYPE_TEXT_FLAG_AUTO_CORRECT else (InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+        if (!acceptsInput) return null
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL or
+            if(textInput) (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) else InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
         outAttrs.initialSelStart=0;outAttrs.initialSelEnd=0
         outAttrs.contentMimeTypes=imageMimeTypes.copyOf()
@@ -541,7 +547,7 @@ class TerminalView(context: Context) : View(context) {
             private val editBuffer=SpannableStringBuilder().apply {Selection.setSelection(this,0)}
             override fun getEditable(): Editable=editBuffer
             private var closed=false
-            private fun valid()=!closed && controlled && interactive && generation==inputGeneration && imageTarget==imageInputTarget()
+            private fun valid()=!closed && acceptsInput && generation==inputGeneration && imageTarget==imageInputTarget()
             private fun refreshComposition() {
                 composing=editBuffer.toString();invalidate()
                 val buffer=editBuffer
@@ -554,7 +560,7 @@ class TerminalView(context: Context) : View(context) {
             }
             private fun sendBuffer() {
                 val text=editBuffer.toString();clearBuffer()
-                if(text.isNotEmpty()) onInput(text)
+                if(text.isNotEmpty()) onInput(text.replace("\r\n","\r").replace("\n","\r"))
             }
             override fun commitContent(info: android.view.inputmethod.InputContentInfo,flags: Int,opts: android.os.Bundle?): Boolean {
                 if(!valid() || imageMimeTypes.none {info.description.hasMimeType(it)}) return false
@@ -566,7 +572,8 @@ class TerminalView(context: Context) : View(context) {
             }
             override fun performContextMenuAction(id: Int): Boolean = if(id==android.R.id.paste || id==android.R.id.pasteAsPlainText) valid() && onPaste() else super.performContextMenuAction(id)
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                if(!valid()) return false
+                if(!valid()) {android.util.Log.d("RexInput","IME commit rejected: stale input target");return false}
+                android.util.Log.d("RexInput","IME commit chars="+(text?.length ?: 0))
                 super.commitText(text ?: "",newCursorPosition);sendBuffer();return true
             }
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
@@ -611,7 +618,7 @@ class TerminalView(context: Context) : View(context) {
         if(event.isShiftPressed && keyCode in listOf(KeyEvent.KEYCODE_PAGE_UP,KeyEvent.KEYCODE_PAGE_DOWN)) {
             onScroll((if(keyCode==KeyEvent.KEYCODE_PAGE_UP) -1 else 1)*(screen?.rows ?: 24));return true
         }
-        if (!controlled) return super.onKeyDown(keyCode, event)
+        if (!acceptsInput) return super.onKeyDown(keyCode, event)
         val named = when (keyCode) {
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> "enter"
             KeyEvent.KEYCODE_DEL -> "backspace"; KeyEvent.KEYCODE_FORWARD_DEL -> "delete"

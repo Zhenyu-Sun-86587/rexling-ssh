@@ -28,7 +28,7 @@ and native-library name are unchanged, preserving installed app data and updates
 ## SSH fork
 
 This fork installs as **Rexling SSH** (`dev.shulhi.rex.ssh`) alongside the original app.
-Open **Servers → Add server → SSH**, enter the host, port and SSH username, then choose
+Open **Servers → Add server → SSH**, enter the host and SSH username, then choose
 private key or password authentication. Generate an Ed25519 key in the editor and copy
 its public key, paste/import an existing key, and optionally import a matching OpenSSH
 user certificate. Compare the first connection's SHA256 host fingerprint before trusting it.
@@ -39,7 +39,15 @@ connection is shared by terminal panes, status monitoring and uploads. There is 
 TCP listener and no Tailscale requirement for SSH. An explicit socket path avoids discovery;
 otherwise the client discovers the remote UID/runtime directory once and tries the socket first.
 The remote Rex server or its `rex.socket` must already be configured. The app does not change
-server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Enable **Use jump host (ProxyJump)** in the editor and enter separate host, port, username and authentication for that hop. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address.
+server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Select **ProxyJump** in the editor and enter separate host, port, username and authentication for that hop. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address.
+
+**Advanced options** starts collapsed and contains the port (default 22), key passphrase,
+OpenSSH certificate, jump-host details, socket override and trust reset. Hidden saved values
+are retained. **Direct** races IPv4/IPv6 addresses; **IPv6 direct** connects to the public IPv6
+address or domain's AAAA records without a jump host. Both phone and server must have IPv6
+connectivity. Use `[2001:db8::1]:2222` for an address with a port; a bare IPv6 address is
+always treated as the whole address, with the separate/default port. Physical SSH sockets,
+including a ProxyJump's first hop, use TCP_NODELAY.
 
 Keys, passphrases and passwords saved for reconnect are encrypted using Android Keystore AES-GCM.
 The current SSH implementation uses only russh's ring backend. Unsupported key/certificate
@@ -49,7 +57,13 @@ Rexling SSH remains an independent, unofficial client.
 
 The keyboard icon opens terminal input without suggestions. The adjacent **中** button
 opens normal text input with Chinese composition and suggestions. Tap the other button
-to switch modes, or tap the active mode again to hide the keyboard.
+to switch modes, or tap the active mode again to hide the keyboard. Both modes advertise
+normal text, never a password field. Typing requests ownership when needed; it does not
+silently discard the first key. `RexInput` logs target readiness and character counts, never
+input contents. Navigation unlocks after 1.5 seconds; buffered keys are delivered only to
+the acknowledged intended pane, with a bounded wait and an explicit error on expiry.
+Optional program metadata queries have a one-second deadline and stop after failure until
+reconnect, while terminal control remains on its independent connection.
 
 ## Install on Android
 

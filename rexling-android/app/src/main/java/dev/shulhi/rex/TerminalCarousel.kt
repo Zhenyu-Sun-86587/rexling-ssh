@@ -125,6 +125,7 @@ import dev.chrisbanes.haze.hazeSource
                                 if(block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
                                 view.interactive=center
                                 view.controlled=center && controlled && block.id==liveBlock
+                                view.inputAvailable=center && block.id==liveBlock && liveBlock!="preview" && liveScreen!=null
                                 view.imageInputTarget=imageTarget
                                 view.onImage=if(center && block.id==liveBlock) onImage else {_,release->release();false}
                                 view.onPaste=if(center && block.id==liveBlock) onPaste else ({false})

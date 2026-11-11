@@ -9,6 +9,19 @@ import org.junit.Test
 class TerminalTextInputTest {
     private val instrumentation=InstrumentationRegistry.getInstrumentation()
 
+    @Test fun terminalInputWorksBeforeAndAfterOwnershipWithoutPasswordFlags() {
+        instrumentation.runOnMainSync {
+            val sent=mutableListOf<String>()
+            val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;onInput={sent+=it}}
+            val info=EditorInfo();val input=view.onCreateInputConnection(info)!!
+            assertEquals(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,info.inputType)
+            assertTrue(input.commitText("a",1))
+            view.controlled=true
+            assertTrue(input.commitText("\n",1))
+            assertTrue(input.deleteSurroundingText(1,0))
+            assertEquals(listOf("a","\r","\u007f"),sent)
+        }
+    }
     @Test fun chineseCompositionCommitsOnlyTheSelectedCandidateOnce() {
         instrumentation.runOnMainSync {
             val sent=mutableListOf<String>()
@@ -35,7 +48,7 @@ class TerminalTextInputTest {
             old.setComposingText("ni",1);view.textInput=false
             assertFalse(old.commitText("你",1));assertFalse(old.finishComposingText())
             val info=EditorInfo();val direct=view.onCreateInputConnection(info)!!
-            assertEquals(InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,info.inputType and InputType.TYPE_MASK_VARIATION)
+            assertEquals(InputType.TYPE_TEXT_VARIATION_NORMAL,info.inputType and InputType.TYPE_MASK_VARIATION)
             direct.commitText("ls",1)
             pane="b";assertFalse(direct.commitText("wrong pane",1))
             assertEquals(listOf("ls"),sent)

@@ -41,7 +41,7 @@ import org.json.JSONObject
 }
 
 @Composable internal fun SshAuthentication(
-    auth: SshAuthState,busy: Boolean,onBusy: (Boolean)->Unit,onError: (String?)->Unit,
+    auth: SshAuthState,busy: Boolean,onBusy: (Boolean)->Unit,onError: (String?)->Unit,advanced: Boolean=false,
 ) {
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
@@ -102,11 +102,13 @@ import org.json.JSONObject
                 }) {Text("Copy public key")}
                 Text("Authorize this key for this hop's user, or import its CA-signed user certificate below.",fontSize=11.sp)
             }
+            if(advanced) {
             OutlinedTextField(auth.passphrase,{auth.passphrase=it},Modifier.fillMaxWidth(),label={Text("Passphrase · optional")},
                 singleLine=true,visualTransformation=PasswordVisualTransformation(),enabled=!busy)
             OutlinedTextField(auth.certificate,{auth.certificate=it},Modifier.fillMaxWidth(),label={Text("OpenSSH user certificate · optional")},
                 minLines=1,maxLines=3,enabled=!busy)
             TextButton(onClick={certPicker.launch(arrayOf("*/*"))},enabled=!busy) {Text("Import certificate (*-cert.pub)")}
+            }
         } else {
             OutlinedTextField(auth.password,{auth.password=it},Modifier.fillMaxWidth(),label={Text("Password")},singleLine=true,
                 visualTransformation=PasswordVisualTransformation(),enabled=!busy)

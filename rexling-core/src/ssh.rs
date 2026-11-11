@@ -1,5 +1,6 @@
 //! Shared SSH transport. Drivers and channel destruction use a persistent runtime.
 use anyhow::{Context, Result, ensure};
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use russh::{
     Channel, ChannelMsg, ChannelStream, Disconnect,
     client::{self, Handle},
@@ -9,6 +10,7 @@ use russh::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::net::{IpAddr, SocketAddr};
 use std::{
     collections::HashMap,
     fmt, io,
@@ -40,6 +42,8 @@ pub struct Config {
     pub port: u16,
     pub user: String,
     #[serde(default)]
+    pub address_family: AddressFamily,
+    #[serde(default)]
     pub socket_path: String,
     #[serde(default)]
     pub fingerprint: String,
@@ -47,6 +51,110 @@ pub struct Config {
     #[serde(default)]
     pub jump_host: Option<Box<Config>>,
 }
+#[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AddressFamily {
+    #[default]
+    Auto,
+    Ipv4,
+    Ipv6,
+}
+fn normalize_address(config: &mut Config) -> Result<()> {
+    let input = config.host.trim();
+    let (host, port) = if let Ok(ip) = input.parse::<IpAddr>() {
+        (ip.to_string(), config.port)
+    } else if let Ok(address) = input.parse::<SocketAddr>() {
+        (address.ip().to_string(), address.port())
+    } else if let Some(inner) = input.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        (
+            inner
+                .parse::<std::net::Ipv6Addr>()
+                .context("Invalid IPv6 address")?
+                .to_string(),
+            config.port,
+        )
+    } else if let Some((host, port)) = input.split_once(':') {
+        ensure!(
+            !port.contains(':'),
+            "Use [IPv6]:port or a complete IPv6 address without a port"
+        );
+        (
+            host.to_owned(),
+            port.parse::<u16>().context("Invalid SSH port")?,
+        )
+    } else {
+        (input.to_owned(), config.port)
+    };
+    ensure!(
+        !host.is_empty()
+            && !host
+                .chars()
+                .any(|c| c.is_whitespace() || matches!(c, '/' | '?' | '#' | '@'))
+            && port > 0,
+        "Invalid SSH host or port"
+    );
+    config.host = host;
+    config.port = port;
+    Ok(())
+}
+
+// Stagger both address families so an unreachable AAAA/A record cannot consume
+// the entire handshake deadline before the reachable family gets a chance.
+async fn connect_tcp(endpoint: &Config) -> Result<tokio::net::TcpStream> {
+    let addresses: Vec<_> = tokio::net::lookup_host((endpoint.host.as_str(), endpoint.port))
+        .await?
+        .filter(|address| match endpoint.address_family {
+            AddressFamily::Auto => true,
+            AddressFamily::Ipv4 => address.is_ipv4(),
+            AddressFamily::Ipv6 => address.is_ipv6(),
+        })
+        .take(16)
+        .collect();
+    ensure!(
+        !addresses.is_empty(),
+        "No address found for the selected IP family; check the host's AAAA/A records and your network"
+    );
+    let prefer_v6 = addresses[0].is_ipv6();
+    let mut v4: std::collections::VecDeque<_> = addresses
+        .iter()
+        .copied()
+        .filter(SocketAddr::is_ipv4)
+        .collect();
+    let mut v6: std::collections::VecDeque<_> = addresses
+        .iter()
+        .copied()
+        .filter(SocketAddr::is_ipv6)
+        .collect();
+    let mut ordered = Vec::new();
+    while !v4.is_empty() || !v6.is_empty() {
+        if prefer_v6 {
+            ordered.extend(v6.pop_front());
+            ordered.extend(v4.pop_front());
+        } else {
+            ordered.extend(v4.pop_front());
+            ordered.extend(v6.pop_front());
+        }
+    }
+    let mut attempts = FuturesUnordered::new();
+    for (index, address) in ordered.into_iter().enumerate() {
+        attempts.push(async move {
+            tokio::time::sleep(Duration::from_millis(250 * index as u64)).await;
+            tokio::net::TcpStream::connect(address).await
+        });
+    }
+    let mut last = None;
+    while let Some(result) = attempts.next().await {
+        match result {
+            Ok(stream) => {
+                stream.set_nodelay(true)?;
+                return Ok(stream);
+            }
+            Err(error) => last = Some(error),
+        }
+    }
+    Err(last.context("SSH connection failed")?.into())
+}
+
 fn default_port() -> u16 {
     22
 }
@@ -246,7 +354,15 @@ impl SshManager {
             manager
         })
     }
-    pub fn register(&self, config: Config, credentials: Credentials) -> Result<u64> {
+    pub fn register(&self, mut config: Config, credentials: Credentials) -> Result<u64> {
+        normalize_address(&mut config)?;
+        if let Some(jump) = config.jump_host.as_deref_mut() {
+            normalize_address(jump)?;
+        }
+        ensure!(
+            config.address_family != AddressFamily::Ipv6 || config.jump_host.is_none(),
+            "IPv6 direct cannot use a jump host"
+        );
         ensure!(
             !config.host.is_empty() && config.port > 0 && !config.user.is_empty(),
             "SSH host, port and username are required"
@@ -685,7 +801,7 @@ async fn authenticate_hop(
         let stream = if let Some(stream) = upstream {
             stream
         } else {
-            let stream = tokio::net::TcpStream::connect((endpoint.host.as_str(), endpoint.port))
+            let stream = connect_tcp(endpoint)
                 .await
                 .with_context(|| format!("{label} TCP connection failed"))?;
             stream.set_nodelay(true)?;
@@ -903,6 +1019,35 @@ pub fn generate_key() -> Result<Zeroizing<Vec<u8>>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv6_and_host_ports_are_unambiguous() {
+        for (input, host, port) in [
+            ("2001:db8::22", "2001:db8::22", 22),
+            ("[2001:db8::22]:2222", "2001:db8::22", 2222),
+            ("[::1]", "::1", 22),
+            ("rex.example:2222", "rex.example", 2222),
+        ] {
+            let mut config: Config =
+                serde_json::from_value(json!({"host":input,"user":"test"})).unwrap();
+            normalize_address(&mut config).unwrap();
+            assert_eq!((config.host.as_str(), config.port), (host, port));
+        }
+    }
+    #[tokio::test]
+    async fn both_ip_families_connect_with_nodelay() {
+        for (host, family) in [("127.0.0.1", "ipv4"), ("::1", "ipv6")] {
+            let listener = tokio::net::TcpListener::bind((host, 0)).await.unwrap();
+            let config: Config=serde_json::from_value(json!({"host":host,"port":listener.local_addr().unwrap().port(),"user":"test","addressFamily":family})).unwrap();
+            let stream = tokio::time::timeout(Duration::from_secs(2), connect_tcp(&config))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(stream.nodelay().unwrap());
+            let (_, peer) = listener.accept().await.unwrap();
+            assert_eq!(peer.is_ipv6(), family == "ipv6");
+        }
+    }
 
     // No network required: exercise a real 5-minute backoff without waiting it out.
     #[tokio::test]

@@ -127,8 +127,92 @@ internal class RexConnection(application: Application, private val scope: Corout
         private set
     private var shiftState by mutableStateOf(ShiftKeyState())
     val shiftModifier: Boolean get()=shiftState.active
-    var navigationRequest by mutableStateOf(NavigationRequest())
-        private set
+    private var navigationTimer: Job?=null
+    private var navigationStarted=0L
+    private var recoveringNavigation: NavigationRequest?=null
+    private var navigationState by mutableStateOf(NavigationRequest())
+    var navigationRequest: NavigationRequest
+        get()=navigationState
+        private set(value) {
+            if(value==navigationState) return
+            val sameIntent=value.pending && navigationState.pending && value.id==navigationState.id
+            navigationState=value
+            if(sameIntent) return // A partial acknowledgement must not restart the deadline or discard keys.
+            navigationTimer?.cancel();recoveringNavigation=null
+            if(value.pending) {
+                discardWaitingInput("new navigation")
+                navigationStarted=android.os.SystemClock.elapsedRealtime()
+                navigationTimer=scope.launch {delay(1500);expireNavigation()}
+            }
+        }
+    private fun expireNavigation() {
+        val request=navigationRequest
+        if(!request.pending || android.os.SystemClock.elapsedRealtime()-navigationStarted<1500) return
+        navigationState=NavigationRequest()
+        recoveringNavigation=request
+        restoreWorkspace=false
+        android.util.Log.w("RexInput","Navigation acknowledgement exceeded 1500ms; recovering target")
+        queueDisplay(state.value)
+        navigationTimer=scope.launch {
+            delay(3500)
+            if(recoveringNavigation?.id==request.id) {
+                recoveringNavigation=null;discardWaitingInput("navigation did not complete")
+                setState(state.value.copy(error="Pane switch timed out; check the displayed pane before typing again."))
+            }
+        }
+        claimActivePane()
+    }
+    private data class WaitingInput(val kind: String,val text: String,val session: String,val block: String?,val navigation: Long,val epoch: Long)
+    private val waitingInput=java.util.ArrayDeque<WaitingInput>()
+    private var waitingInputTimer: Job?=null
+    private var claimTarget=""
+    private var claimAt=0L
+    private fun discardWaitingInput(reason: String) {
+        if(waitingInput.isNotEmpty()) android.util.Log.w("RexInput","Unsent input cleared: "+reason)
+        waitingInput.clear();waitingInputTimer?.cancel();waitingInputTimer=null
+    }
+    private fun deliverInput(kind: String,text: String): Boolean {
+        expireNavigation()
+        val current=state.value
+        if(text.isEmpty()) return false
+        if(!visible || !foreground || !current.connected || current.creating || current.selectedBlock.isBlank()) {
+            android.util.Log.w("RexInput","Input blocked: terminal is not active/connected")
+            return false
+        }
+        val request=navigationRequest.takeIf {it.pending} ?: recoveringNavigation
+        if(request!=null) {
+            if(waitingInput.sumOf {it.text.length}+text.length>4096) {
+                setState(current.copy(error="Input waiting for navigation is full; wait for the pane to open"));return false
+            }
+            waitingInput.add(WaitingInput(kind,text,request.session ?: current.selectedSession,
+                request.block ?: current.selectedBlock.takeIf {request.session==null || request.session==current.selectedSession},request.id,current.connectionEpoch))
+            android.util.Log.d("RexInput","Input queued for navigation; chars="+text.length)
+            if(waitingInputTimer==null) waitingInputTimer=scope.launch {
+                delay(5000);discardWaitingInput("navigation timeout");recoveringNavigation=null
+                setState(state.value.copy(error="Pane switch timed out. Unsent input was cleared; check the active pane and retry."))
+            }
+            return true
+        }
+        if(!current.controlled) {android.util.Log.d("RexInput","Claiming ownership for input");claimActivePane(force=true)}
+        val sent=command(kind,"text" to text,"session" to current.selectedSession,"block" to current.selectedBlock,
+            "navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch)
+        android.util.Log.d("RexInput","Native input enqueue="+sent+" chars="+text.length)
+        return sent
+    }
+    private fun drainWaitingInput() {
+        val current=state.value
+        recoveringNavigation?.let {request->
+            if(request.matchesTarget(current)) recoveringNavigation=null
+        }
+        if(navigationRequest.pending || recoveringNavigation!=null || current.screen==null) return
+        while(waitingInput.isNotEmpty()) {
+            val item=waitingInput.removeFirst()
+            if(item.epoch==current.connectionEpoch && item.navigation==current.navigationId && item.session==current.selectedSession && (item.block==null || item.block==current.selectedBlock)) {
+                deliverInput(item.kind,item.text)
+            } else android.util.Log.w("RexInput","Unsent input discarded: target changed")
+        }
+        waitingInputTimer?.cancel();waitingInputTimer=null
+    }
     private val workspace=SavedWorkspace(preferences,storageKey)
     private val presentation=SavedWorkspacePresentation(preferences,storageKey)
     private val navigation=workspace.navigation
@@ -142,11 +226,12 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun keyTarget(): String = "$keyEpoch:$navigationSerial:${state.value.selectedSession}:${state.value.selectedBlock}"
     fun keyForTarget(name: String,target: String) {if(target==keyTarget()) key(name)}
     internal fun neovimShortcut(item: NeovimShortcut,target: String): Boolean {
+        expireNavigation()
         val current=state.value
-        val input=NeovimShortcuts.input(current,item,target,keyTarget(),visible && foreground,navigationRequest.pending) ?: return false
+        val input=NeovimShortcuts.input(current.copy(controlled=true),item,target,keyTarget(),visible && foreground,navigationRequest.pending || recoveringNavigation!=null)
+            ?: run {android.util.Log.w("RexInput","Neovim shortcut blocked: target not ready");return false}
         resetModifiers()
-        if(!command("input","text" to input,"session" to current.selectedSession,"block" to current.selectedBlock,
-                "navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch)) return false
+        if(!deliverInput("input",input)) return false
         keyboardRequest=""
         return true
     }
@@ -175,7 +260,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) {pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {discardWaitingInput("hidden");pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
     private var pollJob: Job? = null
 
     init {
@@ -201,6 +286,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 val old=state.value
                                 if(old.selectedSession!=next.selectedSession) presentation.flush()
                                 if(old.connectionEpoch!=next.connectionEpoch) {
+                                    discardWaitingInput("connection replaced");recoveringNavigation=null
                                     activation.resume();cancelKeyRepeats();resetModifiers()
                                     navigationRequest=NavigationRequest();restoreWorkspace=true
                                 }
@@ -222,7 +308,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
 
-                                openPreferredTerminal();rememberCurrentTerminal();claimActivePane()
+                                drainWaitingInput();openPreferredTerminal();rememberCurrentTerminal();claimActivePane()
                             }
                         } catch (error: Exception) {
                             withContext(Dispatchers.Main.immediate) {
@@ -296,7 +382,7 @@ internal class RexConnection(application: Application, private val scope: Corout
             }
         } else command("connect", "server" to value)
     }
-    fun disconnect() { connectJob?.cancel();pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { discardWaitingInput("disconnect");recoveringNavigation=null;connectJob?.cancel();pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         presentation.flush()
@@ -431,9 +517,16 @@ internal class RexConnection(application: Application, private val scope: Corout
         }
     }
     fun refresh() = command("refresh")
-    fun claimActivePane() {
+    fun claimActivePane(force: Boolean=false) {
         val current=state.value
-        if(!restoreWorkspace && activation.shouldTake(current,navigationRequest,visible && foreground,lastSize)) sendTake(current)
+        if(force) {
+            val now=android.os.SystemClock.elapsedRealtime()
+            val target=frameTarget(current)
+            if(visible && foreground && current.connected && !current.creating && !navigationRequest.pending && recoveringNavigation==null &&
+                current.selectedBlock.isNotBlank() && (target!=claimTarget || now-claimAt>=1500)) {
+                claimTarget=target;claimAt=now;sendTake(current)
+            }
+        } else if(!restoreWorkspace && recoveringNavigation==null && activation.shouldTake(current,navigationRequest,visible && foreground,lastSize)) sendTake(current)
     }
     private fun sendTake(current: AppState) = command("take","session" to current.selectedSession,"block" to current.selectedBlock,
         "navigationId" to current.navigationId,"columns" to lastSize.first,"rows" to lastSize.second)
@@ -455,8 +548,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
             command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
     }
-    fun releaseControl() { activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
+    fun releaseControl() { discardWaitingInput("released");activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {
+        discardWaitingInput("background");recoveringNavigation=null
         presentation.flush()
         pendingTabOrder=null;pendingPaneOrder=null
         cancelDisplay();cancelKeyRepeats()
@@ -472,19 +566,19 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun pressShift() {shiftState=shiftState.press()}
     fun releaseShift(cancelled: Boolean) {shiftState=shiftState.release(cancelled)}
     fun controlShortcut(letter: String) {
-        if(letter !in controlShortcuts || !visible || !state.value.controlled || state.value.creating || navigationRequest.pending) return
+        if(letter !in controlShortcuts) return
         resetModifiers();type(TerminalInput.modified(letter,control=true,alt=false))
     }
     fun type(text: String) {
-        if (!visible || !state.value.controlled || state.value.creating || navigationRequest.pending || text.isEmpty()) return
+        if(text.isEmpty()) return
         val input = TerminalInput.modified(text, controlModifier, altModifier, shiftModifier)
         controlModifier = false; altModifier = false;shiftState=shiftState.consume();keyboardRequest=""
-        command("input", "text" to input,"session" to state.value.selectedSession,"block" to state.value.selectedBlock,"navigationId" to state.value.navigationId,"connectionEpoch" to state.value.connectionEpoch)
+        deliverInput("input",input)
     }
     fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}
     fun scrollToBottom() {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"bottom" to true)}
     fun key(name: String) = type(TerminalInput.key(name))
-    fun paste(text: String) { if (visible && state.value.controlled && !navigationRequest.pending) command("paste", "text" to text,"session" to state.value.selectedSession,"block" to state.value.selectedBlock,"navigationId" to state.value.navigationId,"connectionEpoch" to state.value.connectionEpoch) }
+    fun paste(text: String) {deliverInput("paste",text)}
     fun resize(columns: Int, rows: Int) {
         val size = columns.coerceIn(1, 512) to rows.coerceIn(1, 256)
         lastSize = size
@@ -502,6 +596,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun close() {
         presentation.flush()
         cancelDisplay()
+        discardWaitingInput("closed");navigationTimer?.cancel()
         closed=true;connectJob?.cancel();pollJob?.cancel();resizeJob?.cancel()
         if (handle != 0L) NativeBridge.destroy(handle)
         handle = 0

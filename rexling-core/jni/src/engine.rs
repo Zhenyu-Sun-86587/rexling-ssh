@@ -252,6 +252,7 @@ struct Actor {
     title_events: BTreeMap<String, Value>,
     process_events: BTreeMap<String, Value>,
     program_refresh: tokio::time::Instant,
+    program_suspended: bool,
     preview_updates: BTreeMap<String, Value>,
     session_details: Value,
 }
@@ -300,6 +301,7 @@ impl Actor {
             title_events: BTreeMap::new(),
             process_events: BTreeMap::new(),
             program_refresh: tokio::time::Instant::now(),
+            program_suspended: false,
             preview_updates: BTreeMap::new(),
             session_details: json!({}),
         }
@@ -439,7 +441,10 @@ impl Actor {
                 },
                 result=async {match &mut self.program_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.program_task=None;
-                    if let Ok(details)=result {self.apply_program_details(details);self.publish();}
+                    match result {
+                        Ok(details)=>{self.apply_program_details(details);self.publish();},
+                        Err(_)=>{self.program_suspended=true;}, // Optional metadata stays off until reconnect.
+                    }
                 },
                 _=async {if active {tokio::time::sleep_until(if self.dirty && self.visible {render_at}else{maintenance_at}).await;}else{pending::<()>().await;}}=>{
                     let now=tokio::time::Instant::now();
@@ -464,7 +469,7 @@ impl Actor {
                         };
                         if self.activity_open || self.monitoring {self.publish();}
                     }
-                    if self.phase=="connected" && self.program_task.is_none() && !self.selected_session.is_empty()
+                    if self.phase=="connected" && !self.program_suspended && self.program_task.is_none() && !self.selected_session.is_empty()
                         && self.program_refresh<=tokio::time::Instant::now()
                     {
                         let ids=self.windows.as_array().into_iter().flatten().flat_map(|w|
@@ -548,6 +553,7 @@ impl Actor {
         self.publish();
     }
     async fn connected(&mut self,mut control: Control) -> Result<()> {
+        self.program_suspended=false;
         let endpoint=self.endpoint.clone().context("server missing")?;
         let resumed = control.welcome()["client"]["resumed"] == true;
         self.control_token = control.token().map(str::to_owned);
@@ -826,7 +832,9 @@ impl Actor {
         let target=self.input_target();
         if !target.matches(&value) {return Ok(());}
         if value["type"]=="click" && (!self.visible || self.paused || self.phase!="connected" || !self.controlled) {return Ok(());}
-        ensure!(self.visible && !self.paused && self.phase=="connected" && self.controlled,"Take control before typing");
+        ensure!(self.visible && !self.paused && self.phase=="connected","Connect before typing");
+        if !self.controlled {self.take_selected().await?;}
+        ensure!(self.input_target()==target && self.controlled,"Terminal ownership changed; input was not sent");
         let click=value["type"]=="click";
         let encoded;
         let text=if click {
@@ -1608,9 +1616,10 @@ fn program_directory(process: &Value) -> String {
         .take(1024)
         .collect()
 }
-fn program_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> ProgramTask {
+fn program_task(mut endpoint: Endpoint, session: String, ids: Vec<String>) -> ProgramTask {
+    endpoint.timeout=Duration::from_secs(1);
     Box::pin(async move {
-        tokio::time::timeout(Duration::from_secs(8), async {
+        tokio::time::timeout(Duration::from_secs(1), async {
             let mut control = Control::connect(endpoint, None, Trace::default()).await?;
             control
                 .call("client.set_label", json!({"label":"rex-android-programs"}))
