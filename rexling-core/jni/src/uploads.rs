@@ -24,12 +24,15 @@ fn jobs() -> &'static Mutex<HashMap<u64, Job>> {
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 pub fn create(value: Value) -> Result<u64> {
-    let endpoint = Endpoint::new(
+    let mut endpoint = Endpoint::new(
         value["endpoint"]
             .as_str()
             .context("Upload server missing")?,
         Duration::from_secs(10),
     )?;
+    if value["endpoint"].as_str().is_some_and(|s|s.starts_with("ssh://")) {
+        endpoint = endpoint.with_ssh(value["sshTransport"].as_u64().context("Upload SSH transport missing")?)?;
+    }
     let field = |key: &str| {
         value[key]
             .as_str()

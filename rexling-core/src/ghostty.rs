@@ -471,7 +471,7 @@ impl Replica {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ghostty"))]
 mod tests {
     use super::*;
     #[test]

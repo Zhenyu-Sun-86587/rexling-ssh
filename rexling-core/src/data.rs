@@ -10,6 +10,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 pub struct Data {
     ws: Ws,
+    timeout: std::time::Duration,
     token: [u8; 16],
     pub received: u64,
     pub nonce: u64,
@@ -91,6 +92,7 @@ impl Data {
         trace.record("data.recv", json!({"type":"WELCOME","bytes":32,"nonce":welcome.nonce,"resume_ms":welcome.resume_ms}))?;
         Ok(Self {
             ws,
+            timeout: endpoint.timeout,
             token: welcome.token,
             received,
             nonce: welcome.nonce,
@@ -121,7 +123,8 @@ impl Data {
         json!({"nonce":self.nonce,"resume_ms":self.resume_ms,"stream_offset":self.received})
     }
     pub async fn ping(&mut self) -> Result<()> {
-        self.ws.send(Message::Ping(Vec::new().into())).await?;
+        tokio::time::timeout(self.timeout, self.ws.send(Message::Ping(Vec::new().into())))
+            .await.context("Terminal heartbeat send timed out")??;
         Ok(())
     }
     pub async fn close(&mut self) -> Result<()> {

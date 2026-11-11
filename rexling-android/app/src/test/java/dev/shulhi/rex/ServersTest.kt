@@ -4,6 +4,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ServersTest {
+    @Test fun sshMetadataEditsPreserveConnectionIdentityButRouteChangesDoNot() {
+        val original=SshOptions("target",user="dev",credentialRef="old",revision="old")
+        val edited=original.copy(credentialRef="new",revision="new")
+        assertTrue(edited.sameConnection(original))
+        assertFalse(edited.copy(socketPath="/tmp/other.sock").sameConnection(original))
+        assertFalse(edited.copy(jumpHost=SshJumpHost("jump",user="dev")).sameConnection(original))
+        val profile=ServerProfile.create("Old","ssh://dev@target",ssh=original)
+        assertEquals(profile.connectionKey,profile.copy(label="New",icon=ServerIcon.SERVER).connectionKey)
+    }
+    @Test fun sshCredentialChangesIncludeBothHopsAndIgnorePropertyOrder() {
+        val a=org.json.JSONObject("""{"method":"password","password":"a","jumpHost":{"method":"password","password":"b"}}""")
+        val b=org.json.JSONObject("""{"jumpHost":{"password":"b","method":"password"},"password":"a","method":"password"}""")
+        assertTrue(sameSshCredentials(a,b))
+        b.getJSONObject("jumpHost").put("password","changed")
+        assertFalse(sameSshCredentials(a,b))
+        b.remove("jumpHost")
+        assertFalse(sameSshCredentials(a,b))
+    }
     @Test fun serverURLsNormalizeWithoutDroppingPortsOrTransportChoice() {
         assertEquals("https://rex.example.ts.net",ServerProfile.normalizeEndpoint(" HTTPS://REX.EXAMPLE.TS.NET:443/ "))
         assertEquals("http://host:9080",ServerProfile.normalizeEndpoint("http://HOST:9080/"))

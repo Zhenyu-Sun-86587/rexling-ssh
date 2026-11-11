@@ -11,10 +11,14 @@ internal data class RexUploadResult(val phase: String,val error: String)
 internal fun interface RexUploadBackend {
     suspend fun upload(target: ImageTarget,image: StagedImage,onProgress: (String,Float)->Unit): RexUploadResult
 }
-internal class RexImageUpload: RexUploadBackend {
+internal class RexImageUpload(private val context: android.content.Context): RexUploadBackend {
     override suspend fun upload(target: ImageTarget,image: StagedImage,onProgress: (String,Float)->Unit): RexUploadResult {
         val request=JSONObject().put("endpoint",target.endpoint).put("session",target.session).put("block",target.block)
             .put("path",image.file.absolutePath).put("name",image.name).put("ref","upload:${UUID.randomUUID()}")
+        target.profile?.takeIf {it.ssh!=null}?.let {profile->
+            val transport=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {SshTransport.acquire(context,profile)}
+            request.put("sshTransport",transport)
+        }
         val handle=NativeBridge.uploadCreate(request.toString())
         check(handle!=0L) {"Could not start image upload"}
         try {

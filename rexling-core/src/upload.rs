@@ -103,8 +103,10 @@ pub async fn upload(
         let stream = ws.as_mut().unwrap();
         let mut hello = vec![1];
         hello.extend(bytes);
-        stream.send(Message::Binary(hello.into())).await?;
-        let welcome = tokio::time::timeout(request.endpoint.timeout, transport::receive(stream))
+        let welcome = tokio::time::timeout(request.endpoint.timeout, async {
+            stream.send(Message::Binary(hello.into())).await?;
+            transport::receive(stream).await
+        })
             .await
             .context("Upload handshake timed out")??;
         ensure!(
@@ -152,7 +154,8 @@ pub async fn upload(
                 if acknowledge(message, &mut checkpoints, &mut acknowledged)? {
                     progress(phase, acknowledged, size);
                 }
-                stream.flush().await?;
+                tokio::time::timeout(Duration::from_secs(30), stream.flush())
+                    .await.context("Upload acknowledgement stalled")??;
             }
             while sent - acknowledged >= IN_FLIGHT {
                 receive_ack(stream, &mut checkpoints, &mut acknowledged, size, &progress).await?;
@@ -168,8 +171,8 @@ pub async fn upload(
         // Anything after attempting EOF may have inserted the path: never offer a blind retry.
         phase = Phase::Finishing;
         progress(phase, sent, size);
-        stream.send(Message::Binary(Vec::new().into())).await?;
         tokio::time::timeout(Duration::from_secs(30), async {
+            stream.send(Message::Binary(Vec::new().into())).await?;
             loop {
                 match stream.next().await.context("Upload connection lost")?? {
                     Message::Close(Some(close)) if close.code == CloseCode::Normal => {

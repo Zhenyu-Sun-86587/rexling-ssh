@@ -25,6 +25,32 @@ experiments. The app uses the maintained `rexling-core` crate, through `rexling-
 The crate alias inside JNI remains `rex_core`; Android's package `dev.shulhi.rex`
 and native-library name are unchanged, preserving installed app data and updates.
 
+## SSH fork
+
+This fork installs as **Rexling SSH** (`dev.shulhi.rex.ssh`) alongside the original app.
+Open **Servers → Add server → SSH**, enter the host, port and SSH username, then choose
+private key or password authentication. Generate an Ed25519 key in the editor and copy
+its public key, paste/import an existing key, and optionally import a matching OpenSSH
+user certificate. Compare the first connection's SHA256 host fingerprint before trusting it.
+Changed host keys block connections; reset trust in the editor only after verifying the change.
+
+The client opens Rex's remote Unix socket through SSH streamlocal channels. A single SSH
+connection is shared by terminal panes, status monitoring and uploads. There is no phone-side
+TCP listener and no Tailscale requirement for SSH. An explicit socket path avoids discovery;
+otherwise the client discovers the remote UID/runtime directory once and tries the socket first.
+The remote Rex server or its `rex.socket` must already be configured. The app does not change
+server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Enable **Use jump host (ProxyJump)** in the editor and enter separate host, port, username and authentication for that hop. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address.
+
+Keys, passphrases and passwords saved for reconnect are encrypted using Android Keystore AES-GCM.
+The current SSH implementation uses only russh's ring backend. Unsupported key/certificate
+algorithms are reported when saving. Only public keys need to leave the phone for authorization.
+The launcher and About screen use the official Superlogical Rex beta icon at the user's request;
+Rexling SSH remains an independent, unofficial client.
+
+The keyboard icon opens terminal input without suggestions. The adjacent **中** button
+opens normal text input with Chinese composition and suggestions. Tap the other button
+to switch modes, or tap the active mode again to hide the keyboard.
+
 ## Install on Android
 
 Rexling currently supports **64-bit ARM phones running Android 9 or newer**,
@@ -32,7 +58,7 @@ including the Galaxy S22+. You need access to an existing Rex server. Install
 and connect Tailscale on your phone when the server is on a private tailnet.
 Rexling uses that existing VPN connection; it does not embed another VPN.
 
-Obtain the release APK from the project maintainer, or build it below. Open the
+Download the ARM64 APK from [GitHub Releases](https://github.com/Zhenyu-Sun-86587/rexling-ssh/releases), or build it below. Open the
 APK on your phone and allow installation from that file/browser app when Android
 asks. Alternatively, enable USB debugging, connect and authorize your device,
 then install with Android SDK platform-tools:
@@ -50,8 +76,8 @@ server or change its authentication. APKs are not yet published to an app store.
 ## Build and install from source
 
 ```sh
-git clone https://github.com/shulhi/rexling.git
-cd rexling
+git clone https://github.com/Zhenyu-Sun-86587/rexling-ssh.git
+cd rexling-ssh
 ```
 
 The repository is hosted at [shulhi/rexling](https://github.com/shulhi/rexling).
@@ -89,8 +115,8 @@ rexling-android/app/build/outputs/apk/release/app-release.apk
 ```
 
 Open **rexling-android/** in Android Studio, rather than the repository root.
-Release builds are optimized and non-debuggable. This prototype currently uses
-the development signing identity; see the build guide before publishing a release.
+Release builds are optimized and non-debuggable, and use the persistent SSH fork
+signing identity stored outside Git; see the build guide for signing configuration.
 
 ## Run
 

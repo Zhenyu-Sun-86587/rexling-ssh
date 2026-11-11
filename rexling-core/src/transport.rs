@@ -32,17 +32,18 @@ pub type Ws = Box<dyn Socket>;
 pub struct Endpoint {
     url: Url,
     pub timeout: Duration,
+    ssh: Option<std::sync::Arc<crate::ssh::Profile>>,
 }
 
 impl Endpoint {
     pub fn new(server: &str, timeout: Duration) -> Result<Self> {
         let url = Url::parse(server).context("use an explicit unix://, https://, http://, wss://, or ws:// URL (host labels are CLI-only)")?;
         ensure!(
-            matches!(url.scheme(), "unix" | "https" | "http" | "wss" | "ws"),
+            matches!(url.scheme(), "unix" | "https" | "http" | "wss" | "ws" | "ssh"),
             "unsupported server scheme"
         );
         ensure!(
-            url.username().is_empty() && url.password().is_none(),
+            (url.scheme() == "ssh" || url.username().is_empty()) && url.password().is_none(),
             "login-server account selection is not implemented; URL credentials are not accepted"
         );
         ensure!(
@@ -61,10 +62,30 @@ impl Endpoint {
             );
         }
         ensure!(!timeout.is_zero(), "timeout must be positive");
-        Ok(Self { url, timeout })
+        Ok(Self { url, timeout, ssh: None })
     }
 
+    pub fn with_ssh(mut self, id: u64) -> Result<Self> {
+        ensure!(self.url.scheme() == "ssh", "SSH transport requires an ssh:// endpoint");
+        self.ssh = Some(crate::ssh::SshManager::global().profile(id)?);
+        Ok(self)
+    }
+    pub fn ssh_blocked(&self) -> bool {self.ssh.as_ref().is_some_and(|profile|profile.blocked())}
+
     pub async fn open(&self, path: &str, protocol: &str) -> Result<Ws> {
+        if self.url.scheme() == "ssh" {
+            let profile = self.ssh.clone().context("SSH credentials have not been configured")?;
+            // The shared handshake has its own 20s deadline, independent of WS/Rex deadlines.
+            let stream = crate::ssh::SshManager::global().open(profile).await?;
+            let mut request = format!("ws://localhost{path}").into_client_request()?;
+            request.headers_mut().insert("Sec-WebSocket-Protocol", protocol.parse()?);
+            let config = WebSocketConfig::default().max_message_size(Some(MAX_MESSAGE)).max_frame_size(Some(MAX_MESSAGE));
+            let (ws, response) = tokio::time::timeout(self.timeout, client_async_with_config(request, stream, Some(config)))
+                .await.context("WebSocket upgrade over SSH timed out")??;
+            ensure!(response.headers().get("Sec-WebSocket-Protocol").and_then(|h|h.to_str().ok()) == Some(protocol),
+                "server did not negotiate {protocol}");
+            return Ok(Box::new(ws));
+        }
         let unix = self.url.scheme() == "unix";
         let mut url = if unix {
             Url::parse("ws://localhost")?

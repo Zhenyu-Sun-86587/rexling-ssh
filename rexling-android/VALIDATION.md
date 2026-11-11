@@ -3371,3 +3371,49 @@ Build 91 installation follow-up: installed over USB on S22+ `RFCT21390SD`; verif
 - Kept drawer haze inside the moving sheet content (including handle and bottom safe inset), preventing clipping from a modifier outside the sheet offset. Explicit themed foreground colors preserve dark-mode heading/row contrast over transparent containers.
 - All 30 targeted drawer/connection checks passed after the clipping fix. After the foreground styling fix, reran the shared light/dark regression: all three real drawers and the menu render visible foregrounds, blur red/blue stripes and update for live green backdrop changes; dark headings retain light foregrounds. Reviewed screenshots. Release build, lint and APK checks passed. No device frame-pacing profile was run.
 - Installed wirelessly on S22+ at 100.97.157.23:35963. Installed SHA-256 verified: `99d258b4a484c9d36fc0fd3a0c7bf5e6860015d0b1d51702154b8356cb4692be`. Settings preserved; app not launched. Evidence: `validation/drawer-frost-2026-11-10.json`, build 105 artifacts in `dist/`, `/tmp/rexling-drawer-frost-final-tests.log` and `/tmp/rexling-drawer-frost-contrast-test.log`.
+
+
+## 2026-11-11: SSH fork release build
+
+- Native Ghostty + Rust/russh/ring + JNI release build succeeded for `aarch64-linux-android`, API 28.
+- `./rexling-android/scripts/gradle.sh :app:assembleRelease :app:shareRelease` succeeded.
+- APK: `dist/Rexling-2026.11.11-build106-0559dcc969-modified-arm64-release.apk`, application ID `dev.shulhi.rex.ssh`, label `Rexling SSH`, version code 106.
+- Static APK verification passed: signature, release flags, existing and SSH JNI exports, ARM64 libraries, ZIP and ELF 16 KiB alignment, ART profile.
+- SHA-256: `9282ba33785f1ca6e87d6f46d76dd3bd96113a56e554757fff5d0b7bb3b5e7de`.
+- Persistent release signing files are outside the repository; dependencies contain no AWS-LC, OpenSSL or libssh2.
+- The launcher/About artwork was fetched from the official Superlogical Rex icon URL.
+- Device installation and a live remote SSH/Rex session were not exercised in this build-only acceptance run.
+
+
+## 2026-11-11: ProxyJump release (build 107)
+
+- Implemented one optional SSH jump hop using direct-tcpip and inner SSH, with per-hop credentials and TOFU, scoped target trust, keepalive and lifecycle cleanup.
+- Real local integration passed using two isolated OpenSSH daemons and an isolated Rex server: independent unknown-host prompts for both hops, distinct client keys, three concurrent Rex control WebSockets, closure of the first WebSocket, and network invalidation/reconnect. Authentication counts were jump=3, target=2 including TOFU setup and reconnect, confirming multiplexing.
+- Android arm64 native release compilation and `:app:assembleRelease :app:shareRelease` succeeded. APK static signature/JNI/16 KiB checks passed; signing certificate unchanged from build 106.
+- APK: `dist/Rexling-2026.11.11-build107-0559dcc969-modified-arm64-release.apk`.
+- SHA-256: `d2680c298a480a9bb9c084c511e470e2fbd20200d7488582f86f9dfc19cc0f66`.
+- This integration ran on local loopback, not an Android device or the user's production cluster.
+
+
+## 2026-11-11: Review and reliability fixes (build 108)
+
+- Reviewed connection/actor lifetimes, Rust transport/control/data/upload paths, JNI handle boundaries, Android profile/credential/trust persistence, network monitoring, background alerts and terminal update decoding. This is a source review plus local regression run, not proof that all device-only behavior is defect-free.
+- SSH backoff no longer holds the profile state mutex. Caller cancellation and network/profile replacement interrupt lock acquisition, cooldown, handshake and socket discovery. Network changes clear the old-route deadline while retaining failure counts and authentication/host-key blocks. Old socket discovery results cannot overwrite another connection's cache; disconnect work no longer runs under the state mutex.
+- Name/icon-only SSH edits retain the encrypted credential reference and connection revision, including both-hop credential comparison. Real connection changes still replace the transport. Reset trust clears both old and new configured addresses. Trust is persisted before the native connection is unblocked. New credential references are committed before retiring old records; failed saves clean up unused new records.
+- Duplicate-server detection distinguishes jump routes. Remote socket errors explain the running Rex/rex.socket prerequisite without starting a remote service.
+- Bounded control/data heartbeat writes, control close, upload handshake writes, acknowledgement flushes and upload EOF/confirmation; uncertain upload outcomes remain non-retryable.
+- Added two focused SSH backoff cancellation regressions and two profile/credential checks. Fixed the no-default-features test selection so Ghostty-dependent tests require the Ghostty feature.
+- Validation: 7 Rust core tests passed; 168 JVM tests passed with 1 existing optional skip. Android ARM64 native compilation, release packaging, signature/JNI/ART/16 KiB APK checks passed. Real isolated OpenSSH → OpenSSH → Rex integration again passed independent TOFU, concurrent channel reuse, channel closure and network replacement/reconnect.
+- APK: `dist/Rexling-2026.11.11-build108-0559dcc969-modified-arm64-release.apk`; SHA-256: `ac0987771060f85125de139962a6b11ad63a7606a189a25ec049e3d8521b6e62`. Release signing identity matches build 107.
+- Evidence: APK-adjacent verification/integration JSON, `/tmp/rexling-review-build.log`, `/tmp/rexling-review-final-build.log`, `/tmp/rexling-review-core-tests.log`, and `/tmp/rexling-review-live-eh2uyn1s/result.txt`.
+- No Android device installation, real mobile network handover, production-cluster connection or device UI exercise was performed in this review.
+
+
+## 2026-11-11: Text keyboard and directory colors (build 109)
+
+- Added a separate Chinese/text keyboard button beside the existing terminal keyboard button. Text mode advertises a normal multiline editor with suggestions; terminal mode retains no-suggestion/visible-password flags. Either button switches mode while the keyboard is open and hides it when its mode is already active.
+- The IME now has a real local editable buffer for CJK composition and surrounding-text queries. Committed candidates are sent once; preedit stays local. Mode/control/pane changes reject stale text callbacks, and code-point deletion handles supplementary Unicode characters.
+- Fixed ANSI palette aliases (green/blue and bright variants, plus light-mode magenta variants). SGR 34;42 directory text no longer resolves to the same RGB as its background. Default-role, indexed and explicit RGB rendering rules remain intact.
+- JVM checks: 169 passed, 1 existing optional skip; includes colored-directory/default/extended-RGB regressions. Chinese composition and stale-IME instrumentation tests compile, and the Android test APK builds; they were not executed because no device/emulator is attached. Updated two existing instrumentation callers to match the SSH editor/upload interfaces.
+- Release packaging, signature, JNI exports, ART profiles and 16 KiB alignment passed. Signing identity matches build 108. APK: `dist/Rexling-2026.11.11-build109-0559dcc969-modified-arm64-release.apk`; SHA-256: `c03da21058d6baa06563efe8dffa4a0569eb868be92ba9e61301e226db3f0a7e`.
+- Evidence: `/tmp/rexling-keyboard-color-build.log`, APK-adjacent verification JSON, and Gradle JVM reports. Actual mobile IME interaction and device rendering still need device validation.

@@ -10,6 +10,9 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.text.InputType
+import android.text.Selection
+import android.text.Editable
+import android.text.SpannableStringBuilder
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
@@ -93,9 +96,17 @@ class TerminalView(context: Context) : View(context) {
         set(value) {
             if (field != value) {
                 field = value
+                inputGeneration++
                 if (!value) composing = ""
                 (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
             }
+        }
+    private var inputGeneration=0L
+    var textInput: Boolean = false
+        set(value) {
+            if(field==value) return
+            field=value;inputGeneration++;composing="";invalidate()
+            (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
         }
     var textSp: Float = 10f
         set(value) { if (field != value) { field = value; metrics(); invalidate() } }
@@ -317,7 +328,8 @@ class TerminalView(context: Context) : View(context) {
     fun hideKeyboard() {
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(windowToken, 0)
     }
-    fun keyboard() {
+    fun keyboard(textMode: Boolean=textInput) {
+        textInput=textMode
         if (!controlled) return
         requestFocus()
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(this, 0)
@@ -515,34 +527,84 @@ class TerminalView(context: Context) : View(context) {
     override fun onCheckIsTextEditor() = controlled
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         if (!controlled) return null
-        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+            if(textInput) InputType.TYPE_TEXT_FLAG_AUTO_CORRECT else (InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
+        outAttrs.initialSelStart=0;outAttrs.initialSelEnd=0
         outAttrs.contentMimeTypes=imageMimeTypes.copyOf()
         val imageTarget=imageInputTarget()
-        return object : BaseInputConnection(this, false) {
+        val generation=++inputGeneration
+        composing=""
+        // A real editable buffer lets CJK IMEs inspect and replace their preedit text.
+        // Only committed text is sent to the remote terminal; no prompt text is exposed.
+        return object : BaseInputConnection(this, true) {
+            private val editBuffer=SpannableStringBuilder().apply {Selection.setSelection(this,0)}
+            override fun getEditable(): Editable=editBuffer
+            private var closed=false
+            private fun valid()=!closed && controlled && interactive && generation==inputGeneration && imageTarget==imageInputTarget()
+            private fun refreshComposition() {
+                composing=editBuffer.toString();invalidate()
+                val buffer=editBuffer
+                (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).updateSelection(this@TerminalView,
+                    Selection.getSelectionStart(buffer),Selection.getSelectionEnd(buffer),getComposingSpanStart(buffer),getComposingSpanEnd(buffer))
+            }
+            private fun clearBuffer() {
+                removeComposingSpans(editBuffer);editBuffer.clear();Selection.setSelection(editBuffer,0)
+                refreshComposition()
+            }
+            private fun sendBuffer() {
+                val text=editBuffer.toString();clearBuffer()
+                if(text.isNotEmpty()) onInput(text)
+            }
             override fun commitContent(info: android.view.inputmethod.InputContentInfo,flags: Int,opts: android.os.Bundle?): Boolean {
-                if(!controlled || !interactive || imageTarget!=imageInputTarget() || imageMimeTypes.none {info.description.hasMimeType(it)}) return false
+                if(!valid() || imageMimeTypes.none {info.description.hasMimeType(it)}) return false
                 val granted=flags and InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION!=0
                 try {if(granted) info.requestPermission()} catch(_: Exception) {return false}
                 val released=java.util.concurrent.atomic.AtomicBoolean(false)
                 val release={if(granted && released.compareAndSet(false,true)) runCatching {info.releasePermission()};Unit}
                 return try {onImage(info.contentUri,release).also {if(!it) release()}} catch(_: Exception) {release();false}
             }
-            override fun performContextMenuAction(id: Int): Boolean = if(id==android.R.id.paste || id==android.R.id.pasteAsPlainText) controlled && interactive && imageTarget==imageInputTarget() && onPaste() else super.performContextMenuAction(id)
-            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean { composing = ""; if (text != null) onInput(text.toString()); invalidate(); return true }
-            override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean { composing = text?.toString().orEmpty(); invalidate(); return true }
-            override fun finishComposingText(): Boolean { if (composing.isNotEmpty()) onInput(composing); composing = ""; invalidate(); return true }
-            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                if (composing.isNotEmpty()) { composing = composing.dropLast(beforeLength.coerceAtMost(composing.length)); invalidate(); return true }
-                repeat(beforeLength.coerceAtMost(128)) { onInput("\u007f") }
-                repeat(afterLength.coerceAtMost(128)) { onInput("\u001b[3~") }; return true
+            override fun performContextMenuAction(id: Int): Boolean = if(id==android.R.id.paste || id==android.R.id.pasteAsPlainText) valid() && onPaste() else super.performContextMenuAction(id)
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                if(!valid()) return false
+                super.commitText(text ?: "",newCursorPosition);sendBuffer();return true
             }
+            override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                if(!valid()) return false
+                super.setComposingText(text ?: "",newCursorPosition);refreshComposition();return true
+            }
+            override fun finishComposingText(): Boolean {
+                if(!valid()) return false
+                super.finishComposingText();sendBuffer();return true
+            }
+            private fun deleteText(before: Int,after: Int,codePoints: Boolean): Boolean {
+                if(!valid() || before<0 || after<0) return false
+                val buffer=editBuffer
+                if(buffer.isNotEmpty()) {
+                    val cursor=Selection.getSelectionStart(buffer).coerceIn(0,buffer.length)
+                    val end=Selection.getSelectionEnd(buffer).coerceIn(cursor,buffer.length)
+                    val start=if(codePoints) Character.offsetByCodePoints(buffer,cursor,-before.coerceAtMost(Character.codePointCount(buffer,0,cursor))) else (cursor-before.coerceAtMost(cursor))
+                    val stop=if(codePoints) Character.offsetByCodePoints(buffer,end,after.coerceAtMost(Character.codePointCount(buffer,end,buffer.length))) else end+after.coerceAtMost(buffer.length-end)
+                    buffer.delete(start,stop);Selection.setSelection(buffer,start);refreshComposition();return true
+                }
+                repeat(before.coerceAtMost(128)) {onInput("\u007f")}
+                repeat(after.coerceAtMost(128)) {onInput("\u001b[3~")};return true
+            }
+            override fun deleteSurroundingText(beforeLength: Int,afterLength: Int)=deleteText(beforeLength,afterLength,false)
+            override fun deleteSurroundingTextInCodePoints(beforeLength: Int,afterLength: Int)=deleteText(beforeLength,afterLength,true)
             override fun sendKeyEvent(event: KeyEvent): Boolean {
+                if(!valid()) return false
                 if (event.action != KeyEvent.ACTION_DOWN) return true
+                if(event.keyCode==KeyEvent.KEYCODE_DEL && editBuffer.isNotEmpty()) return deleteText(1,0,true)
                 if (event.keyCode == KeyEvent.KEYCODE_ENTER) finishComposingText()
                 return onKeyDown(event.keyCode, event)
             }
-            override fun performEditorAction(actionCode: Int): Boolean { finishComposingText(); onInput("\r"); return true }
+            override fun performEditorAction(actionCode: Int): Boolean {if(!valid()) return false;finishComposingText();onInput("\r");return true}
+            override fun closeConnection() {
+                closed=true
+                if(generation==inputGeneration) {composing="";invalidate()}
+                super.closeConnection()
+            }
         }
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {

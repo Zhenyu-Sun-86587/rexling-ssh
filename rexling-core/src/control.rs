@@ -320,12 +320,14 @@ impl Control {
         .await
     }
     pub async fn ping(&mut self) -> Result<()> {
-        self.ws.send(Message::Ping(Vec::new().into())).await?;
+        tokio::time::timeout(self.endpoint.timeout, self.ws.send(Message::Ping(Vec::new().into())))
+            .await.context("Control heartbeat send timed out")??;
         Ok(())
     }
     pub async fn close(&mut self) -> Result<()> {
         self.pending.clear();
-        self.ws.close().await?;
+        tokio::time::timeout(self.endpoint.timeout, self.ws.close())
+            .await.context("Control close timed out")??;
         Ok(())
     }
 }

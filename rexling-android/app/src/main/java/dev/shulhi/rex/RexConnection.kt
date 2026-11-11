@@ -16,8 +16,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import androidx.core.content.edit
 
-internal class RexConnection(application: Application, private val scope: CoroutineScope, val savedEndpoint: String, private val preferences: SharedPreferences = application.getSharedPreferences("rex",0)) {
-    var lastSessionId by mutableStateOf(preferences.getString("last_session:$savedEndpoint","").orEmpty())
+internal class RexConnection(application: Application, private val scope: CoroutineScope, val savedEndpoint: String, private val preferences: SharedPreferences = application.getSharedPreferences("rex",0), private val storageKey: String=savedEndpoint, private val profile: ServerProfile?=null) {
+    private val applicationContext=application.applicationContext
+    private var connectJob: Job?=null
+    var lastSessionId by mutableStateOf(preferences.getString("last_session:$storageKey","").orEmpty())
         private set
     var paneFrames by mutableStateOf<Map<String,TerminalScreen>>(emptyMap())
         private set
@@ -127,8 +129,8 @@ internal class RexConnection(application: Application, private val scope: Corout
     val shiftModifier: Boolean get()=shiftState.active
     var navigationRequest by mutableStateOf(NavigationRequest())
         private set
-    private val workspace=SavedWorkspace(preferences,savedEndpoint)
-    private val presentation=SavedWorkspacePresentation(preferences,savedEndpoint)
+    private val workspace=SavedWorkspace(preferences,storageKey)
+    private val presentation=SavedWorkspacePresentation(preferences,storageKey)
     private val navigation=workspace.navigation
     private var restoreWorkspace=true
     private val activation=PaneActivation()
@@ -149,7 +151,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         return true
     }
     fun activity(open: Boolean) = command("activity","open" to open)
-    private var seen=runCatching {JSONObject(preferences.getString("activity_seen:$savedEndpoint","{}").orEmpty())}.getOrDefault(JSONObject())
+    private var seen=runCatching {JSONObject(preferences.getString("activity_seen:$storageKey","{}").orEmpty())}.getOrDefault(JSONObject())
     fun isActivitySeen(record: ActivityRecord)=record.attentionKey.isNotBlank() && seen.optString(record.attentionKey)==record.attentionVersion
     fun markAttentionSeen(key: String,version: String) {
         if(key.isBlank() || version.isBlank()) return
@@ -161,7 +163,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     private fun saveAttentionSeen() {
         if(seen.length()>2048) {val keys=seen.keys().asSequence().toList();keys.take(keys.size-2048).forEach {seen.remove(it)}}
-        preferences.edit {putString("activity_seen:$savedEndpoint",seen.toString())};command("activity_seen","items" to seen)
+        preferences.edit {putString("activity_seen:$storageKey",seen.toString())};command("activity_seen","items" to seen)
     }
     fun retryNow() {if(foreground && savedEndpoint.isNotBlank()) {cancelKeyRepeats();resizeJob?.cancel();activation.resume();command("retry")}}
     fun networkChanged(change: NetworkChange) {
@@ -209,7 +211,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                     val old=state.value.selectedSession
                                     if(old.isNotBlank() && !navigationRequest.pending) {
                                         lastSessionId=old
-                                        preferences.edit {putString("last_session:${next.endpoint}",old)}
+                                        preferences.edit {putString("last_session:$storageKey",old)}
                                     }
                                     workspace.selectSession(next.selectedSession)
                                 }
@@ -280,11 +282,21 @@ internal class RexConnection(application: Application, private val scope: Corout
         navigationRequest = NavigationRequest()
         keyboardRequest=""
         paneFrames=emptyMap()
-        lastSessionId=preferences.getString("last_session:$value","").orEmpty()
+        lastSessionId=preferences.getString("last_session:$storageKey","").orEmpty()
         preferences.edit { putString("endpoint", value) }
-        command("connect", "server" to value)
+        connectJob?.cancel()
+        if(profile?.ssh!=null) {
+            setState(state.value.copy(phase="connecting",endpoint=value,error=""))
+            connectJob=scope.launch {
+                try {
+                    val transport=withContext(Dispatchers.IO) {SshTransport.acquire(applicationContext,profile)}
+                    if(!closed) command("connect","server" to value,"sshTransport" to transport)
+                } catch(cancelled: kotlinx.coroutines.CancellationException) {throw cancelled}
+                catch(error: Exception) {if(!closed) setState(state.value.copy(phase="error",error=error.message ?: "Could not configure SSH"))}
+            }
+        } else command("connect", "server" to value)
     }
-    fun disconnect() { pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { connectJob?.cancel();pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         presentation.flush()
@@ -297,7 +309,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         val old=navigationRequest.session ?: state.value.selectedSession
         if(old.isNotBlank() && old!=id) {
             lastSessionId=old
-            preferences.edit { putString("last_session:${state.value.endpoint}",old) }
+            preferences.edit { putString("last_session:$storageKey",old) }
         }
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate()
         navigationRequest = NavigationRequest(session = id, id = ++navigationSerial)
@@ -321,7 +333,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         val current=state.value
         if(!visible || !current.connected || current.creating) return
         if(current.selectedSession.isNotBlank() && current.selectedSession!=session) {
-            lastSessionId=current.selectedSession;preferences.edit {putString("last_session:${current.endpoint}",lastSessionId)}
+            lastSessionId=current.selectedSession;preferences.edit {putString("last_session:$storageKey",lastSessionId)}
         }
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
         restoreWorkspace=false;workspace.request(session,block)
@@ -490,7 +502,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun close() {
         presentation.flush()
         cancelDisplay()
-        closed=true;pollJob?.cancel();resizeJob?.cancel()
+        closed=true;connectJob?.cancel();pollJob?.cancel();resizeJob?.cancel()
         if (handle != 0L) NativeBridge.destroy(handle)
         handle = 0
     }

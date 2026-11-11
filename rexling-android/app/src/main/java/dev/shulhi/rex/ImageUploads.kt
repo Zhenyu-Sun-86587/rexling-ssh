@@ -10,7 +10,7 @@ import java.io.File
 import java.util.UUID
 
 internal data class ImageTarget(val server: String,val endpoint: String,val session: String,val block: String,
-    val navigation: Long,val serverSwitch: Long,val program: ProgramKind,val label: String)
+    val navigation: Long,val serverSwitch: Long,val program: ProgramKind,val label: String,val profile: ServerProfile?=null)
 internal enum class ImagePhase { PREPARING, UPLOADING, FINISHING, SUCCESS, FAILED }
 internal data class ImageUploadStatus(val target: ImageTarget,val phase: ImagePhase,
     val progress: Float=0f,val error: String="",val retrySafe: Boolean=true)
@@ -27,7 +27,7 @@ internal fun imageExtension(header: ByteArray): String? = when {
 }
 
 internal class ImageUploads(private val context: Context,private val scope: CoroutineScope,
-    private val native: RexUploadBackend=RexImageUpload()) {
+    private val native: RexUploadBackend=RexImageUpload(context)) {
     var state by mutableStateOf<ImageUploadStatus?>(null);private set
     var notice by mutableStateOf("")
     private var job: Job?=null

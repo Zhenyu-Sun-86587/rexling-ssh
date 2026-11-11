@@ -32,15 +32,25 @@ class ServerIconPickerTest {
         }
     }
     @Test fun editorSavesTheChosenIconWithTheExistingServerDetails() {
-        val server=ServerProfile.create("Work Mac","https://work.example","work",ServerIcon.MAC_MINI)
-        var saved: Triple<String,String,ServerIcon>?=null;var closed=0
-        ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {
-            ServerEditor(server,{closed++}) {name,url,icon->saved=Triple(name,url,icon);null}
-        }}
-        ui.onNodeWithContentDescription("Choose server icon").performClick()
-        ui.onNode(hasText("MacBook") and hasAnyAncestor(isPopup())).performClick()
-        ui.runOnIdle {assertNull(saved);assertEquals(0,closed)}
-        ui.onNodeWithText("Save & connect").performClick()
-        ui.runOnIdle {assertEquals(Triple(server.label,server.endpoint,ServerIcon.MACBOOK),saved);assertEquals(1,closed)}
+        val server=ServerProfile.create("Work Mac","http://127.0.0.1:1","work",ServerIcon.MAC_MINI)
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as android.app.Application
+        val name="server-editor-test-"+System.nanoTime()
+        val store=androidx.lifecycle.ViewModelStore()
+        val preferences=app.getSharedPreferences(name,0)
+        preferences.edit().putString("servers",SavedServers.encode(listOf(server))).commit()
+        lateinit var model:RexModel
+        var closed=0
+        try {
+            ui.runOnUiThread {model=RexModel(app,name);store.put("editor",model)}
+            ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {ServerEditor(server,model) {closed++}}}
+            ui.onNodeWithContentDescription("Choose server icon").performClick()
+            ui.onNode(hasText("MacBook") and hasAnyAncestor(isPopup())).performClick()
+            ui.runOnIdle {assertEquals(server,model.servers.single());assertEquals(0,closed)}
+            ui.onNodeWithText("Save & connect").performClick()
+            ui.runOnIdle {assertEquals(server.copy(icon=ServerIcon.MACBOOK),model.servers.single());assertEquals(1,closed)}
+        } finally {
+            ui.runOnUiThread {store.clear()}
+            app.deleteSharedPreferences(name)
+        }
     }
 }

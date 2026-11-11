@@ -10,7 +10,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-private const val APP="dev.shulhi.rex"
+private const val APP="dev.shulhi.rex.ssh"
 private fun MacrobenchmarkScope.preview() {
     startActivityAndWait()
     check(device.currentPackageName==APP)

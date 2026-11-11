@@ -68,11 +68,10 @@ Increase `versionCode` in `rexling-android/app/build.gradle.kts` for each distri
 update, including multiple releases on the same day. For reproducible version
 dates, set `SOURCE_DATE_EPOCH` to the release's Unix timestamp before building.
 
-Release uses R8, resource shrinking and packaged ART profiles. It currently signs
-with the existing local development key so it can update this prototype without
-clearing data. For Play Store or long-term public distribution, configure a
-dedicated signing key in the Android project; keep keys and passwords outside Git.
-The package and JNI ABI were intentionally retained during the repository move.
+Release uses R8, resource shrinking and packaged ART profiles. The SSH fork signs
+with its fixed external release key so updates preserve app data. Configure the signing
+properties described below before building; keep keys and passwords outside Git.
+The application ID is dev.shulhi.rex.ssh; the Kotlin/JNI namespace remains dev.shulhi.rex.
 
 Connect a USB-debugging-authorized phone, or launch an arm64 emulator:
 
@@ -187,8 +186,22 @@ With debug and Android test APKs installed on an arm64 emulator, run:
 ```sh
 adb -s emulator-5554 shell am instrument -w -e class \
   dev.shulhi.rex.NativeImageUploadTest,dev.shulhi.rex.TerminalImageInputTest,dev.shulhi.rex.ClipboardImagePasteTest \
-  dev.shulhi.rex.test/androidx.test.runner.AndroidJUnitRunner
+  dev.shulhi.rex.ssh.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 These use isolated loopback peers and test image content, progress/confirmation,
 cancellation, unsupported servers, and keyboard/clipboard behavior.
+
+## SSH fork signing and installation
+
+The SSH fork retains the Kotlin/JNI namespace `dev.shulhi.rex` and installs with
+application ID `dev.shulhi.rex.ssh`. Release builds require a persistent signing identity.
+By default Gradle reads `~/.android/rexling-ssh-signing.properties`; override that file's
+location with `REXLING_SSH_SIGNING_PROPERTIES`. It contains `storeFile`, `keyAlias` and
+`passwordFile` paths. The password file contains the keystore/key password. Keep all
+signing files outside this checkout, restrict their permissions and retain a secure backup.
+Release signing has no debug-key fallback. Use the same application ID and key for updates.
+
+Build with `./rexling-android/scripts/gradle.sh :app:assembleRelease` and inspect with
+`python3 rexling-android/scripts/verify_apk.py --apk app/build/outputs/apk/release/app-release.apk --require-release`.
+The APK is `rexling-android/app/build/outputs/apk/release/app-release.apk`.

@@ -22,3 +22,10 @@ removed or replaced by the repository consolidation. A copy of the project
 Apache 2.0 license and NOTICE is also packaged in the APK's license assets.
 
 Official Apache 2.0 text: https://www.apache.org/licenses/LICENSE-2.0.txt
+
+## Superlogical Rex beta icon (SSH fork)
+
+The SSH fork uses the official Rex beta icon retrieved from
+https://www.superlogical.com/rex/docs/rex-icon.png on 2026-11-11 at the user's request.
+This artwork belongs to Superlogical and is not covered by this repository's code license.
+The source metadata is recorded in `rexling-android/artwork/rex-official/source.json`.

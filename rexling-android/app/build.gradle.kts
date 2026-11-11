@@ -1,5 +1,6 @@
 import java.security.MessageDigest
 import java.util.HexFormat
+import java.util.Properties
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -26,10 +27,10 @@ android {
     ndkVersion = "30.0.16248370"
     compileSdk { version = release(37) }
     defaultConfig {
-        applicationId = "dev.shulhi.rex"
+        applicationId = "dev.shulhi.rex.ssh"
         minSdk = 28
         targetSdk = 37
-        versionCode = 105
+        versionCode = 109
         versionName = dateVersion
         buildConfigField("String","GIT_REVISION","\"$revision\"")
         buildConfigField("boolean","LOCAL_CHANGES",modified.toString())
@@ -42,17 +43,31 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     packaging { jniLibs { useLegacyPackaging = false } }
+    signingConfigs {
+        create("sshRelease") {
+            val configuration=Properties().apply {
+                val path=providers.environmentVariable("REXLING_SSH_SIGNING_PROPERTIES").orNull
+                    ?: System.getProperty("user.home")+"/.android/rexling-ssh-signing.properties"
+                file(path).inputStream().use {load(it)}
+            }
+            storeFile=file(configuration.getProperty("storeFile"))
+            keyAlias=configuration.getProperty("keyAlias")
+            val password=file(configuration.getProperty("passwordFile")).readText().trim()
+            storePassword=password
+            keyPassword=password
+        }
+    }
     buildTypes {
         release {
-            // Preserve the installed prototype identity for local release upgrades.
-            signingConfig=signingConfigs.getByName("debug")
+            // A persistent, external signing identity permits upgrades without clearing app credentials.
+            signingConfig=signingConfigs.getByName("sshRelease")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         create("optimized") {
             initWith(getByName("release"))
-            signingConfig=signingConfigs.getByName("debug")
+            signingConfig=signingConfigs.getByName("sshRelease")
             matchingFallbacks += "release"
         }
         create("profile") {

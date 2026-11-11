@@ -537,7 +537,10 @@ impl Actor {
         self.lose_connections();
         if input_pending {self.notice="Request outcome is uncertain; input was not resent".into();}
         self.error = error.to_string();
-        if self.endpoint.is_some() && !self.paused {
+        if self.endpoint.as_ref().is_some_and(Endpoint::ssh_blocked) {
+            self.phase = "error".into();
+            self.retry = None;
+        } else if self.endpoint.is_some() && !self.paused {
             self.phase = "reconnecting".into();
             self.retry = self.network_online.then(||tokio::time::Instant::now() + Duration::from_secs(self.backoff));
             self.backoff = (self.backoff * 2).min(15);
@@ -864,10 +867,14 @@ impl Actor {
                     server.starts_with("https://")
                         || server.starts_with("http://")
                         || server.starts_with("wss://")
-                        || server.starts_with("ws://"),
+                        || server.starts_with("ws://")
+                        || server.starts_with("ssh://"),
                     "Enter a complete http(s) or ws(s) server URL"
                 );
-                let endpoint = Endpoint::new(&server, Duration::from_secs(10))?;
+                let mut endpoint = Endpoint::new(&server, Duration::from_secs(10))?;
+                if server.starts_with("ssh://") {
+                    endpoint = endpoint.with_ssh(value["sshTransport"].as_u64().context("SSH transport missing")?)?;
+                }
                 self.disconnect().await;
                 self.endpoint = Some(endpoint);
                 self.server = server;

@@ -23,4 +23,14 @@ class AppearanceTest {
             assertEquals(0xff123456.toInt(),theme.foreground(cell(512 or (200 shl 11))))
         }
     }
+    @Test fun coloredDirectoryTextDoesNotCollapseIntoItsBackground() {
+        for(theme in listOf(TerminalPalette.Dark,TerminalPalette.Light)) {
+            // ls uses SGR 34;42 for other-writable directories: blue on green.
+            for((fg,bg) in listOf(4 to 2,12 to 10,2 to 4,10 to 12)) {
+                val directory=cell(512 or (fg shl 11) or 1024 or (bg shl 19))
+                assertNotEquals(theme.foreground(directory),theme.background(directory))
+            }
+            assertEquals("Keep every ANSI role distinct",16,theme.ansi.toSet().size)
+        }
+    }
 }

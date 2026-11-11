@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun RexApp(model: RexModel) {
     val client=model.activeClient
     key(model.activeServerId) {RexWorkspace(model,client)}
+    SshTrustPrompts(model)
     if(model.notificationNotice.isNotBlank()) AlertDialog(onDismissRequest={model.notificationNotice=""},title={Text("Notification")},text={Text(model.notificationNotice)},confirmButton={TextButton(onClick={model.notificationNotice=""}) {Text("OK")}})
 }
 
@@ -140,6 +141,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val fontSize=model.fontSize
     var fontPicker by remember {mutableStateOf(false)}
     var terminalView by remember {mutableStateOf<TerminalView?>(null)}
+    var textKeyboard by rememberSaveable {mutableStateOf(false)}
     val context=LocalContext.current
     var networkAction by remember {mutableStateOf<(() ->Unit)?>(null)}
     var networkDenied by remember {mutableStateOf<(() ->Unit)?>(null)}
@@ -212,11 +214,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         if(index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
     }
     LaunchedEffect(ready,chosen,client.hasScreen,hiddenFloating) {if(ready && (!floatingActive || hiddenFloating!=chosen)) client.claimActivePane()}
-    LaunchedEffect(controlled,client.keyboardRequest,terminalView) {
+    LaunchedEffect(controlled,client.keyboardRequest,terminalView,textKeyboard) {
+        terminalView?.textInput=textKeyboard
         if(controlled) {
             terminalView?.requestFocus()
             client.applySize()
-            if(client.keyboardRequest==displayedBlock && terminalView!=null) {terminalView?.keyboard();client.keyboardShown()}
+            if(client.keyboardRequest==displayedBlock && terminalView!=null) {terminalView?.keyboard(textKeyboard);client.keyboardShown()}
         }
     }
     LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
@@ -258,13 +261,13 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Text(stringResource(R.string.app_name),fontWeight=FontWeight.Bold,fontSize=20.sp)
                                 Text(stringResource(R.string.app_subtitle),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Connect over Tailscale",fontWeight=FontWeight.SemiBold)
+                                Text("Connect with SSH or Tailscale",fontWeight=FontWeight.SemiBold)
                                 OutlinedTextField(endpoint,{endpoint=it},Modifier.fillMaxWidth(),label={Text("Rex server URL")},singleLine=true,
                                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),shape=RoundedCornerShape(12.dp))
                                 connectionError?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=11.sp)}
                                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                     Button(onClick={connectionError=model.connect(endpoint)},enabled=state.phase!="connecting" && endpoint.isNotBlank()){Text("Connect")}
-                                    TextButton(onClick={servers=true}) {Text("Servers")}
+                                    TextButton(onClick={servers=true}) {Text("Servers / SSH")}
                                     if(state.connected || state.phase=="reconnecting") TextButton(onClick={model.disconnectServer(model.activeServerId)}){Text("Disconnect")}
                                     else TextButton(onClick={model.previewServer(model.activeServerId)}){Text("Try preview")}
                                     if(client.hasScreen) TextButton(onClick={showServer=false}){Text("Hide")}
@@ -313,8 +316,15 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                     {model.showActivity(true)},{picker="tabs"},attentionCount=model.attentionCount)
                             })
                             KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
-                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled) {
-                                if(!controlled) client.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
+                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut=client::controlShortcut,inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,
+                                textKeyboard=textKeyboard,onTextKeyboard={
+                                    val hide=keyboardVisible && textKeyboard;textKeyboard=true
+                                    terminalView?.textInput=true
+                                    if(!controlled) client.takeControl() else if(hide) terminalView?.hideKeyboard() else terminalView?.keyboard(true)
+                                }) {
+                                val hide=keyboardVisible && !textKeyboard;textKeyboard=false
+                                terminalView?.textInput=false
+                                if(!controlled) client.takeControl() else if(hide) terminalView?.hideKeyboard() else terminalView?.keyboard(false)
                             }
                         }
                     }

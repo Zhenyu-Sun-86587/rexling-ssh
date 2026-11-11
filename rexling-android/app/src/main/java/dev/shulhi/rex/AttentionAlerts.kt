@@ -14,10 +14,10 @@ internal class AttentionLedger(saved: String?=null) {
     private val baselinedServers=mutableSetOf<String>()
     private val observedThisRun=mutableSetOf<String>()
     init {runCatching {JSONObject(saved ?: "{}").let {o->o.keys().forEach {key->stamps[key]=o.getString(key)}}}}
-    fun key(server: ServerProfile,record: ActivityRecord)=listOf(server.id,server.endpoint,record.key).joinToString("") {"${it.length}:$it"}
+    fun key(server: ServerProfile,record: ActivityRecord)=listOf(server.id,server.connectionKey,record.key).joinToString("") {"${it.length}:$it"}
     fun observe(server: ServerProfile,records: List<ActivityRecord>,background: Boolean,complete: Boolean=true,seen: (ActivityRecord)->Boolean): List<ActivityRecord> {
         val alerts=mutableListOf<ActivityRecord>()
-        val source=listOf(server.id,server.endpoint).joinToString("") {"${it.length}:$it"}
+        val source=listOf(server.id,server.connectionKey).joinToString("") {"${it.length}:$it"}
         records.forEach {record->
             val version=record.attentionVersion.ifBlank {listOf(record.state.wire,record.kind,record.updated,record.message).joinToString("\u0000")}
             val stamp=when {record.state==ActivityState.DONE->"done:$version";record.state.notifiable->"attention:$version";else->"state:${record.state.wire}"}

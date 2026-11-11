@@ -2,6 +2,7 @@ mod activity;
 mod engine;
 mod updates;
 mod uploads;
+mod ssh;
 use engine::Session;
 use jni::{
     JNIEnv,

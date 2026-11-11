@@ -119,7 +119,7 @@ class NativeImageUploadTest {
         file.writeBytes(TestImageProvider.png+ByteArray(512*1024))
         val updates=mutableListOf<Pair<String,Float>>();var result:RexUploadResult?=null
         Peer(chunkDelayMs=15).use {peer->try {
-            main {scope.launch {result=RexImageUpload().upload(peer.target(),StagedImage(file,"fixture.png")) {phase,fraction->updates+=phase to fraction}}}
+            main {scope.launch {result=RexImageUpload(instrumentation.targetContext).upload(peer.target(),StagedImage(file,"fixture.png")) {phase,fraction->updates+=phase to fraction}}}
             assertTrue(peer.eof.await(10,TimeUnit.SECONDS))
             main {
                 val intermediate=updates.filter {it.first=="sending" && it.second>0f && it.second<1f}

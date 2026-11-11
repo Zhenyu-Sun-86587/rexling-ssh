@@ -13,6 +13,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class RexModel @JvmOverloads constructor(application: Application, preferenceName: String="rex") : AndroidViewModel(application) {
     internal var activityVisible by mutableStateOf(false)
@@ -72,11 +74,11 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         val client=activeClient;val state=client.state.value
         if(!foreground || !state.connected || !state.controlled || state.creating || client.navigationRequest.pending || state.selectedBlock.isBlank()) return null
         val program=state.programs[state.selectedBlock] ?: ProgramIdentity.Terminal
-        return ImageTarget(activeServerId,activeServer.endpoint,state.selectedSession,state.selectedBlock,client.selectionVersion,serverSwitchSerial,program.kind,"${program.title} · ${activeServer.label}")
+        return ImageTarget(activeServerId,activeServer.endpoint,state.selectedSession,state.selectedBlock,client.selectionVersion,serverSwitchSerial,program.kind,"${program.title} · ${activeServer.label}",activeServer)
     }
     internal fun attachImage(uri: android.net.Uri,target: ImageTarget?,onCopied: ()->Unit={}): Boolean {
         if(target==null) {onCopied();images.notice="Take control of a pane before attaching an image.";return false}
-        val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint}
+        val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint && (target.profile==null || it.connectionKey==target.profile.connectionKey)}
         if(profile==null) {onCopied();images.notice="The original Rex server is no longer available.";return false}
         return images.start(uri,target,onCopied)
     }
@@ -98,7 +100,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         BackgroundAlerts.reconcile(getApplication())
     }
     internal fun openAlert(target: AlertDestination) {
-        val profile=servers.firstOrNull {it.id==target.serverId && it.endpoint==target.endpoint}
+        val profile=servers.firstOrNull {it.id==target.serverId && it.connectionKey==target.endpoint}
         if(profile==null) {notificationNotice="That server is no longer saved.";return}
         pendingAlert=target;connectServer(profile.id);tryOpenAlert()
     }
@@ -214,7 +216,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     init {preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
 
     private fun connection(profile: ServerProfile): RexConnection = connections.getOrPut(profile.id) {
-        RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences).also {client->
+        RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences,profile.storageKey,profile).also {client->
             client.visible=profile.id==activeServerId
             if(activityVisible) client.activity(true)
             palette?.let(client::updateTerminalTheme)
@@ -317,21 +319,74 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }.exceptionOrNull()?.message
 
     fun saveServer(id: String?,label: String,endpoint: String,icon: ServerIcon?=null): String? = runCatching {
+        require(!endpoint.trim().startsWith("ssh://")) {"Use Servers → Add server → SSH to configure authentication"}
         val profile=ServerProfile.create(label,endpoint,id ?: java.util.UUID.randomUUID().toString(),icon ?: servers.firstOrNull {it.id==id}?.icon ?: ServerIcon.GLOBE)
-        require(servers.none {it.id!=profile.id && it.endpoint==profile.endpoint}) {"That server is already saved"}
+        saveProfile(profile)?.let {error(it)}
+    }.exceptionOrNull()?.message
+
+    internal suspend fun saveSshServer(profile: ServerProfile,credentials: ByteArray,resetTrust: Boolean): String? {
+        val ssh=profile.ssh ?: return "SSH configuration missing"
         val old=servers.firstOrNull {it.id==profile.id}
-        if(old!=null && old.endpoint!=profile.endpoint) {
+        var storedNew=false
+        var saved=profile
+        return try {
+            validateDestination(profile)
+            withContext(Dispatchers.IO) {
+                val store=SshCredentials(getApplication())
+                val original=old?.ssh
+                val unchanged=original!=null && ssh.sameConnection(original) && runCatching {
+                    val previous=store.load(original.credentialRef)
+                    try {sameSshCredentials(org.json.JSONObject(previous.toString(Charsets.UTF_8)),org.json.JSONObject(credentials.toString(Charsets.UTF_8)))}
+                    finally {previous.fill(0)}
+                }.getOrDefault(false)
+                if(unchanged) {
+                    saved=profile.copy(ssh=if(resetTrust) original!!.copy(revision=ssh.revision) else original)
+                }
+                // Validate locally before replacing an existing connection or persisting credentials.
+                if(!unchanged || resetTrust) {
+                    val config=ssh.json().put("fingerprint","")
+                    val temporary=NativeBridge.sshCreate(config.toString(),credentials)
+                    NativeBridge.sshRemove(temporary)
+                }
+                if(!unchanged) {store.save(ssh.credentialRef,credentials);storedNew=true}
+                if(resetTrust) SshTransport.clearTrust(getApplication(),listOfNotNull(original,ssh))
+            }
+            check(servers.firstOrNull {it.id==profile.id}==old) {"Server changed while saving; reopen the editor"}
+            saveProfile(saved)
+        } catch(error: Exception) {error.message ?: "Could not save SSH server"}
+        finally {
+            credentials.fill(0)
+            if(storedNew && servers.none {it.ssh?.credentialRef==ssh.credentialRef}) SshCredentials(getApplication()).delete(ssh.credentialRef)
+        }
+    }
+    private fun validateDestination(profile: ServerProfile) {
+        require(servers.none {it.id!=profile.id && it.endpoint==profile.endpoint && it.ssh?.socketPath==profile.ssh?.socketPath && it.ssh?.jumpHost==profile.ssh?.jumpHost}) {"That server is already saved"}
+    }
+    private fun saveProfile(profile: ServerProfile): String? = runCatching {
+        validateDestination(profile)
+        val old=servers.firstOrNull {it.id==profile.id}
+        val updated=if(old==null) servers+profile else servers.map {if(it.id==profile.id) profile else it}
+        // Persist the new credential reference before retiring the previous encrypted record.
+        check(preferences.edit().putString("servers",SavedServers.encode(updated)).commit()) {"Could not save server settings"}
+        servers=updated
+        if(old!=null && old.connectionKey!=profile.connectionKey) {
             images.forget(old.id)
             connections.remove(old.id)?.let {it.releaseControl();it.disconnect();it.close()}
             observers.remove(old.id)?.cancel();serverStatuses=serverStatuses-old.id
+            SshTransport.forget(old.id)
+            old.ssh?.takeIf {it.credentialRef!=profile.ssh?.credentialRef}?.let {SshCredentials(getApplication()).delete(it.credentialRef)}
         }
-        servers=if(old==null) servers+profile else servers.map {if(it.id==profile.id) profile else it}
         persist()
         val client=connection(profile)
         if(activeServerId==profile.id) {activeClient=client;client.visible=true}
         connectServer(profile.id)
         updateActivity()
     }.exceptionOrNull()?.message
+
+    internal fun retrySsh(id: String) {
+        connections[id]?.retryNow()
+        BackgroundAlerts.reconcile(getApplication())
+    }
 
     fun disconnectServer(id: String) {
         desired=desired-id;persist()
@@ -342,6 +397,8 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         if(activeServerId==id) serverSwitchSerial++
         disconnectServer(id)
         observers.remove(id)?.cancel();connections.remove(id)?.close()
+        SshTransport.forget(id)
+        servers.firstOrNull {it.id==id}?.ssh?.let {SshCredentials(getApplication()).delete(it.credentialRef)}
         servers=servers.filterNot {it.id==id};serverStatuses=serverStatuses-id
         if(activeServerId==id) {
             activeServerId=servers.firstOrNull()?.id.orEmpty()

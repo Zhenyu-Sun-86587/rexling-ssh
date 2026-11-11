@@ -53,7 +53,7 @@ internal data class AppBuildInfo(val version: String,val number: Int,val type: S
             ChromeButton(ChromeIcon.CLOSE,"Close about",onClick=onClose)
         }
         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
-            Image(painterResource(R.drawable.rexlink_dinosaur),contentDescription=null,
+            Image(painterResource(R.drawable.rex_official_icon),contentDescription=null,
                 modifier=Modifier.size(64.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(4.dp))
             Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.app_name),fontSize=24.sp,fontWeight=FontWeight.Bold)

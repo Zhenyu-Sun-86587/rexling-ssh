@@ -11,4 +11,10 @@ object NativeBridge {
     @JvmStatic external fun uploadPoll(handle: Long): String
     @JvmStatic external fun uploadDestroy(handle: Long)
     @JvmStatic external fun destroy(handle: Long)
+    @JvmStatic external fun sshCreate(config: String,credentials: ByteArray): Long
+    @JvmStatic external fun sshStatus(handle: Long): String
+    @JvmStatic external fun sshTrust(handle: Long,fingerprint: String): String
+    @JvmStatic external fun sshRemove(handle: Long)
+    @JvmStatic external fun sshNetwork(route: String)
+    @JvmStatic external fun sshGenerate(): ByteArray
 }

@@ -57,7 +57,9 @@ class BackgroundMonitorService: Service() {
             else startForeground(ONGOING_ID,notification)
             running=true;network.start()
         }
-        refresh();return START_NOT_STICKY
+        refresh()
+        monitors.values.filter {it.phase=="error" && it.handle!=0L}.forEach {NativeBridge.command(it.handle,"{\"type\":\"retry\"}")}
+        return START_NOT_STICKY
     }
     private fun refresh() {
         if(!running) return
@@ -65,7 +67,7 @@ class BackgroundMonitorService: Service() {
         if(!preferences.getBoolean(BackgroundAlerts.ENABLED,false) || !BackgroundAlerts.allowed(this) || profiles.isEmpty()) {stopSelf();return}
         monitors.keys.toList().forEach {id->
             val monitor=monitors.getValue(id)
-            if(profiles.none {it.id==id && it.endpoint==monitor.profile.endpoint}) {
+            if(profiles.none {it.id==id && it.connectionKey==monitor.profile.connectionKey}) {
                 monitors.remove(id);monitor.job?.cancel();cancelServer(monitor.profile)
             }
         }
@@ -77,7 +79,8 @@ class BackgroundMonitorService: Service() {
                 try {
                     handle=NativeBridge.create();check(handle!=0L);monitor.handle=handle
                     NativeBridge.command(handle,"{\"type\":\"monitor\"}")
-                    NativeBridge.command(handle,JSONObject().put("type","connect").put("server",profile.endpoint).toString())
+                    val transport=SshTransport.acquire(this@BackgroundMonitorService,profile)
+                    NativeBridge.command(handle,JSONObject().put("type","connect").put("server",profile.endpoint).put("sshTransport",transport).toString())
                     var revision=0L
                     while(isActive) {
                         val next=NativeBridge.awaitUpdate(handle,revision,250)
@@ -107,7 +110,7 @@ class BackgroundMonitorService: Service() {
     }
     private fun background()=!BackgroundAlerts.foreground.value || !getSystemService(PowerManager::class.java).isInteractive || getSystemService(KeyguardManager::class.java).isKeyguardLocked
     private fun seen(profile: ServerProfile,record: ActivityRecord): Boolean = record.attentionKey.isNotBlank() && runCatching {
-        JSONObject(preferences.getString("activity_seen:${profile.endpoint}","{}")!!).optString(record.attentionKey)==record.attentionVersion
+        JSONObject(preferences.getString("activity_seen:${profile.storageKey}","{}")!!).optString(record.attentionKey)==record.attentionVersion
     }.getOrDefault(false)
     private fun accept(monitor: Monitor,raw: List<ActivityRecord>,complete: Boolean) {
         monitor.records=raw;monitor.complete=complete
@@ -116,7 +119,7 @@ class BackgroundMonitorService: Service() {
         val alerts=ledger.observe(monitor.profile,records,background(),complete=complete) {seen(monitor.profile,it)}
         val after=ledger.encode();if(before!=after) preferences.edit().putString("attention_ledger",after).apply()
         // Reconnection/partial results must not dismiss an outstanding request.
-        posted.toMap().forEach {(key,target)->if(target.first.id==monitor.profile.id && target.first.endpoint==monitor.profile.endpoint) {
+        posted.toMap().forEach {(key,target)->if(target.first.id==monitor.profile.id && target.first.connectionKey==monitor.profile.connectionKey) {
             val current=records.firstOrNull {it.key==target.second.key}
             // A finished report may disappear immediately; keep its notification until seen.
             if(seen(monitor.profile,target.second) || (target.second.state!=ActivityState.DONE &&
@@ -130,7 +133,7 @@ class BackgroundMonitorService: Service() {
         val key=ledger.key(profile,record)
         if(posted[key]?.second?.attentionVersion==record.attentionVersion && record.attentionVersion.isNotBlank()) return
         if(key !in posted && posted.size>=32) cancel(posted.keys.first())
-        val uri=destinations.issue(AlertDestination(profile.id,profile.endpoint,record.session,record.block,record.attentionKey,record.attentionVersion))
+        val uri=destinations.issue(AlertDestination(profile.id,profile.connectionKey,record.session,record.block,record.attentionKey,record.attentionVersion))
         val open=PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java).setData(uri).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val title="${record.stateLabel} · ${record.label.ifBlank {record.program.label}}"
         val text=listOf(profile.label,record.sessionLabel.ifBlank {record.session}).joinToString(" · ")
