@@ -28,12 +28,12 @@ class WorkspacePresentationTest {
         assertTrue(restored.present(fresh).cachedPrograms.isEmpty())
         assertNotEquals(chrome,restored.present(fresh))
     }
-    @Test fun unknownPanesUseNeutralLoadingInsteadOfPretendingToBeShells() {
+    @Test fun unknownPanesUseNeutralTerminalInsteadOfPretendingToBeShells() {
         val cache=WorkspacePresentation()
         for(program in listOf(null,ProgramIdentity.Terminal)) {
             val chrome=cache.present(snapshot(program=program))
             assertEquals(ProgramIdentity.Terminal,chrome.programs["p"])
-            assertEquals("Loading…",chrome.programs.getValue("p").tabTitle("window-123abc","shell",1))
+            assertEquals("Terminal 1",chrome.programs.getValue("p").tabTitle("window-123abc","shell",1))
         }
         val fish=ProgramIdentity.resolve(listOf("fish"))
         assertEquals(fish,cache.present(snapshot(program=fish)).programs["p"])
