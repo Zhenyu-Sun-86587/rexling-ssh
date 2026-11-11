@@ -67,16 +67,16 @@ import java.util.UUID
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),enabled=!busy)
                 Text("Use an authenticated Rex HTTP/WS endpoint, such as its Tailscale HTTPS address.",fontSize=11.sp)
             } else {
-                OutlinedTextField(host,{host=it;error=null},Modifier.fillMaxWidth(),label={Text("Host · domain / IPv4 / IPv6")},singleLine=true,enabled=!busy)
+                OutlinedTextField(host,{host=it;error=null},Modifier.fillMaxWidth(),label={Text("Host")},singleLine=true,enabled=!busy)
                 OutlinedTextField(user,{user=it},Modifier.fillMaxWidth(),label={Text("Username")},singleLine=true,enabled=!busy)
-                Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     FilterChip(!useJump && !ipv6Direct,{useJump=false;ipv6Direct=false},label={Text("Direct")},enabled=!busy)
                     FilterChip(ipv6Direct,{ipv6Direct=true;useJump=false},label={Text("IPv6 direct")},enabled=!busy)
-                    FilterChip(useJump,{useJump=true;ipv6Direct=false;advanced=true},label={Text("ProxyJump")},enabled=!busy)
+                    FilterChip(useJump,{useJump=true;ipv6Direct=false;advanced=true},label={Text("ProxyJump",maxLines=1,softWrap=false)},enabled=!busy)
                 }
                 Text(if(ipv6Direct) "Connect directly to the host's IPv6 address or AAAA record. Your network must provide IPv6 connectivity."
                     else "Direct uses IPv4 and IPv6 automatically. For an IPv6 address with a port, use [address]:port.",fontSize=11.sp)
-                TextButton(onClick={advanced=!advanced},enabled=!busy) {Text(if(advanced) "Hide advanced options" else "Advanced options · port, keys, jump host, socket")}
+                TextButton(onClick={advanced=!advanced},enabled=!busy) {Text(if(advanced) "Hide advanced options" else "Advanced options")}
                 if(advanced) OutlinedTextField(port,{port=it},Modifier.fillMaxWidth(),label={Text("SSH port")},singleLine=true,
                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),enabled=!busy)
                 Text("Target authentication",style=MaterialTheme.typography.labelLarge)

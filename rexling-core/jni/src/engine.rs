@@ -443,7 +443,7 @@ impl Actor {
                     self.program_task=None;
                     match result {
                         Ok(details)=>{self.apply_program_details(details);self.publish();},
-                        Err(_)=>{self.program_suspended=true;}, // Optional metadata stays off until reconnect.
+                        Err(_)=>{self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(30);}, // Retry optional metadata at a bounded low rate.
                     }
                 },
                 _=async {if active {tokio::time::sleep_until(if self.dirty && self.visible {render_at}else{maintenance_at}).await;}else{pending::<()>().await;}}=>{
@@ -1619,7 +1619,7 @@ fn program_directory(process: &Value) -> String {
 fn program_task(mut endpoint: Endpoint, session: String, ids: Vec<String>) -> ProgramTask {
     endpoint.timeout=Duration::from_secs(1);
     Box::pin(async move {
-        tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             let mut control = Control::connect(endpoint, None, Trace::default()).await?;
             control
                 .call("client.set_label", json!({"label":"rex-android-programs"}))

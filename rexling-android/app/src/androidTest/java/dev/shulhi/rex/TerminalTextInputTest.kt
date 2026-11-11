@@ -14,7 +14,7 @@ class TerminalTextInputTest {
             val sent=mutableListOf<String>()
             val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;onInput={sent+=it}}
             val info=EditorInfo();val input=view.onCreateInputConnection(info)!!
-            assertEquals(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS,info.inputType)
+            assertEquals(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,info.inputType)
             assertTrue(input.commitText("a",1))
             view.controlled=true
             assertTrue(input.commitText("\n",1))
@@ -48,7 +48,7 @@ class TerminalTextInputTest {
             old.setComposingText("ni",1);view.textInput=false
             assertFalse(old.commitText("你",1));assertFalse(old.finishComposingText())
             val info=EditorInfo();val direct=view.onCreateInputConnection(info)!!
-            assertEquals(InputType.TYPE_TEXT_VARIATION_NORMAL,info.inputType and InputType.TYPE_MASK_VARIATION)
+            assertEquals(InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,info.inputType and InputType.TYPE_MASK_VARIATION)
             direct.commitText("ls",1)
             pane="b";assertFalse(direct.commitText("wrong pane",1))
             assertEquals(listOf("ls"),sent)

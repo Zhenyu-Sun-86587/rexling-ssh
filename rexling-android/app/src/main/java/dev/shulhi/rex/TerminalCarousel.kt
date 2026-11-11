@@ -177,7 +177,7 @@ import dev.chrisbanes.haze.hazeSource
                     Row(Modifier.paneFrost(haze,RoundedCornerShape(13.dp)).semantics {contentDescription="Pane switch caption"}.padding(horizontal=6.dp,vertical=4.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                         val block=blocks[candidate]
-                        val program=programs[block.id] ?: ProgramIdentity.Loading
+                        val program=programs[block.id] ?: ProgramIdentity.Terminal
                         PaneProgramTile(program,Modifier.size(22.dp,18.dp),false,0f)
                         Column(Modifier.weight(1f,fill=false)) {
                             Text(program.paneTitle(block.label,titles[block.id].orEmpty()),

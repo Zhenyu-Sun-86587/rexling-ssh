@@ -37,7 +37,7 @@ private fun editableTerminalLabel(label: String)=label.takeUnless {
     var picker by remember {mutableStateOf(false)}
     var rejected by remember {mutableStateOf(false)}
     LaunchedEffect(anchors.map {it.id}) {if(anchors.none {it.id==anchor}) anchor=anchors.firstOrNull()?.id.orEmpty()}
-    fun title(block: BlockItem)=(programs[block.id] ?: ProgramIdentity.Loading).paneTitle(block.label,titles[block.id].orEmpty())
+    fun title(block: BlockItem)=(programs[block.id] ?: ProgramIdentity.Terminal).paneTitle(block.label,titles[block.id].orEmpty())
     AlertDialog(onDismissRequest=onClose,title={Text("Dock pane")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("Place beside",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)

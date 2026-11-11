@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.dp
             window.layout.filter {showFloating || !it.floating}.forEach {placement->
                 val block=window.blocks.firstOrNull {it.id==placement.id}
                 if(block!=null) key(placement.id) {
-                val program=programs[block.id] ?: ProgramIdentity.Loading
+                val program=programs[block.id] ?: ProgramIdentity.Terminal
                 val title=program.paneTitle(block.label,titles[block.id].orEmpty())
                 val active=placement.id==selected
                 val width=(maxWidth*placement.width-3.dp).coerceAtLeast(.5.dp)

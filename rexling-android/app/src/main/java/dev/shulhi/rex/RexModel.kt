@@ -412,7 +412,16 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }
     fun updateTerminalTheme(value: TerminalPalette) {palette=value;connections.values.forEach {it.updateTerminalTheme(value)}}
     fun changeAppearance(value: Appearance) {appearance=value;preferences.edit {putString("appearance",value.name)}}
-    fun pause() {foreground=false;updateActivity();networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
-    fun resume() {foreground=true;networkMonitor.start();connections.values.forEach {it.resume()};tryOpenAlert();BackgroundAlerts.reconcile(getApplication())}
+    private var backgroundPause: Job?=null
+    fun pause() {
+        foreground=false;updateActivity()
+        connections.values.forEach {it.visible=false;it.cancelKeyRepeats()}
+        backgroundPause?.cancel()
+        backgroundPause=viewModelScope.launch {
+            delay(120_000)
+            if(!foreground) {networkJob?.cancel();networkMonitor.stop();connections.values.forEach {it.pause()}}
+        }
+    }
+    fun resume() {backgroundPause?.cancel();backgroundPause=null;foreground=true;networkMonitor.start();connections.values.forEach {it.resume()};activeClient.visible=true;tryOpenAlert();BackgroundAlerts.reconcile(getApplication())}
     override fun onCleared() {images.close();preferences.unregisterOnSharedPreferenceChangeListener(alertsListener);networkJob?.cancel();networkMonitor.stop();observers.values.forEach {it.cancel()};connections.values.forEach {it.close()}}
 }

@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.dp
     LaunchedEffect(expanded,grouped) {if(!expanded || !grouped) delay(140);notifyBackdrop(expanded && grouped)}
     DisposableEffect(Unit) {onDispose {notifyBackdrop(false)}}
     LaunchedEffect(grouped) {if(!grouped) expanded=false}
-    fun title(pane: BlockItem)=(programs[pane.id] ?: ProgramIdentity.Loading).paneTitle(pane.label,titles[pane.id].orEmpty())
+    fun title(pane: BlockItem)=(programs[pane.id] ?: ProgramIdentity.Terminal).paneTitle(pane.label,titles[pane.id].orEmpty())
     fun choose(pane: BlockItem) {if(pane.id==active) onMinimize() else onOpen(pane.id);expanded=false}
     Column(modifier.widthIn(max=276.dp),horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(2.dp)) {
         AnimatedVisibility(grouped && expanded,
@@ -59,7 +59,7 @@ import androidx.compose.ui.unit.dp
                         Text(listOf(title(pane),directories[pane.id].orEmpty()).filter {it.isNotBlank()}.joinToString(" · "),Modifier.weight(1f,fill=false).padding(start=12.dp,end=8.dp),
                             fontSize=13.sp,lineHeight=18.sp,letterSpacing=0.sp,fontWeight=FontWeight.Medium,maxLines=1,overflow=TextOverflow.Ellipsis,
                             color=if(isActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
-                        PaneProgramTile(programs[pane.id] ?: ProgramIdentity.Loading,Modifier.padding(end=8.dp).size(22.dp,18.dp),false,0f)
+                        PaneProgramTile(programs[pane.id] ?: ProgramIdentity.Terminal,Modifier.padding(end=8.dp).size(22.dp,18.dp),false,0f)
                     }
                 }
             }
@@ -72,7 +72,7 @@ import androidx.compose.ui.unit.dp
                 if(grouped) stateDescription=if(expanded) "Expanded" else "Collapsed"
             },contentAlignment=Alignment.Center) {
             val index=panes.indexOfFirst {it.id==active}.coerceAtLeast(0)
-            ProgramStack(panes.map {programs[it.id] ?: ProgramIdentity.Loading},index,fixedSlot=true,floatingShadow=true,highlighted=active!=null)
+            ProgramStack(panes.map {programs[it.id] ?: ProgramIdentity.Terminal},index,fixedSlot=true,floatingShadow=true,highlighted=active!=null)
         }
     }
 }

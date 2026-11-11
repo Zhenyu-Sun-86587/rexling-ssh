@@ -534,7 +534,7 @@ class TerminalView(context: Context) : View(context) {
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         if (!acceptsInput) return null
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL or
-            if(textInput) (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) else InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            if(textInput) (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) else (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
         outAttrs.initialSelStart=0;outAttrs.initialSelEnd=0
         outAttrs.contentMimeTypes=imageMimeTypes.copyOf()
@@ -543,7 +543,7 @@ class TerminalView(context: Context) : View(context) {
         composing=""
         // A real editable buffer lets CJK IMEs inspect and replace their preedit text.
         // Only committed text is sent to the remote terminal; no prompt text is exposed.
-        return object : BaseInputConnection(this, true) {
+        return object : BaseInputConnection(this, textInput) {
             private val editBuffer=SpannableStringBuilder().apply {Selection.setSelection(this,0)}
             override fun getEditable(): Editable=editBuffer
             private var closed=false
@@ -574,6 +574,7 @@ class TerminalView(context: Context) : View(context) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 if(!valid()) {android.util.Log.d("RexInput","IME commit rejected: stale input target");return false}
                 android.util.Log.d("RexInput","IME commit chars="+(text?.length ?: 0))
+                if(!textInput) {clearBuffer();if(!text.isNullOrEmpty()) onInput(text.toString().replace("\r\n","\r").replace("\n","\r"));return true}
                 super.commitText(text ?: "",newCursorPosition);sendBuffer();return true
             }
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {

@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
     val panelHeight=(128+maxOf(windows.size,panes.size,1).coerceAtMost(7)*60+if(hasLayout) layoutAllowance else 0).dp.coerceAtMost(620.dp)
     fun tabTitle(tab: WindowItem): String {
         val block=tab.blocks.getOrNull(selectedPane(tab))
-        val program=programs[block?.id] ?: ProgramIdentity.Loading
+        val program=programs[block?.id] ?: ProgramIdentity.Terminal
         return program.tabTitle(tab.label,block?.label.orEmpty(),windows.indexOf(tab)+1,titles[block?.id].orEmpty())
     }
     val drawerSurface=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
@@ -143,7 +143,7 @@ import kotlinx.coroutines.launch
                             items(displayed,key={it.id}) {tab->
                                 val focus=selectedPane(tab)
                                 val block=tab.blocks.getOrNull(focus)
-                                val icons=tab.blocks.map {programs[it.id] ?: ProgramIdentity.Loading}
+                                val icons=tab.blocks.map {programs[it.id] ?: ProgramIdentity.Terminal}
                                 val title=tabTitle(tab)
                                 val count="${tab.blocks.size} pane${if(tab.blocks.size==1) "" else "s"}"
                                 val directory=directories[block?.id].orEmpty()
@@ -163,7 +163,7 @@ import kotlinx.coroutines.launch
                             } else item(key="layout-unavailable") {Text("Layout unavailable",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                             val displayed=if(drag.id==null) panes else drag.order.mapNotNull {id->panes.firstOrNull {it.id==id}}
                             items(displayed,key={it.id}) {block->
-                                val program=programs[block.id] ?: ProgramIdentity.Loading
+                                val program=programs[block.id] ?: ProgramIdentity.Terminal
                                 val title=program.paneTitle(block.label,titles[block.id].orEmpty())
                                 val subtitle=listOfNotNull(if(block.id==selectedBlock) "Viewing" else null,if(current?.layout?.any {it.id==block.id && it.floating}==true) "Floating" else null,directories[block.id].orEmpty().ifBlank {program.label}).joinToString(" · ")
                                 SwitcherItem(title,subtitle,listOf(program),0,block.id==targetPane,

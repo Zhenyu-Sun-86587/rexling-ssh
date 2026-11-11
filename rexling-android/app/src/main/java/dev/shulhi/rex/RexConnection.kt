@@ -426,7 +426,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
         command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
     }
-    fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {chromeState.value.programs[it.id] ?: ProgramIdentity.Loading}
+    fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {chromeState.value.programs[it.id] ?: ProgramIdentity.Terminal}
     fun tabPaneIndex(window: WindowItem): Int = window.blocks.indexOfFirst {it.id==navigation.pane(state.value.selectedSession,window)}.coerceAtLeast(0)
     fun selectWindow(id: String) {
         val current = state.value

@@ -41,7 +41,7 @@ internal class WorkspacePresentation {
         val ids=state.windows.flatMap {it.blocks}.map {it.id}
         val cached=mutableSetOf<String>()
         val programs=ids.associateWith {id->
-            state.programs[id]?.takeIf {it.known} ?: saved[id]?.program?.also {cached.add(id)} ?: ProgramIdentity.Loading
+            state.programs[id]?.takeIf {it.known} ?: saved[id]?.program?.also {cached.add(id)} ?: ProgramIdentity.Terminal
         }
         val titles=ids.mapNotNull {id->saved[id]?.title?.let {id to it}}.toMap()+state.titles
         val directories=ids.mapNotNull {id->saved[id]?.directory?.let {id to it}}.toMap()+state.directories

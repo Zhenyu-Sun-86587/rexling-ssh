@@ -384,7 +384,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     val textDensity=LocalDensity.current
     val labels=windows.mapIndexed {i,w->
         val pane=selectedPane(w)
-        val program=panePrograms(w).getOrNull(pane) ?: ProgramIdentity.Loading
+        val program=panePrograms(w).getOrNull(pane) ?: ProgramIdentity.Terminal
         program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
     }
     val contentWidths=remember(labels,index,measurer,textDensity) {
@@ -460,7 +460,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     val workPhase=rememberWorkingPhase(active && busy && animateWorking)
                     val programs=panePrograms(w)
                     val pane=selectedPane(w)
-                    val program=programs.getOrNull(pane) ?: ProgramIdentity.Loading
+                    val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
                     val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
                     Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
                         .zIndex(if(drag.id==w.id) 1f else 0f)

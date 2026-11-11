@@ -196,10 +196,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     BackHandler(enabled=ready && model.minimizeFloatingPanes && !newSession && !appearance && !about && !neovimSettings && !alerts && !fontPicker && closeTarget==null && floatingActive && hiddenFloating!=chosen && picker.isEmpty() && !preferencesOpen && !model.activityVisible) {minimizeFloating()}
     val liveBlock=state.selectedBlock.ifBlank {if(state.phase=="preview") "preview" else ""}
     fun closePaneTarget(block: BlockItem)=TerminalCloseTarget(state.selectedSession,block.id,
-        (state.programs[block.id] ?: ProgramIdentity.Loading).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
+        (state.programs[block.id] ?: ProgramIdentity.Terminal).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
     fun closeTabTarget(tab: WindowItem): TerminalCloseTarget {
         val pane=client.tabPaneIndex(tab);val block=tab.blocks.getOrNull(pane)
-        val program=state.programs[block?.id] ?: ProgramIdentity.Loading
+        val program=state.programs[block?.id] ?: ProgramIdentity.Terminal
         return TerminalCloseTarget(state.selectedSession,tab.id,program.tabTitle(tab.label,block?.label.orEmpty(),1,state.titles[block?.id].orEmpty()),true,tab.blocks.map {it.id})
     }
     LaunchedEffect(state.selectedSession) {closeTarget=null}
@@ -227,9 +227,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
-                blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
+                blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
                 serverIcons=model.sessionTargets.associate {it.key to it.server.icon}+(currentSessionKey to model.activeServer.icon),
-                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),menu={
+                working=chosen in state.workingBlocks,title=(state.programs[chosen] ?: ProgramIdentity.Terminal).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),menu={
                     Box {
                         ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
                         DropdownMenu(menu,{menu=false},modifier=Modifier.drawerFrost(workspaceHaze,RoundedCornerShape(16.dp),workspaceBackdrop),shape=RoundedCornerShape(16.dp),containerColor=Color.Transparent,tonalElevation=0.dp) {
@@ -291,7 +291,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
 
                         ConnectionNotice(state.phase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp),hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
-                        OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.TopEnd).padding(10.dp),hazeState=terminalHaze,onVisibleChange={ownerBackdrop=it})
                         if((!floatingActive || hiddenFloating!=chosen) && model.neovimShortcutsEnabled && ready && chosen==liveBlock && chosen !in state.cachedPrograms && state.programs[chosen]?.kind==ProgramKind.NEOVIM && model.neovimShortcuts.isNotEmpty()) {
                             NeovimShortcutButton(model.neovimShortcuts,keyTarget,controlled,
                                 onChoose={item,target->client.neovimShortcut(item,target)},onCustomize={neovimSettings=true},layout=model.neovimShortcutLayout,effect=model.neovimShortcutEffect,hapticsEnabled=model.neovimShortcutHaptics,hazeState=terminalHaze,onExpandedChange={wheelBackdrop=it},
@@ -304,6 +303,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
                             fontFamily=MonoUi,fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.End).padding(horizontal=10.dp))
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
                             TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,animateWorking=!model.activityVisible,

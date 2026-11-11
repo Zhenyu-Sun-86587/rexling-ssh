@@ -71,14 +71,14 @@ import org.json.JSONObject
     val keyPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->importFile(uri) {auth.privateKey=it;auth.publicKey=""}}
     val certPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->importFile(uri) {auth.certificate=it}}
     Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             FilterChip(auth.method=="key",{auth.method="key"},label={Text("Private key")},enabled=!busy)
             FilterChip(auth.method=="password",{auth.method="password"},label={Text("Password")},enabled=!busy)
         }
         if(auth.method=="key") {
             OutlinedTextField(auth.privateKey,{auth.privateKey=it;auth.publicKey=""},Modifier.fillMaxWidth(),
-                label={Text("Private key · paste OpenSSH / PEM")},minLines=2,maxLines=4,enabled=!busy)
-            Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                label={Text("Private key")},minLines=2,maxLines=4,enabled=!busy)
+            FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick={keyPicker.launch(arrayOf("*/*"))},enabled=!busy) {Text("Import key")}
                 TextButton(enabled=!busy,onClick={
                     scope.launch {
