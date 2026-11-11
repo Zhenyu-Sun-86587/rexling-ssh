@@ -9,10 +9,23 @@ import org.junit.Test
 class TerminalTextInputTest {
     private val instrumentation=InstrumentationRegistry.getInstrumentation()
 
-    @Test fun terminalInputRetainsUpstreamFlagsAndWorksAcrossOwnership() {
+    @Test fun normalTerminalUsesTheSameEditableInputPathAsChineseWithoutSuggestions() {
         instrumentation.runOnMainSync {
             val sent=mutableListOf<String>()
             val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;onInput={sent+=it}}
+            val info=EditorInfo();val input=view.onCreateInputConnection(info)!!
+            assertEquals(InputType.TYPE_TEXT_VARIATION_NORMAL,info.inputType and InputType.TYPE_MASK_VARIATION)
+            assertTrue(info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS!=0)
+            input.setComposingText("abc",1);assertTrue(sent.isEmpty())
+            input.commitText("abc",1);input.finishComposingText()
+            input.commitText("\n",1);input.deleteSurroundingText(1,0)
+            assertEquals(listOf("abc","\r","\u007f"),sent)
+        }
+    }
+    @Test fun terminalInputRetainsUpstreamFlagsAndWorksAcrossOwnership() {
+        instrumentation.runOnMainSync {
+            val sent=mutableListOf<String>()
+            val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;secureKeyboard=true;onInput={sent+=it}}
             val info=EditorInfo();val input=view.onCreateInputConnection(info)!!
             assertEquals(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,info.inputType)
             assertTrue(input.commitText("a",1))
@@ -25,7 +38,7 @@ class TerminalTextInputTest {
     @Test fun terminalCompositionAndRepeatedConnectionProbesDoNotLoseInput() {
         instrumentation.runOnMainSync {
             val sent=mutableListOf<String>()
-            val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;onInput={sent+=it}}
+            val view=TerminalView(instrumentation.targetContext).apply {inputAvailable=true;secureKeyboard=true;onInput={sent+=it}}
             val input=view.onCreateInputConnection(EditorInfo())!!
             assertTrue(input.setComposingText("abc",1))
             val probe=view.onCreateInputConnection(EditorInfo())!!
@@ -60,7 +73,7 @@ class TerminalTextInputTest {
     @Test fun modeAndPaneChangesRejectStaleImeCommits() {
         instrumentation.runOnMainSync {
             val sent=mutableListOf<String>();var pane="a"
-            val view=TerminalView(instrumentation.targetContext).apply {controlled=true;textInput=true;mouseTarget={pane};onInput={sent+=it}}
+            val view=TerminalView(instrumentation.targetContext).apply {controlled=true;secureKeyboard=true;textInput=true;mouseTarget={pane};onInput={sent+=it}}
             val old=view.onCreateInputConnection(EditorInfo())!!
             old.setComposingText("ni",1);view.textInput=false
             assertFalse(old.commitText("你",1));assertFalse(old.finishComposingText())

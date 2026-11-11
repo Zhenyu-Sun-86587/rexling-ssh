@@ -11,11 +11,10 @@ use std::{
     collections::{BTreeMap,BTreeSet,VecDeque},
     future::{Future, pending},
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::{AtomicU64,Ordering}},
     time::Duration,
 };
-use tokio::sync::{mpsc,watch};
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use tokio::sync::mpsc;
 use crate::input_queue::{Commands,Target,is_input};
 
 pub struct Shared {
@@ -28,6 +27,7 @@ pub struct Shared {
     pub wire: crate::updates::WireBase,
 }
 pub struct Session {
+    latest_navigation:Arc<AtomicU64>,
     tx: mpsc::Sender<Value>,
     pub shared: Arc<Mutex<Shared>>,
     pub updates: Arc<crate::updates::Updates>,
@@ -43,6 +43,8 @@ impl Session {
             key: String::new(),
             wire: crate::updates::WireBase::default(),activity:Arc::default(),
         }));
+        let latest_navigation=Arc::new(AtomicU64::new(0));
+        let worker_navigation=latest_navigation.clone();
         let worker = shared.clone();
         let updates=Arc::new(crate::updates::Updates::default());
         let notifier=updates.clone();
@@ -53,15 +55,19 @@ impl Session {
                     .enable_all()
                     .build();
                 if let Ok(runtime) = runtime {
-                    runtime.block_on(Actor::new(worker,notifier).run(rx));
+                    let mut actor=Actor::new(worker,notifier);actor.latest_navigation=worker_navigation;
+                    runtime.block_on(actor.run(rx));
                 }
             })?;
-        Ok(Self { tx, shared, updates })
+        Ok(Self { tx, shared, updates, latest_navigation })
     }
-    pub fn command(&self, value: Value) -> Result<()> {
-        self.tx
-            .try_send(value)
-            .context("terminal command queue is full or closed")
+    pub fn command(&self, mut value: Value) -> Result<()> {
+        let permit=self.tx.try_reserve().context("terminal command queue is full or closed")?;
+        if matches!(value["type"].as_str(),Some("block"|"session")) {
+            if let Some(id)=value["navigationId"].as_u64() {self.latest_navigation.fetch_max(id,Ordering::AcqRel);}
+        }
+        value["queuedAtMs"]=json!(unix_millis());
+        permit.send(value);Ok(())
     }
     pub fn poll(&self, after: u64) -> Result<String> {
         let mut state = self
@@ -85,7 +91,7 @@ impl Drop for Session {
 }
 
 type InputReply = Pin<Box<dyn Future<Output = Result<Value>>>>;
-struct InputAck {target:Target,paste:bool,reply:InputReply}
+struct InputAck {target:Target,paste:bool,reply:InputReply,sent:tokio::time::Instant,sequence:u64}
 // Kotlin's marker for Shift+Enter (TerminalInput.SHIFT_ENTER).
 const SHIFT_ENTER:&str="\x1b[13;2u";
 fn input_event(paste:bool,text:&str)->Value {
@@ -184,13 +190,13 @@ fn collect_pane_layout(node: &Value,ids: &BTreeSet<&str>,layer: usize,floating: 
     }
     for child in ["before","after"] {collect_pane_layout(&node["split"][child],ids,layer,floating,depth+1,out);}
 }
-type PaneWatch = Pin<Box<dyn Future<Output = ()>>>;
-type PaneUpdate = (String,String,Value);
 type ConnectTask = Pin<Box<dyn Future<Output = Result<Control>>>>;
 type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 struct CachedPane {data:Data,replica:Replica,touched:tokio::time::Instant}
+fn unix_millis()->u64 {std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
 struct Actor {
+    latest_navigation:Arc<AtomicU64>,
     shared: Arc<Mutex<Shared>>,
     updates: Arc<crate::updates::Updates>,
     visible: bool,
@@ -230,11 +236,6 @@ struct Actor {
     backoff: u64,
     dirty: bool,
     preview_task: Option<PreviewTask>,
-    pane_watches: FuturesUnordered<PaneWatch>,
-    pane_cancel: watch::Sender<u64>,
-    pane_watch_key: (String,Vec<String>),
-    pane_tx: mpsc::Sender<PaneUpdate>,
-    pane_rx: mpsc::Receiver<PaneUpdate>,
     connected_at: Option<tokio::time::Instant>,
     summary_task: Option<SummaryTask>,
     activity_open: bool,
@@ -269,10 +270,8 @@ struct Actor {
 }
 impl Actor {
     fn new(shared: Arc<Mutex<Shared>>,updates: Arc<crate::updates::Updates>) -> Self {
-        let (pane_tx,pane_rx)=mpsc::channel(8);
-        let (pane_cancel,_)=watch::channel(0);
         Self {
-            shared,
+            latest_navigation:Arc::new(AtomicU64::new(0)),shared,
             updates,
             visible: true,
             endpoint: None,
@@ -302,7 +301,7 @@ impl Actor {
             backoff: 1,
             dirty: false,
             preview_task: None,
-            pane_watches:FuturesUnordered::new(),pane_cancel,pane_watch_key:Default::default(),pane_tx,pane_rx,connected_at:None,
+            connected_at:None,
             summary_task: None,
             activity_open:false,monitoring:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
             activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_titles:BTreeMap::new(),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
@@ -383,7 +382,7 @@ impl Actor {
                 },
                 result=async {match self.input_acks.front_mut() {Some(ack)=>(&mut ack.reply).await,None=>pending().await}}=>{
                     let ack=self.input_acks.pop_front().unwrap();
-                    rex_core::diagnostics::record("input",format!("ack success={} nav={} epoch={}",result.is_ok(),ack.target.navigation,ack.target.connection));
+                    rex_core::diagnostics::record("input",format!("ack success={} nav={} epoch={} sequence={} rttMs={}",result.is_ok(),ack.target.navigation,ack.target.connection,ack.sequence,ack.sent.elapsed().as_millis()));
                     if let Err(error)=result {
                         if error.downcast_ref::<rex_core::control::RpcError>().is_some() {
                             if ack.target==self.input_target() && self.controlled {
@@ -431,12 +430,6 @@ impl Actor {
                             }
                         }
                         Err(e)=>self.recover(e),
-                    }
-                },
-                _=self.pane_watches.next(),if !self.pane_watches.is_empty()=>{},
-                Some((session,id,frame))=self.pane_rx.recv()=>{
-                    if session==self.selected_session && self.pane_watch_key.1.contains(&id) {
-                        self.preview_updates.insert(id,frame);if self.visible {self.publish();}
                     }
                 },
                 result=async {match &mut self.preview_task {Some(task)=>task.await,None=>pending().await}}=>{
@@ -510,7 +503,7 @@ impl Actor {
                         let ids=self.windows.as_array().into_iter().flatten().flat_map(|w|
                             w["blocks"].as_array().into_iter().flatten().filter_map(|b|b["id"].as_str().map(str::to_owned))).collect();
                         self.program_task=Some(program_task(self.endpoint.clone().unwrap(),self.selected_session.clone(),ids));
-                        self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(4);
+                        self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(15);
                     }
                     if self.dirty && self.visible {
                         self.dirty=false;
@@ -547,7 +540,6 @@ impl Actor {
         self.programs = json!({});
         self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
         self.retry = None;
-        self.pane_watches.clear();self.pane_watch_key=Default::default();
         self.control_token = None;
         self.close_cached().await;
         self.data_resume = None;
@@ -561,7 +553,6 @@ impl Actor {
     }
     fn lose_connections(&mut self) {
         self.cached_panes.clear();
-        self.pane_watches.clear();self.pane_watch_key=Default::default();
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
@@ -853,7 +844,7 @@ impl Actor {
         Target {session:self.selected_session.clone(),block:self.selected_block.clone(),navigation:self.navigation_id,connection:self.connection_epoch}
     }
     fn command_error(&mut self,error:anyhow::Error,navigation:Option<u64>,input:bool) {
-        if let Some(id)=navigation {self.navigation_id=id;}
+        if let Some(id)=navigation {if id>=self.navigation_id && id>=self.latest_navigation.load(Ordering::Acquire) {self.navigation_id=id;}}
         self.creating=false;
         let message=error.to_string();
         if message.contains("timed out") || message.contains("WebSocket") {
@@ -863,6 +854,10 @@ impl Actor {
     }
     async fn execute_command(&mut self,value:Value) {
         let navigation=value["navigationId"].as_u64();
+        if matches!(value["type"].as_str(),Some("block"|"session"|"take"|"resize")) && navigation.is_some_and(|id|id<self.latest_navigation.load(Ordering::Acquire)) {
+            rex_core::diagnostics::record("navigation",format!("skip superseded type={} nav={navigation:?} latest={}",value["type"],self.latest_navigation.load(Ordering::Acquire)));
+            return;
+        }
         let tab_move=if value["type"]=="move_tab" {value["requestId"].as_u64()} else {None};
         let pane_move=if value["type"]=="move_pane" {value["requestId"].as_u64()} else {None};
         if let Err(error)=self.command(value).await {self.command_error(error,navigation,false);}
@@ -896,11 +891,13 @@ impl Actor {
         // it bypasses Lua bindings, matching the previous raw-write behavior.
         let payload=json!({"session_id":target.session,"block_id":target.block,"event":input_event(value["type"]=="paste",text)});
         let reply=self.control.as_mut().context("not connected")?.start_call("block.event",payload).await?;
-        self.input_acks.push_back(InputAck {target,paste:value["type"]=="paste",reply:Box::pin(reply.receive())});Ok(())
+        let sequence=value["inputSequence"].as_u64().unwrap_or(0);
+        rex_core::diagnostics::record("input",format!("sent sequence={sequence} chars={} nav={} queueMs={}",text.chars().count(),target.navigation,unix_millis().saturating_sub(value["queuedAtMs"].as_u64().unwrap_or_else(unix_millis))));
+        self.input_acks.push_back(InputAck {target,paste:value["type"]=="paste",reply:Box::pin(reply.receive()),sent:tokio::time::Instant::now(),sequence});Ok(())
     }
     async fn command(&mut self, value: Value) -> Result<()> {
         let kind=value["type"].as_str().context("command type missing")?;
-        rex_core::diagnostics::record("command",format!("type={kind} phase={} nav={} epoch={} owned={}",self.phase,self.navigation_id,self.connection_epoch,self.controlled));
+        rex_core::diagnostics::record("command",format!("client={} type={kind} phase={} nav={} requestedNav={} target={} epoch={} owned={} queueMs={}",self.control.as_ref().and_then(Control::client_id).unwrap_or("none"),self.phase,self.navigation_id,value["navigationId"],value["id"],self.connection_epoch,self.controlled,unix_millis().saturating_sub(value["queuedAtMs"].as_u64().unwrap_or_else(unix_millis))));
         ensure!(!self.monitoring || matches!(kind,"monitor"|"connect"|"disconnect"|"network"|"retry"|"activity_seen"),"Background monitor is read-only");
         match kind {
             "monitor" => {
@@ -976,21 +973,6 @@ impl Actor {
                 if let Some(items)=value["items"].as_object() {
                     self.activity_seen=json!(items.iter().take(2048).filter(|(k,v)|k.len()<=1024 && v.as_str().is_some_and(|v|v.len()<=4096)).map(|(k,v)|(k.clone(),v.clone())).collect::<serde_json::Map<_,_>>());
                     self.attention_count=crate::activity::attention_count(&self.activity,&self.activity_seen);self.publish();
-                }
-            }
-            "watch_panes" => {
-                let session=value["session"].as_str().unwrap_or("").to_owned();
-                let ids:Vec<String>=value["ids"].as_array().into_iter().flatten().filter_map(Value::as_str)
-                    .filter(|id|self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==*id)))
-                    .take(8).map(str::to_owned).collect();
-                let key=(session.clone(),ids.clone());
-                if self.pane_watch_key==key {return Ok(());}
-                self.pane_cancel.send_modify(|generation|*generation+=1);
-                self.pane_watch_key=Default::default();
-                while self.pane_rx.try_recv().is_ok() {}
-                if self.phase=="connected" && session==self.selected_session && !self.paused {
-                    self.pane_watch_key=key;
-                    for id in ids {self.pane_watches.push(pane_watch(self.endpoint.clone().context("no server")?,session.clone(),id,self.pane_tx.clone(),self.pane_cancel.subscribe()));}
                 }
             }
             "peek" => {
@@ -1323,7 +1305,7 @@ impl Actor {
                 if value["session"].is_string() && (!self.visible || self.paused || self.phase!="connected"
                     || value["session"]!=self.selected_session || value["block"]!=self.selected_block
                     || value["navigationId"].as_u64()!=Some(self.navigation_id)) {return Ok(());}
-                self.take_selected().await?;
+                if !self.controlled {self.take_selected().await?;}
                 if let (Some(columns),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
                     && columns>0 && rows>0 {
                     self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"resize",
@@ -1587,58 +1569,6 @@ async fn read_cached(panes:&mut BTreeMap<String,CachedPane>)->(String,Result<Vec
     let reads=panes.iter_mut().map(|(id,pane)|Box::pin(async move {(id.clone(),pane.data.read().await)}));
     futures_util::future::select_all(reads).await.0
 }
-// Read-only live subscriptions for simultaneous pane display. Each future is
-// polled on the actor's runtime, preserving Ghostty's thread affinity.
-fn pane_watch(endpoint:Endpoint,session:String,id:String,tx:mpsc::Sender<PaneUpdate>,mut canceled:watch::Receiver<u64>)->PaneWatch {
-    Box::pin(async move {
-        let mut backoff=1;
-        loop {
-            let started=tokio::time::Instant::now();
-            let result=async {
-                let handshake=tokio::time::timeout(Duration::from_secs(30),async {
-                    let mut control=Control::connect(endpoint.clone(),None,Trace::default()).await?;
-                    control.call("client.set_label",json!({"label":"rex-android-split"})).await?;
-                    control.attach(&session).await?;
-                    let data=Data::open(&endpoint,&mut control,&session,&id,Trace::default()).await?;
-                    Ok::<_,anyhow::Error>((control,data))
-                });
-                let (mut control,mut data)=tokio::select! {
-                    _=canceled.changed()=>return Ok(()),
-                    result=handshake=>result.context("split pane handshake timed out")??,
-                };
-                let mut replica=Replica::new(data.nonce);
-                let mut dirty=false;
-                let mut render=tokio::time::interval(Duration::from_millis(100));
-                render.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-                let mut heartbeat=tokio::time::interval(Duration::from_secs(20));heartbeat.tick().await;
-                loop {
-                    tokio::select! {
-                        _=canceled.changed()=>{
-                            let _=tokio::time::timeout(Duration::from_secs(2),async {let _=data.close().await;let _=control.close().await;}).await;
-                            return Ok(());
-                        },
-                        chunk=data.read()=>{replica.feed(&chunk?)?;replica.events.clear();dirty=true;},
-                        message=control.next_message()=>{message?;},
-                        _=render.tick(),if dirty=>{
-                            if replica.ready() {
-                                let frame=frame_json(replica.terminal()?.frame()?);
-                                tx.send((session.clone(),id.clone(),frame)).await.context("pane receiver closed")?;
-                                dirty=false;
-                            }
-                        },
-                        _=heartbeat.tick()=>{control.ping().await?;data.ping().await?;},
-                    }
-                }
-                #[allow(unreachable_code)] Ok::<(),anyhow::Error>(())
-            }.await;
-            if tx.is_closed() || result.is_ok() {return;}
-            if result.is_err() && endpoint.ssh_blocked() {return;}
-            if started.elapsed()>=Duration::from_secs(30) {backoff=1;}
-            tokio::select! {_=canceled.changed()=>return,_=tokio::time::sleep(Duration::from_secs(backoff))=>{}}
-            backoff=(backoff*2).min(30);
-        }
-    })
-}
 fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> PreviewTask {
     Box::pin(async move {
         tokio::time::timeout(Duration::from_secs(5), async {
@@ -1754,9 +1684,9 @@ fn program_directory(process: &Value) -> String {
         .collect()
 }
 fn program_task(mut endpoint: Endpoint, session: String, ids: Vec<String>) -> ProgramTask {
-    endpoint.timeout=Duration::from_secs(1);
+    endpoint.timeout=Duration::from_secs(3);
     Box::pin(async move {
-        tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::time::timeout(Duration::from_secs(10), async {
             let mut control = Control::connect(endpoint, None, Trace::default()).await?;
             control
                 .call("client.set_label", json!({"label":"rex-android-programs"}))
@@ -1905,6 +1835,22 @@ fn frame_value(frame: &Frame) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn queued_obsolete_navigation_and_ownership_work_is_skipped() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.navigation_id=7;actor.selected_block="previous".into();
+        actor.latest_navigation.store(10,Ordering::Release);
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        runtime.block_on(async {
+            for kind in ["block","session","take","resize"] {
+                actor.execute_command(json!({"type":kind,"id":"obsolete","navigationId":8})).await;
+                assert_eq!(actor.navigation_id,7);
+                assert_eq!(actor.selected_block,"previous");
+                assert!(actor.error.is_empty(),"obsolete command attempted network work");
+            }
+        });
+    }
     #[test]
     fn short_lived_reconnects_preserve_backoff_until_stable() {
         let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
@@ -2177,7 +2123,7 @@ mod tests {
     }
     #[test]
     #[ignore = "requires an isolated owned Rex server"]
-    fn live_split_streams_update_both_panes_without_taking_ownership() {
+    fn live_recent_panes_reuse_streams_and_visibility_preserves_connection() {
         let server=std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
         let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let mut writer=runtime.block_on(Control::connect(Endpoint::new(&server,Duration::from_secs(5)).unwrap(),None,Trace::default())).unwrap();
@@ -2191,38 +2137,26 @@ mod tests {
             runtime.block_on(writer.attach(id)).unwrap();
             let app=Session::spawn().unwrap();app.command(json!({"type":"connect","server":server})).unwrap();wait(&app,|v|v["phase"]=="connected");
             app.command(json!({"type":"session","id":id,"block":ids[0]})).unwrap();wait(&app,|v|text(v).contains("SPLIT_READY"));
-            app.command(json!({"type":"watch_panes","session":id,"ids":ids})).unwrap();
-            let deadline=std::time::Instant::now()+Duration::from_secs(15);
-            let mut ready=BTreeSet::new();
-            while ready.len()<2 {
-                let state:Value=serde_json::from_str(&app.poll(0).unwrap()).unwrap();
-                for pane in &ids {
-                    if state["previews"][pane.as_str().unwrap()].is_object() {ready.insert(pane.as_str().unwrap().to_owned());}
-                }
-                assert_eq!(state["controlled"],false);
-                assert!(std::time::Instant::now()<deadline,"both split panes did not receive snapshots");
-                std::thread::sleep(Duration::from_millis(20));
-            }
-            for (index,pane) in ids.iter().enumerate() {
-                let marker=format!("LIVE_SPLIT_{index}");
-                runtime.block_on(writer.terminal(id,pane.as_str().unwrap(),"write",json!({"data":format!("\n{marker}\n")}))).unwrap();
-                wait(&app,|v| {
-                    let mut frame=json!({});frame["screen"]=v["previews"][pane.as_str().unwrap()].clone();
-                    text(&frame).contains(&marker)
-                });
-            }
             rex_core::diagnostics::set_enabled(true);
             let hits=rex_core::diagnostics::snapshot().matches("reused live pane data channel").count();
             app.command(json!({"type":"block","id":ids[1],"navigationId":41})).unwrap();wait(&app,|v|v["selectedBlock"]==ids[1] && v["screen"].is_object());
             app.command(json!({"type":"block","id":ids[0],"navigationId":42})).unwrap();wait(&app,|v|v["selectedBlock"]==ids[0] && v["screen"].is_object());
             assert!(rex_core::diagnostics::snapshot().matches("reused live pane data channel").count()>hits,"revisiting a pane opened a new data channel");
+            for nav in 100..110 {
+                app.command(json!({"type":"block","id":ids[nav as usize%2],"navigationId":nav})).unwrap();
+            }
+            let final_pane=&ids[1];
+            wait(&app,|v|v["navigationId"]==109 && v["selectedBlock"]==*final_pane && v["screen"].is_object());
+            std::thread::sleep(Duration::from_millis(300));
+            let final_state:Value=serde_json::from_str(&app.poll(0).unwrap()).unwrap();
+            assert_eq!(final_state["selectedBlock"],*final_pane);
+            assert_eq!(final_state["navigationId"],109);
             rex_core::diagnostics::set_enabled(false);
             app.command(json!({"type":"visibility","visible":false})).unwrap();
             std::thread::sleep(Duration::from_millis(200));
             let epoch=wait(&app,|v|v["phase"]=="connected")["connectionEpoch"].clone();
             app.command(json!({"type":"visibility","visible":true})).unwrap();
             assert_eq!(wait(&app,|v|v["phase"]=="connected")["connectionEpoch"],epoch);
-            app.command(json!({"type":"watch_panes","session":id,"ids":[]})).unwrap();
             std::thread::sleep(Duration::from_millis(250));
             app.command(json!({"type":"disconnect"})).unwrap();wait(&app,|v|v["phase"]=="disconnected");
         }));

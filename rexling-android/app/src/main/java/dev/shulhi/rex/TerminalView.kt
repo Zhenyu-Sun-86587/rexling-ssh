@@ -108,6 +108,9 @@ class TerminalView(context: Context) : View(context) {
         set(value) {if(field!=value) {field=value;inputGeneration++;if(!value) composing="";(context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)}}
     private val acceptsInput: Boolean get()=interactive && (controlled || inputAvailable)
     private var inputGeneration=0L
+    private var imeConnectionSerial=0L
+    var secureKeyboard: Boolean=false
+        set(value) {if(field!=value) {field=value;if(!textInput) {inputGeneration++;composing="";(context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)}}}
     var textInput: Boolean = false
         set(value) {
             if(field==value) return
@@ -164,15 +167,10 @@ class TerminalView(context: Context) : View(context) {
         desiredCellWidth=grid.cellWidth;desiredCellHeight=grid.cellHeight;desiredTextSize=paint.textSize
         configureRendering();reportDimensions()
     }
-    var fitToPane: Boolean=false
-        set(value) {if(field!=value) {field=value;configureRendering();invalidate()}}
     private fun configureRendering() {
-        // Split tiles fit the current grid; PTY resize still uses the requested font metrics.
-        val frame=screen
-        val scale=if(fitToPane && frame!=null && contentWidth>0 && contentHeight>0)
-            minOf(1f,contentWidth/(frame.columns*desiredCellWidth).coerceAtLeast(1f),contentHeight/(frame.rows*desiredCellHeight).coerceAtLeast(1f)) else 1f
-        val fitted=desiredCellWidth*scale
-        val size=desiredTextSize*scale
+        // The requested font stays fixed; the canonical PTY resize reflows text.
+        val fitted=desiredCellWidth
+        val size=desiredTextSize
         if(cellWidth==fitted && paint.textSize==size) return
         cellWidth=fitted;paint.textSize=size;paint.typeface=fonts.regular;paint.textScaleX=1f
         paint.textScaleX=fitted/paint.measureText("M").coerceAtLeast(.01f)
@@ -539,22 +537,23 @@ class TerminalView(context: Context) : View(context) {
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         if (!acceptsInput) {DevelopLog.event("ime","create blocked interactive=$interactive owned=$controlled available=$inputAvailable");return null}
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_NORMAL or
-            if(textInput) (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) else (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+            if(textInput) (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT) else (InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or if(secureKeyboard) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_NORMAL)
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
-        outAttrs.initialSelStart=if(textInput) 0 else -1;outAttrs.initialSelEnd=outAttrs.initialSelStart
+        outAttrs.initialSelStart=if(!textInput && secureKeyboard) -1 else 0;outAttrs.initialSelEnd=outAttrs.initialSelStart
         outAttrs.contentMimeTypes=imageMimeTypes.copyOf()
         val imageTarget=imageInputTarget()
         val generation=inputGeneration
-        DevelopLog.event("ime","create textMode=$textInput generation=$generation owned=$controlled available=$inputAvailable focused=${hasFocus()}")
+        val connectionId=++imeConnectionSerial
+        DevelopLog.event("ime","create view=${System.identityHashCode(this)} connection=$connectionId textMode=$textInput secure=$secureKeyboard generation=$generation owned=$controlled available=$inputAvailable focused=${hasFocus()}")
         // Preserve the upstream dummy editor for terminal IMEs. Never call the
         // BaseInputConnection composing methods here: dummy mode synthesizes key
         // events and clears its buffer, which loses composed text in this view.
-        if(!textInput) return object : BaseInputConnection(this,false) {
+        if(!textInput && secureKeyboard) return object : BaseInputConnection(this,false) {
             private var closed=false
             private var preedit=""
             private fun valid(): Boolean {
                 val valid=!closed && acceptsInput && generation==inputGeneration && imageTarget==imageInputTarget()
-                if(!valid) DevelopLog.event("ime","terminal callback rejected closed=$closed available=$acceptsInput generation=$generation/$inputGeneration targetMatches=${imageTarget==imageInputTarget()}")
+                if(!valid) DevelopLog.event("ime","terminal callback rejected connection=$connectionId closed=$closed available=$acceptsInput generation=$generation/$inputGeneration targetMatches=${imageTarget==imageInputTarget()}")
                 return valid
             }
             private fun submit(text: String) {if(text.isNotEmpty()) {DevelopLog.event("ime","terminal submit chars=${text.length}");onInput(text.replace("\r\n","\r").replace("\n","\r"))}}
@@ -567,6 +566,7 @@ class TerminalView(context: Context) : View(context) {
                 preedit=text?.toString().orEmpty();composing=preedit;invalidate();return true
             }
             override fun finishComposingText(): Boolean {
+                if(closed) return false // BaseInputConnection.closeConnection calls this after closure.
                 if(!valid()) return false
                 val text=preedit;preedit="";composing="";submit(text);invalidate();return true
             }
@@ -598,7 +598,7 @@ class TerminalView(context: Context) : View(context) {
                 val release={if(granted && released.compareAndSet(false,true)) runCatching {info.releasePermission()};Unit}
                 return try {onImage(info.contentUri,release).also {if(!it) release()}} catch(_: Exception) {release();false}
             }
-            override fun closeConnection() {closed=true;if(generation==inputGeneration) {composing="";invalidate()};super.closeConnection()}
+            override fun closeConnection() {DevelopLog.event("ime","close connection=$connectionId mode=secure");closed=true;if(generation==inputGeneration) {composing="";invalidate()};super.closeConnection()}
         }
         // A real editable buffer lets CJK IMEs inspect and replace their preedit text.
         // Only committed text is sent to the remote terminal; no prompt text is exposed.
@@ -608,7 +608,7 @@ class TerminalView(context: Context) : View(context) {
             private var closed=false
             private fun valid(): Boolean {
                 val valid=!closed && acceptsInput && generation==inputGeneration && imageTarget==imageInputTarget()
-                if(!valid) DevelopLog.event("ime","text callback rejected closed=$closed available=$acceptsInput generation=$generation/$inputGeneration targetMatches=${imageTarget==imageInputTarget()}")
+                if(!valid) DevelopLog.event("ime","text callback rejected connection=$connectionId closed=$closed available=$acceptsInput generation=$generation/$inputGeneration targetMatches=${imageTarget==imageInputTarget()}")
                 return valid
             }
             private fun refreshComposition() {
@@ -645,6 +645,7 @@ class TerminalView(context: Context) : View(context) {
                 super.setComposingText(text ?: "",newCursorPosition);refreshComposition();return true
             }
             override fun finishComposingText(): Boolean {
+                if(closed) return false // BaseInputConnection.closeConnection calls this after closure.
                 if(!valid()) return false
                 DevelopLog.event("ime","text finish composing chars=${editBuffer.length}")
                 super.finishComposingText();sendBuffer();return true
@@ -673,6 +674,7 @@ class TerminalView(context: Context) : View(context) {
             }
             override fun performEditorAction(actionCode: Int): Boolean {if(!valid()) return false;finishComposingText();onInput("\r");return true}
             override fun closeConnection() {
+                DevelopLog.event("ime","close connection=$connectionId mode=text composingChars=${editBuffer.length}")
                 closed=true
                 if(generation==inputGeneration) {composing="";invalidate()}
                 super.closeConnection()

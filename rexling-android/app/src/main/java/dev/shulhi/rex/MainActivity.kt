@@ -117,7 +117,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val changingSession=navigation.session!=null && navigation.session!=state.selectedSession
     val windows=if(changingSession) emptyList() else client.orderedWindows(state)
     val window=windows.firstOrNull {w->w.blocks.any {it.id==displayedBlock}} ?: windows.firstOrNull {it.blocks.isNotEmpty()}
-    var splitPanes by rememberSaveable {mutableStateOf(true)}
     val ready=state.connected && !navigation.pending && !state.creating
     val keyTarget=client.keyTarget()
     val terminalHaze=remember {HazeState()}
@@ -193,8 +192,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
-    val floating=if(model.minimizeFloatingPanes && !splitPanes) window?.floatingPanes().orEmpty() else emptyList()
-    val carouselBlocks=if(splitPanes) blocks else window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
+    val floating=if(model.minimizeFloatingPanes) window?.floatingPanes().orEmpty() else emptyList()
+    val carouselBlocks= window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
     val floatingActive=floating.any {it.id==chosen}
     var hiddenFloating by rememberSaveable(displayedSession,window?.id) {mutableStateOf("")}
     val controlled=state.controlled && ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen)
@@ -222,13 +221,14 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
         client.openPreferredTerminal();client.rememberCurrentTerminal()
     }
-    LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock,carouselBlocks,splitPanes) {
+    LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock,carouselBlocks) {
         val blocks=carouselBlocks
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
-        if(!splitPanes && index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
+        if(index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
     }
     LaunchedEffect(ready,chosen,client.hasScreen,hiddenFloating) {if(ready && (!floatingActive || hiddenFloating!=chosen)) client.claimActivePane()}
-    LaunchedEffect(controlled,client.keyboardRequest,terminalView,textKeyboard) {
+    LaunchedEffect(controlled,client.keyboardRequest,terminalView,textKeyboard,model.secureTerminalKeyboard) {
+        terminalView?.secureKeyboard=model.secureTerminalKeyboard
         terminalView?.textInput=textKeyboard
         if(controlled) {
             terminalView?.requestFocus()
@@ -288,6 +288,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             }
                         }
                     }
+                    if(client.navigationDelayed && navigation.pending) Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text("Waiting for selected pane…",Modifier.weight(1f),fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick=client::retryNavigation) {Text("Retry")}
+                    }
                     if(blocks.isEmpty()) ConnectionNotice(state.phase,model.networkAvailable,client::retryNow)
                     if(blocks.isEmpty() && state.connected && !state.creating && state.sessions.isEmpty()) {
                         EmptySessionContent(model.activeServer.label,ready,{newSession=true},Modifier.weight(1f).fillMaxWidth())
@@ -298,7 +302,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         Box(Modifier.weight(1f).fillMaxWidth().padding(top=3.dp,bottom=3.dp)) {
                         if(!floatingActive || hiddenFloating!=chosen) LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},{terminalView=it},
-                            Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,hazeState=terminalHaze,captureBackdrop=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null,onImage=imageCommit,onPaste=::pasteClipboard,split=splitPanes)
+                            Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,hazeState=terminalHaze,captureBackdrop=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null,onImage=imageCommit,onPaste=::pasteClipboard)
                         if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                             Text("Floating panes minimized",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -318,10 +322,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             fontFamily=MonoUi,fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.End).padding(horizontal=10.dp))
-                    if(blocks.size>1 && state.connected) Row(Modifier.fillMaxWidth().padding(horizontal=12.dp),verticalAlignment=Alignment.CenterVertically) {
-                        Text(if(splitPanes && blocks.size>8) "Pane view (8 of ${blocks.size})" else "Pane view",Modifier.weight(1f),fontSize=11.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick={splitPanes=!splitPanes}) {Text(if(splitPanes) "Split" else "Swipe",maxLines=1)}
-                    }
                     if(state.connected || state.phase=="preview") {
                         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
                             TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,animateWorking=!model.activityVisible,
@@ -363,6 +363,7 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
         onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
         minimizeFloatingPanes=model.minimizeFloatingPanes,onMinimizeFloatingPanes=model::changeMinimizeFloatingPanes,
+        secureTerminalKeyboard=model.secureTerminalKeyboard,onSecureTerminalKeyboard=model::changeSecureTerminalKeyboard,
         developMode=model.developMode,onDevelopMode=model::changeDevelopMode,
         onExportLogs={diagnosticExport.launch("rexling-build${BuildConfig.VERSION_CODE}-logs.txt")},
         onCopyLogs={diagnosticScope.launch {
@@ -476,16 +477,10 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
-    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},split: Boolean=false) {
+    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false}) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
-    val current by client.chromeState.collectAsState()
-    val ids=if(split && blocks.size>1) splitPaneBlocks(blocks,chosen).map {it.id} else emptyList()
-    LaunchedEffect(client,current.connectionEpoch,current.selectedSession,current.connected,ids) {client.watchPanes(ids)}
-    DisposableEffect(client) {onDispose {client.watchPanes(emptyList())}}
-    if(split && blocks.size>1) TerminalSplit(client,blocks,chosen,liveBlock,screen,controlled,fontSize,programs,titles,
-        onSelect,onView,onInput,onScroll,onWheel,onActivate,onDimensions,onImage,onPaste,modifier)
-    else TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
+    TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
         onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop)
 }
 

@@ -99,11 +99,13 @@ impl PendingCall {
     }
 }
 struct WaitingCall {
+    started:tokio::time::Instant,
     method: String,
     sender: oneshot::Sender<Result<Value>>,
 }
 
 pub struct Control {
+    diagnostic_id:u64,
     ws: Ws,
     endpoint: Endpoint,
     welcome: Value,
@@ -161,8 +163,11 @@ impl Control {
                 .is_some_and(|n| n >= 65536),
             "invalid message limit"
         );
+        static NEXT:std::sync::atomic::AtomicU64=std::sync::atomic::AtomicU64::new(1);
+        let diagnostic_id=NEXT.fetch_add(1,std::sync::atomic::Ordering::Relaxed);
+        crate::diagnostics::record("rpc",format!("connection={diagnostic_id} hello accepted"));
         Ok(Self {
-            ws,
+            diagnostic_id,ws,
             endpoint,
             welcome,
             next_id: 1,
@@ -214,7 +219,7 @@ impl Control {
                 let waiting = self.pending.remove(id).context("unexpected response ID")?;
                 let result = if let Some(error) = message.get("error").filter(|e| !e.is_null()) {
                     Err(RpcError {
-                        method: waiting.method,
+                        method: waiting.method.clone(),
                         code: error["code"].as_str().unwrap_or("").into(),
                         message: error["message"]
                             .as_str()
@@ -226,7 +231,7 @@ impl Control {
                 } else {
                     Ok(message.get("payload").cloned().unwrap_or(Value::Null))
                 };
-                crate::diagnostics::record("rpc",format!("reply id={id} success={}",result.is_ok()));
+                crate::diagnostics::record("rpc",format!("connection={} reply id={id} method={} success={} rttMs={}",self.diagnostic_id,waiting.method,result.is_ok(),waiting.started.elapsed().as_millis()));
                 // Dropping a waiter does not make a late wire reply invalid.
                 let _ = waiting.sender.send(result);
             }
@@ -247,7 +252,7 @@ impl Control {
         }
         let id = self.next_id.to_string();
         self.next_id += 1;
-        crate::diagnostics::record("rpc",format!("send id={id} method={method} pending={}",self.pending.len()));
+        crate::diagnostics::record("rpc",format!("connection={} send id={id} method={method} pending={}",self.diagnostic_id,self.pending.len()));
         let request = json!({"type":"request","id":id,"method":method,"payload":payload});
         let text = serde_json::to_string(&request)?;
         let max = self.welcome["limits"]["max_message_bytes"]
@@ -263,7 +268,7 @@ impl Control {
         self.pending.insert(
             id.clone(),
             WaitingCall {
-                method: method.into(),
+                started:tokio::time::Instant::now(),method: method.into(),
                 sender,
             },
         );

@@ -16,7 +16,7 @@ import androidx.compose.ui.unit.dp
     shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={},
     arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
     minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},developMode: Boolean=false,onDevelopMode: (Boolean)->Unit={},
-    onCopyLogs: ()->Unit={},onExportLogs: ()->Unit={}) {
+    onCopyLogs: ()->Unit={},onExportLogs: ()->Unit={},secureTerminalKeyboard: Boolean=false,onSecureTerminalKeyboard: (Boolean)->Unit={}) {
     ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxWidth().heightIn(max=680.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             SettingsHeader("Preferences","Close preferences",onClose)
@@ -54,6 +54,15 @@ import androidx.compose.ui.unit.dp
                                 label={Text(if(gesture==ControlShortcutGesture.HOLD) "Hold" else "Double tap",style=SettingsType.row)})
                         }
                     }
+                }
+                SettingsDivider()
+                Row(Modifier.fillMaxWidth().toggleable(value=secureTerminalKeyboard,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onSecureTerminalKeyboard)
+                    .padding(horizontal=16.dp,vertical=12.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Secure terminal keyboard",style=SettingsType.row)
+                        Text("Use the device's password-style keyboard instead of the normal system keyboard.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(secureTerminalKeyboard,onCheckedChange=null)
                 }
                 SettingsDivider()
                 SettingsRow("Neovim shortcuts","Customize the floating key menu",SettingsGlyph.COMMAND,onNeovim)

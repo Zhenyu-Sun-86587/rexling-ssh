@@ -213,6 +213,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
     val connectedCount: Int get()=serverStatuses.values.count {it.connected}
 
+    var secureTerminalKeyboard by mutableStateOf(preferences.getBoolean("secure_terminal_keyboard",false))
+        private set
+    fun changeSecureTerminalKeyboard(value: Boolean) {secureTerminalKeyboard=value;preferences.edit {putBoolean("secure_terminal_keyboard",value)}}
     var developMode by mutableStateOf(preferences.getBoolean("develop_mode",false))
         private set
     fun changeDevelopMode(value: Boolean) {

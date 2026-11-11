@@ -14,6 +14,14 @@ class NavigationRequestTest {
         assertFalse(request.matchesTarget(current.copy(screen=null)))
         assertFalse(request.matchesTarget(current.copy(phase="disconnected")))
     }
+    @Test fun slowOlderRepliesAndUnrelatedErrorsNeverRevertLatestIntent() {
+        val request=NavigationRequest(session="s",block="last",id=9)
+        for(old in listOf(
+            AppState(phase="connected",selectedSession="s",selectedBlock="previous",navigationId=8,screen=emptyScreen),
+            AppState(phase="connected",selectedSession="s",selectedBlock="previous",navigationId=8,error="older RPC timeout")
+        )) assertEquals(request,request.acknowledge(old))
+        assertFalse(request.acknowledge(AppState(phase="connected",selectedSession="s",selectedBlock="last",navigationId=9,screen=emptyScreen)).pending)
+    }
     @Test fun anEarlierTabReplyCannotClearTheLatestTap() {
         val pending = NavigationRequest(block = "latest")
         val oldReply = AppState(phase = "connected", selectedBlock = "earlier", screen = emptyScreen)
@@ -31,7 +39,7 @@ class NavigationRequestTest {
         val prior = AppState(phase = "connected", selectedSession = "old")
         assertEquals(pending, pending.acknowledge(prior.copy(revision = 3)))
         assertFalse(pending.acknowledge(prior.copy(selectedSession = "new")).pending)
-        assertFalse(pending.acknowledge(prior.copy(error = "session closed")).pending)
+        assertTrue(pending.acknowledge(prior.copy(error = "older request failed")).pending)
         assertFalse(pending.acknowledge(AppState()).pending)
     }
     @Test fun returningToTheOriginalTabWaitsForItsOwnAcknowledgement() {

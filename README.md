@@ -57,20 +57,23 @@ Rexling SSH remains an independent, unofficial client.
 
 The keyboard icon opens terminal input without suggestions. The adjacent **中** button
 opens normal text input with Chinese composition and suggestions. Tap the other button
-to switch modes, or tap the active mode again to hide the keyboard. The terminal button retains the upstream stateless visible-password IME mode; the **中**
-button uses normal text with a local editable buffer for Chinese composition. Typing requests ownership when needed; it does not
+to switch modes, or tap the active mode again to hide the keyboard. The terminal button defaults to the normal system keyboard with suggestions disabled, using
+the same editable connection as Chinese mode. **Preferences → Keyboard → Secure terminal
+keyboard** optionally restores the device's password-style keyboard and dummy editor. The
+**中** button enables composition and suggestions independently. Typing requests ownership when needed; it does not
 silently discard the first key. `RexInput` logs target readiness and character counts, never
-input contents. Navigation unlocks after 1.5 seconds; buffered keys are delivered only to
-the acknowledged intended pane, with a bounded wait and an explicit error on expiry.
-Optional program metadata requests have a one-second per-request deadline and a bounded
-five-second batch. A failed batch retries after 30 seconds on its independent connection.
+input contents. Navigation retains the latest requested pane across slow replies and reconnects. After
+1.5 seconds it shows a waiting hint and Retry action without reverting to an earlier pane.
+Buffered keys go only to the acknowledged intended pane, with a bounded wait and an
+explicit error on expiry. Superseded navigation and stale ownership/resize commands are
+skipped before they issue RPCs.
+Optional program metadata requests have a three-second per-request deadline and a bounded
+ten-second batch. Successful batches refresh every 15 seconds; a failed batch retries after
+30 seconds on its independent connection.
 
-Multiple panes default to **Split**: portrait stacks panes vertically and landscape places
-them side by side. Each visible tile has its own live read-only subscription; tap its title
-or content to focus it for input. Only the focused pane claims ownership and resizes its PTY.
-Up to eight panes are displayed at once, including the selected pane. Use **Pane view** to
-switch to the original **Swipe** mode. Split tiles fit the existing terminal grid while the
-focused pane reflows to its available space.
+Panes use the original swipe carousel. Simultaneous Split display and its extra live
+subscriptions have been removed. Creating server-side split panes remains supported;
+each pane is viewed separately on the phone.
 
 Brief background visits retain the existing connections for **10 minutes**, release input
 ownership and stop UI rendering. Returning within this grace period reuses the connection
@@ -81,7 +84,8 @@ a connection must remain stable for 30 seconds before resetting it.
 In **Preferences → Development**, enable **Develop mode** before reproducing an issue.
 The app saves bounded diagnostic logs privately across restarts. **Copy logs** copies recent
 Android and native events; **Export logs** saves the complete retained log to a text file.
-Logs include IME acceptance/rejection, input counts and acknowledgements, navigation,
+Logs include IME connection identity and acceptance/rejection, input sequence numbers,
+queue/ack timing, navigation,
 connection epochs, RPC status, network changes and WebSocket Ping/Pong. They exclude
 keystroke text, terminal contents and credentials. Logging is off by default.
 
