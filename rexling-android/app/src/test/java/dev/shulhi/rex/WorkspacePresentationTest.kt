@@ -32,7 +32,7 @@ class WorkspacePresentationTest {
         val cache=WorkspacePresentation()
         for(program in listOf(null,ProgramIdentity.Terminal)) {
             val chrome=cache.present(snapshot(program=program))
-            assertEquals(ProgramIdentity.Loading,chrome.programs["p"])
+            assertEquals(ProgramIdentity.Terminal,chrome.programs["p"])
             assertEquals("Loading…",chrome.programs.getValue("p").tabTitle("window-123abc","shell",1))
         }
         val fish=ProgramIdentity.resolve(listOf("fish"))
@@ -51,10 +51,10 @@ class WorkspacePresentationTest {
     @Test fun sessionsAndDeletedPanesCannotReuseUnrelatedMetadata() {
         val cache=WorkspacePresentation()
         cache.observe(snapshot(program=codex,title="Task"))
-        assertEquals(ProgramIdentity.Loading,cache.present(snapshot(session="different")).programs["p"])
+        assertEquals(ProgramIdentity.Terminal,cache.present(snapshot(session="different")).programs["p"])
         val removed=snapshot().copy(selectedBlock="q",windows=listOf(WindowItem("w","Window",listOf(BlockItem("q","shell")))))
         cache.observe(removed)
-        assertEquals(ProgramIdentity.Loading,cache.present(snapshot()).programs["p"])
+        assertEquals(ProgramIdentity.Terminal,cache.present(snapshot()).programs["p"])
     }
     @Test fun repeatedFramesDoNotDirtyCacheAndAnimatedTitlesDoNotRequestImmediateSave() {
         val cache=WorkspacePresentation()
@@ -75,12 +75,12 @@ class WorkspacePresentationTest {
         assertEquals(codex,cache.present(snapshot()).programs["p"])
     }
     @Test fun persistenceIsBoundedAndMalformedEntriesFailSafely() {
-        assertEquals(ProgramIdentity.Loading,WorkspacePresentation.decode("broken").present(snapshot()).programs["p"])
+        assertEquals(ProgramIdentity.Terminal,WorkspacePresentation.decode("broken").present(snapshot()).programs["p"])
         val malformed=WorkspacePresentation.decode("""{"s":{"p":{"kind":"NOT_A_PROGRAM","label":"Bad","title":"Task"}}}""")
-        assertEquals(ProgramIdentity.Loading,malformed.present(snapshot()).programs["p"])
+        assertEquals(ProgramIdentity.Terminal,malformed.present(snapshot()).programs["p"])
         val cache=WorkspacePresentation()
         repeat(10) {cache.observe(snapshot(session="s$it",program=codex))}
-        assertEquals(ProgramIdentity.Loading,cache.present(snapshot(session="s0")).programs["p"])
+        assertEquals(ProgramIdentity.Terminal,cache.present(snapshot(session="s0")).programs["p"])
         assertEquals(codex,cache.present(snapshot(session="s9")).programs["p"])
         val many=snapshot(program=codex).copy(windows=listOf(WindowItem("w","Window",List(100) {BlockItem("p$it","shell")})),selectedBlock="p99",programs=(0..99).associate {"p$it" to codex})
         cache.observe(many)
