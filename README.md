@@ -313,3 +313,7 @@ A docked pane’s menu offers **Float pane**. A floating pane’s menu offers **
 ### Program icons
 
 Rexling ships 155 vector program tiles and recognizes executable aliases for tools such as Yazi, Docker/Podman, Kubernetes, GitHub/GitLab CLI, Cargo, Go, Homebrew, PostgreSQL/SQLite, Ollama, Gemini, OpenCode and Antigravity. Icons follow Rex’s executable metadata, including full paths and interpreter wrappers; custom tab/pane titles do not change program identity. Unknown programs keep the terminal fallback.
+
+### Terminal images
+
+Rexling renders the Kitty graphics protocol through libghostty: PNG/RGB/RGBA images, transparency, image layers/cropping, Unicode placeholders and animated images. Graphics follow terminal scrolling and pane changes and restore from Rex snapshots on reconnect. Remote file-backed image transfers are handled by Rex; the phone does not open server-supplied local file paths. Image storage is limited to 16 MiB per terminal screen, decoded image dimensions to 8192×8192, and the Android bitmap cache to 32 MiB per terminal view.

@@ -36,6 +36,7 @@ class TerminalView(context: Context) : View(context) {
     private var selection: TerminalSelection?=null
     private var selectionMode: ActionMode?=null
     private var selectionLink: TerminalLink?=null
+    private var selectionInputTarget: String?=null
     private var selectionTouch=false
     private var moveSelectionAnchor=false
     private var pressedLink: TerminalLink?=null
@@ -94,6 +95,7 @@ class TerminalView(context: Context) : View(context) {
             if (field != value) {
                 field = value
                 if (!value) composing = ""
+                selectionMode?.invalidate()
                 (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
             }
         }
@@ -102,6 +104,7 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
     private val fonts = TerminalFonts(context)
+    private val terminalImages=TerminalImages()
     private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>)
     private val linkIndex=TerminalLinks.Index()
     private var recorded= arrayOfNulls<RecordedRow>(0)
@@ -177,6 +180,7 @@ class TerminalView(context: Context) : View(context) {
         if(geometry!=rowGeometry) {clearRows();recorded=arrayOfNulls(visibleRows);rowGeometry=geometry}
         android.os.Trace.beginSection("Rexlink.linkIndex")
         val rowLinks=try {linkIndex.update(frame)} finally {android.os.Trace.endSection()}
+        if(frame.images.isEmpty()) {
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
             var row=recorded[y]
@@ -198,6 +202,26 @@ class TerminalView(context: Context) : View(context) {
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
             row.recording.draw(canvas);canvas.restore()
+        }
+        } else {
+            fun images(layer: Int)=terminalImages.draw(canvas,frame,layer,insetHorizontal,insetTop,width-insetHorizontal,height-insetBottom,cellWidth,cellHeight)
+            fun rows(pass: Int) {
+                for(y in 0 until visibleRows) {
+                    val origin=if(y==0) 0f else insetTop+y*cellHeight
+                    val top=if(y==0) insetTop else 0f
+                    val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
+                    val save=canvas.save();canvas.translate(0f,origin)
+                    drawRow(canvas,frame.lines[y],visibleColumns,top,bottom,pass)
+                    if(pass==2) {
+                        canvas.save();canvas.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
+                        backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
+                        for(link in rowLinks[y]) canvas.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
+                        canvas.restore()
+                    }
+                    canvas.restoreToCount(save)
+                }
+            }
+            images(0);rows(1);images(1);rows(2);images(2)
         }
         canvas.save()
         canvas.clipRect(insetHorizontal,insetTop,width-insetHorizontal,height-insetBottom)
@@ -231,10 +255,10 @@ class TerminalView(context: Context) : View(context) {
         if(token!=null) android.os.Trace.endSection()
         android.os.Trace.endSection()
     }
-    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float) {
+    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float,pass: Int=0) {
         var start=0;var end=0;var color=0
         fun flush() {
-            if(end<=start || start>=columns || color==palette.background) return
+            if(pass==2 || end<=start || start>=columns || color==palette.background) return
             backgroundPaint.color=color
             canvas.drawRect(if(start==0) 0f else insetHorizontal+start*cellWidth,0f,
                 if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth,bottom,backgroundPaint)
@@ -246,12 +270,13 @@ class TerminalView(context: Context) : View(context) {
             end=cell.x+max(1,cell.width)
         }
         flush()
+        if(pass==1) return
         canvas.save();canvas.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
         canvas.translate(insetHorizontal,top)
         var index=0
         while(index<cells.size) {
             val cell=cells[index++]
-            if(cell.x>=columns || cell.width==0 || cell.text.isEmpty() || cell.attributes and 16!=0) continue
+            if(cell.x>=columns || cell.width==0 || cell.text.isEmpty() || cell.text.codePointAt(0)==0x10eeee || cell.attributes and 16!=0) continue
             val style=cell.attributes and 3
             paint.typeface=fonts.typefaceFor(style,cell.text)
             paint.color=if(cell.attributes and 8!=0) palette.background(cell) else palette.foreground(cell)
@@ -300,7 +325,7 @@ class TerminalView(context: Context) : View(context) {
             postInvalidateOnAnimation()
         }
     }
-    override fun onDetachedFromWindow() {clearRows();clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
+    override fun onDetachedFromWindow() {terminalImages.clear();clearRows();clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if(selection!=null && event.actionMasked==MotionEvent.ACTION_SCROLL) return true
         if(interactive && event.actionMasked==MotionEvent.ACTION_SCROLL) {
@@ -419,7 +444,7 @@ class TerminalView(context: Context) : View(context) {
     }
     private fun clearSelection() {
         removeCallbacks(longPress)
-        selection=null;selectionLink=null;selectionTouch=false
+        selection=null;selectionLink=null;selectionInputTarget=null;selectionTouch=false
         val mode=selectionMode;selectionMode=null;mode?.finish();invalidate()
     }
     private fun selectionEvent(event: MotionEvent): Boolean {
@@ -450,19 +475,29 @@ class TerminalView(context: Context) : View(context) {
         }
         return true
     }
+    private fun canPasteSelection(): Boolean = selection!=null && controlled && interactive &&
+        selectionInputTarget==imageInputTarget() && (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).hasPrimaryClip()
+    internal fun pasteSelection(): Boolean {
+        if(!canPasteSelection() || !onPaste()) return false
+        clearSelection();return true
+    }
     override fun performLongClick(): Boolean {
         val frame=screen ?: return false
         if(!interactive) return false
+        clearSelection()
         selectionLink=linkAt(pressX,pressY)
         pressedLink=null
         removeCallbacks(longPress);paneGesture.cancel();dragging=false;scrolling=false;scrollFling.abortAnimation();onPaneDrag?.invoke(0f,false)
+        selectionInputTarget=imageInputTarget()
         selection=TerminalSelection(frame,((pressX-insetHorizontal)/cellWidth).toInt(),((pressY-insetTop)/cellHeight).toInt()).also {it.word()}
         selectionTouch=true;moveSelectionAnchor=false;parent?.requestDisallowInterceptTouchEvent(true)
         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
         selectionMode=startActionMode(object: ActionMode.Callback2() {
             override fun onCreateActionMode(mode: ActionMode,menu: Menu): Boolean {
                 menu.add(0,android.R.id.copy,0,"Copy").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-                menu.add(0,android.R.id.selectAll,1,"Select all").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+                menu.add(0,android.R.id.paste,1,"Paste").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                menu.findItem(android.R.id.paste).isVisible=canPasteSelection()
+                menu.add(0,android.R.id.selectAll,2,"Select all").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                 if(selectionLink!=null) {
                     menu.add(0,0x524501,2,"Open link").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
                     menu.add(0,0x524502,3,"Copy link address").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
@@ -471,6 +506,7 @@ class TerminalView(context: Context) : View(context) {
                 return true
             }
             override fun onPrepareActionMode(mode: ActionMode,menu: Menu): Boolean {
+                menu.findItem(android.R.id.paste)?.isVisible=canPasteSelection()
                 for(id in listOf(0x524501,0x524502,0x524503)) menu.findItem(id)?.isVisible=selectionLink!=null
                 return true
             }
@@ -479,13 +515,14 @@ class TerminalView(context: Context) : View(context) {
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Terminal selection",selection?.text().orEmpty()))
                     mode.finish();true
                 }
+                android.R.id.paste -> pasteSelection()
                 android.R.id.selectAll -> {selection?.all();selectionLink=null;invalidate();mode.invalidate();mode.invalidateContentRect();true}
                 0x524501 -> selectedLinkAction(TerminalLinkAction.OPEN)
                 0x524502 -> selectedLinkAction(TerminalLinkAction.COPY_ADDRESS)
                 0x524503 -> selectedLinkAction(TerminalLinkAction.SHARE)
                 else -> false
             }
-            override fun onDestroyActionMode(mode: ActionMode) {if(selectionMode===mode) {selectionMode=null;selection=null;selectionLink=null;invalidate()}}
+            override fun onDestroyActionMode(mode: ActionMode) {if(selectionMode===mode) {selectionMode=null;selection=null;selectionLink=null;selectionInputTarget=null;invalidate()}}
             override fun onGetContentRect(mode: ActionMode,view: View,outRect: android.graphics.Rect) {
                 val selected=selection ?: return super.onGetContentRect(mode,view,outRect)
                 outRect.set((insetHorizontal+selected.first.column*cellWidth).toInt(),(insetTop+selected.first.row*cellHeight).toInt(),
