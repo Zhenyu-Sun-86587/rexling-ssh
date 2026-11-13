@@ -82,7 +82,8 @@ def main():
         env["AR_aarch64_linux_android"] = str(compiler_root / "bin/llvm-ar")
         env["CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"] = str(compiler)
         env["CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS"] = "-C link-arg=-Wl,-z,max-page-size=16384"
-    run(command, cwd=source_root, env=env)
+    # Archive builds must not detect the enclosing Rexling repository's tags.
+    run(command, cwd=source_root, env={**env, "GIT_CEILING_DIRECTORIES": str(cache)})
     env["GHOSTTY_PREFIX"] = str(prefix)
     if args.host_test:
         run([cargo, "test", "--locked", "--workspace", "--all-features", "--manifest-path", ROOT / "Cargo.toml"], cwd=ROOT, env=env)

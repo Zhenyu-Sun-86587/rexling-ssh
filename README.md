@@ -5,6 +5,11 @@ Connect directly to your authenticated Rex server over your private Tailscale ne
 Kotlin/Compose supplies the UI; Rust handles the Rex protocol and JNI; libghostty-vt
 maintains terminal state. No custom bridge, proxy or Rex subprocess is required.
 
+Terminal images use Kitty graphics through libghostty, including PNG/RGB/RGBA,
+transparency, animation and snapshot restore after reconnecting. Long-press the
+terminal keyboard button or use the selection toolbar's Paste action to paste
+text or images through the existing clipboard route.
+
 | Light theme | Dark theme |
 | :---: | :---: |
 | <img src="docs/images/rexlink-android.png" alt="Rexling light theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> | <img src="docs/images/rexlink-android-dark.png" alt="Rexling dark theme showing a Codex session, pane indicator, tabs, and terminal keyboard controls" width="340"> |

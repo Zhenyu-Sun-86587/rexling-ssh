@@ -10,3 +10,4 @@ pub mod upload;
 
 pub mod diagnostics;
 mod socket_driver;
+pub mod graphics;

@@ -21,7 +21,7 @@ pub struct Shared {
     pub revision: u64,
     pub json: String,
     pub activity: Arc<Value>,
-    pub pending_previews: BTreeMap<String, Value>,
+    pub pending_previews: BTreeMap<String, Arc<Frame>>,
     pub frame: Option<Arc<Frame>>,
     pub key: String,
     pub wire: crate::updates::WireBase,
@@ -79,7 +79,7 @@ impl Session {
         value["revision"]=json!(state.revision);
         value["activity"]=state.activity.as_ref().clone();
         value["screen"]=state.frame.as_ref().map_or(Value::Null,|frame|frame_value(frame));
-        value["previews"]=serde_json::to_value(std::mem::take(&mut state.pending_previews))?;
+        value["previews"]=Value::Object(std::mem::take(&mut state.pending_previews).into_iter().map(|(id,frame)|(id,frame_value(&frame))).collect());
         Ok(value.to_string())
     }
 }
@@ -113,7 +113,7 @@ mod shift_enter_tests {
         assert_eq!(input_event(true,SHIFT_ENTER)["type"],"paste");
     }
 }
-type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Value)>>>>>;
+type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Arc<Frame>)>>>>>;
 fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'static str,Value)> {
     ensure!(value["session"].as_str()==Some(session),"The selected session changed");
     let kind=value["type"].as_str().context("terminal action required")?;
@@ -265,7 +265,7 @@ struct Actor {
     process_events: BTreeMap<String, Value>,
     program_refresh: tokio::time::Instant,
     program_suspended: bool,
-    preview_updates: BTreeMap<String, Value>,
+    preview_updates: BTreeMap<String, Arc<Frame>>,
     session_details: Value,
 }
 impl Actor {
@@ -346,6 +346,7 @@ impl Actor {
         self.publish();
         let mut render_at=tokio::time::Instant::now();
         let mut maintenance_at=render_at;
+        let mut animation_at:Option<tokio::time::Instant>=None;
         let mut heartbeat = tokio::time::interval(Duration::from_secs(120));
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         heartbeat.tick().await;
@@ -410,7 +411,7 @@ impl Actor {
                                 pane.replica.events.clear();
                                 if pane.replica.feed(&chunk).is_err() {self.cached_panes.remove(&id);}
                                 else if self.visible && pane.replica.ready() {
-                                    if let Ok(frame)=pane.replica.terminal().and_then(|t|t.frame()) {self.preview_updates.insert(id,frame_json(frame));self.dirty=true;}
+                                    if let Ok(frame)=pane.replica.terminal().and_then(|t|t.frame()) {self.preview_updates.insert(id,Arc::new(frame));self.dirty=true;}
                                 }
                             }
                         },
@@ -474,7 +475,8 @@ impl Actor {
                         Err(_)=>{self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(30);}, // Retry optional metadata at a bounded low rate.
                     }
                 },
-                _=async {if active {tokio::time::sleep_until(if self.dirty && self.visible {render_at}else{maintenance_at}).await;}else{pending::<()>().await;}}=>{
+                _=async {if active {let deadline=if self.dirty && self.visible {render_at}else{maintenance_at};
+                    tokio::time::sleep_until(animation_at.filter(|_|self.visible).map_or(deadline,|image|image.min(deadline))).await;}else{pending::<()>().await;}}=>{
                     let now=tokio::time::Instant::now();
                     render_at=now+Duration::from_millis(16);
                     maintenance_at=now+Duration::from_secs(1);
@@ -505,12 +507,12 @@ impl Actor {
                         self.program_task=Some(program_task(self.endpoint.clone().unwrap(),self.selected_session.clone(),ids));
                         self.program_refresh=tokio::time::Instant::now()+Duration::from_secs(15);
                     }
-                    if self.dirty && self.visible {
-                        self.dirty=false;
+                    if self.visible && (self.dirty || animation_at.is_some_and(|at|at<=now)) {
+                        self.dirty=false;animation_at=None;
                         if !self.preview_updates.is_empty() {self.publish();}
                         if let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {
                             match replica.terminal().and_then(|t|t.frame()) {
-                                Ok(frame)=>{self.screen=Some(Arc::new(frame));self.publish_frame();}
+                                Ok(frame)=>{animation_at=frame.next_image_delay_ms.map(|ms|now+Duration::from_millis(ms));self.screen=Some(Arc::new(frame));self.publish_frame();}
                                 Err(e)=>{self.error=e.to_string();self.publish();}
                             }
                         }
@@ -1587,7 +1589,7 @@ fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Previe
                     while !replica.ready() {
                         replica.feed(&data.read().await?)?;
                     }
-                    let frame = frame_json(replica.terminal()?.frame()?);
+                    let frame = Arc::new(replica.terminal()?.frame()?);
                     let _ = data.close().await;
                     Ok::<_, anyhow::Error>(frame)
                 }
@@ -1811,7 +1813,6 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
 fn rgb(rgb: [u8; 3]) -> u32 {
     ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32
 }
-fn frame_json(frame: Frame) -> Value {frame_value(&frame)}
 fn frame_value(frame: &Frame) -> Value {
     let cells: Vec<Value> = frame
         .cells

@@ -18,6 +18,7 @@ base64 = "0.22"
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-util = { version = "0.3", features = ["sink"] }
 percent-encoding = "2.3"
+png = "0.18"
 rand = "0.10"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 russh = { version = "=0.65.1", default-features = false, features = ["ring"] }
