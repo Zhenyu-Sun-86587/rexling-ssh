@@ -71,6 +71,14 @@ impl Endpoint {
         Ok(self)
     }
     pub fn ssh_blocked(&self) -> bool {self.ssh.as_ref().is_some_and(|profile|profile.blocked())}
+    pub fn retry_ssh(&self) -> bool {
+        if let Some(profile) = &self.ssh {
+            crate::ssh::SshManager::global().retry(profile.clone());
+            true
+        } else {
+            false
+        }
+    }
 
     pub async fn open(&self, path: &str, protocol: &str) -> Result<Ws> {
         if self.url.scheme() == "ssh" {

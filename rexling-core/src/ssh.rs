@@ -31,6 +31,7 @@ use tokio::{
 use zeroize::Zeroizing;
 
 const HANDSHAKE: Duration = Duration::from_secs(20);
+const CONNECT: Duration = Duration::from_secs(10);
 const CHANNEL: Duration = Duration::from_secs(10);
 type Driver = Handle<Verifier>;
 
@@ -211,6 +212,7 @@ pub struct Profile {
     jump_status: Option<Arc<Mutex<Status>>>,
     state: AsyncMutex<State>,
     epoch: watch::Sender<u64>,
+    retry: watch::Sender<()>,
     active: AtomicUsize,
     removed: AtomicBool,
 }
@@ -416,6 +418,7 @@ impl SshManager {
                 epoch: 0,
             }),
             epoch: watch::channel(0).0,
+            retry: watch::channel(()).0,
             active: AtomicUsize::new(0),
             removed: AtomicBool::new(false),
         });
@@ -494,6 +497,15 @@ impl SshManager {
             }
         }
     }
+    /// Skip cooldown without replacing a healthy connection or an ongoing handshake.
+    pub fn retry(&self, profile: Arc<Profile>) {
+        self.runtime.spawn(async move {
+            let mut state = profile.state.lock().await;
+            state.retry_at = Instant::now();
+            state.failures = 0;
+            profile.retry.send_replace(());
+        });
+    }
     fn invalidate(&self, profile: Arc<Profile>) {
         profile
             .epoch
@@ -545,6 +557,7 @@ impl SshManager {
         profile: Arc<Profile>,
         generation: u64,
     ) -> Result<ManagedStream> {
+        let mut retry = profile.retry.subscribe();
         let mut state = loop {
             let mut state = profile.state.lock().await;
             if state.epoch != generation {
@@ -568,7 +581,10 @@ impl SshManager {
             profile.publish("backoff", "SSH reconnect is cooling down");
             let retry_at = state.retry_at;
             drop(state);
-            tokio::time::sleep_until(retry_at).await;
+            tokio::select! {
+                _ = tokio::time::sleep_until(retry_at) => {},
+                _ = retry.changed() => {},
+            }
             // Recheck under the lock: another waiter may have connected or failed.
         };
         if profile.blocked() {
@@ -605,13 +621,12 @@ impl SshManager {
                         return Err(error);
                     }
                     state.failures = state.failures.saturating_add(1);
-                    let seconds = if state.failures >= 5 {
-                        300
-                    } else {
-                        5 * (1u64 << state.failures.min(5))
-                    };
+                    // The caller also backs off. Keep this shared cooldown short,
+                    // while serializing attempts and retaining jitter across profiles.
+                    let seconds = (1u64 << (state.failures - 1).min(4)).min(15);
                     state.retry_at = Instant::now()
-                        + Duration::from_secs(seconds + rand::random::<u32>() as u64 % 5);
+                        + Duration::from_secs(seconds)
+                        + Duration::from_millis(u64::from(rand::random::<u32>() % 1000));
                     profile.publish(
                         "backoff",
                         format!("SSH connection failed; retrying after {seconds}s: {error}"),
@@ -798,16 +813,22 @@ async fn authenticate_hop(
     upstream: Option<HopStream>,
     label: &str,
 ) -> Result<Driver> {
+    let started = Instant::now();
+    let mut stage = "DNS/TCP connection";
     let operation = async {
         let stream = if let Some(stream) = upstream {
             stream
         } else {
-            let stream = connect_tcp(endpoint)
+            crate::diagnostics::record("ssh", format!("hop={label} stage=DNS/TCP start"));
+            let stream = tokio::time::timeout(CONNECT, connect_tcp(endpoint))
                 .await
+                .with_context(|| format!("{label} DNS/TCP connection timed out (10s)"))?
                 .with_context(|| format!("{label} TCP connection failed"))?;
             stream.set_nodelay(true)?;
             Box::new(stream) as HopStream
         };
+        stage = "SSH handshake";
+        crate::diagnostics::record("ssh", format!("hop={label} stage=handshake elapsedMs={}", started.elapsed().as_millis()));
         let config = Arc::new(client::Config {
             keepalive_interval: Some(Duration::from_secs(15)),
             keepalive_max: 3,
@@ -827,6 +848,8 @@ async fn authenticate_hop(
             target: Some(driver),
             jump: None,
         };
+        stage = "SSH authentication";
+        crate::diagnostics::record("ssh", format!("hop={label} stage=authentication elapsedMs={}", started.elapsed().as_millis()));
         let driver = owned.target.as_mut().expect("SSH handshake complete");
         let auth = if credentials.method == "password" {
             driver
@@ -865,11 +888,12 @@ async fn authenticate_hop(
             status.phase = "connected".into();
             status.error.clear();
         }
+        crate::diagnostics::record("ssh", format!("hop={label} stage=authenticated elapsedMs={}", started.elapsed().as_millis()));
         Ok(owned.target.take().expect("authenticated SSH"))
     };
     tokio::time::timeout(HANDSHAKE, operation)
         .await
-        .with_context(|| format!("{label} SSH connection and authentication timed out (20s)"))?
+        .with_context(|| format!("{label} {stage} timed out (20s total deadline)"))?
 }
 fn validate_credentials(credentials: &Credentials) -> Result<()> {
     if credentials.method == "password" {
@@ -1047,6 +1071,79 @@ mod tests {
             assert!(stream.nodelay().unwrap());
             let (_, peer) = listener.accept().await.unwrap();
             assert_eq!(peer.is_ipv6(), family == "ipv6");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn unresponsive_tcp_is_retried_before_the_full_ssh_deadline() {
+        // Saturate a loopback accept queue: subsequent TCP handshakes stall
+        // without requiring firewall changes or an unreliable external address.
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let listener = socket.listen(1).unwrap();
+        let address = listener.local_addr().unwrap();
+        let first = tokio::net::TcpStream::connect(address).await.unwrap();
+        let second = tokio::net::TcpStream::connect(address).await.unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(100), tokio::net::TcpStream::connect(address)).await.is_err());
+        let manager = SshManager::global();
+        let id = manager.register(
+            serde_json::from_value(json!({"host":"127.0.0.1","port":address.port(),"user":"test"})).unwrap(),
+            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
+        ).unwrap();
+        let started = Instant::now();
+        let error = tokio::time::timeout(Duration::from_secs(12), manager.open(manager.profile(id).unwrap())).await
+            .expect("unresponsive TCP consumed the full SSH deadline").err().expect("saturated listener connected");
+        assert!(error.to_string().contains("DNS/TCP connection timed out (10s)"), "{error:#}");
+        assert!(started.elapsed() >= Duration::from_secs(10));
+        manager.remove(id);
+        drop((first, second, listener));
+    }
+
+    #[tokio::test]
+    async fn manual_retry_wakes_cooldown_without_canceling_a_stalled_handshake() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let manager = SshManager::global();
+        let id = manager.register(
+            serde_json::from_value(json!({"host":"127.0.0.1","port":listener.local_addr().unwrap().port(),"user":"test"})).unwrap(),
+            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
+        ).unwrap();
+        let profile = manager.profile(id).unwrap();
+        profile.state.lock().await.retry_at = Instant::now() + Duration::from_secs(300);
+        let endpoint = crate::transport::Endpoint::new("ssh://localhost", Duration::from_secs(1)).unwrap().with_ssh(id).unwrap();
+        let open = endpoint.open("/v1/control", crate::transport::CONTROL);
+        tokio::pin!(open);
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut open).await.is_err());
+        assert!(endpoint.retry_ssh());
+        let (peer, _) = tokio::time::timeout(Duration::from_secs(1), listener.accept()).await
+            .expect("manual retry did not wake SSH cooldown").unwrap();
+        assert!(endpoint.retry_ssh());
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut open).await.is_err(),
+            "manual retry canceled the ongoing handshake");
+        let error = tokio::time::timeout(Duration::from_secs(22), &mut open).await
+            .expect("stalled handshake exceeded its deadline").err().expect("silent peer connected");
+        assert!(error.to_string().contains("Target SSH handshake timed out"), "{error:#}");
+        drop(peer);
+        manager.remove(id);
+    }
+
+    #[tokio::test]
+    async fn failed_connections_retry_promptly_even_after_repeated_failures() {
+        let manager = SshManager::global();
+        for (previous_failures, limit) in [(0, 3), (4, 17)] {
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            drop(listener);
+            let id = manager.register(
+                serde_json::from_value(json!({"host":"127.0.0.1","port":port,"user":"test"})).unwrap(),
+                serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
+            ).unwrap();
+            let profile = manager.profile(id).unwrap();
+            profile.state.lock().await.failures = previous_failures;
+            assert!(manager.open(profile.clone()).await.is_err());
+            assert!(tokio::time::timeout(Duration::from_secs(limit), manager.open(profile)).await
+                .expect("automatic retry waited too long").is_err());
+            manager.remove(id);
         }
     }
 

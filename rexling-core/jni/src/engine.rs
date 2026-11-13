@@ -961,6 +961,10 @@ impl Actor {
                 if self.paused || self.endpoint.is_none() {return Ok(());}
                 let force=value["force"].as_bool().unwrap_or(false);
                 if network && self.network_online && self.phase=="connected" && !force {return Ok(());}
+                // A manual retry wakes SSH cooldown, but must not restart a
+                // handshake that is already making progress. Route changes still cancel it.
+                if !network && self.endpoint.as_ref().is_some_and(Endpoint::retry_ssh)
+                    && self.connect_task.is_some() {return Ok(());}
                 self.lose_connections();self.backoff=1;self.phase="reconnecting".into();
                 self.retry=self.network_online.then(tokio::time::Instant::now);self.error.clear();
                 self.notice=if self.network_online {"Reconnecting; input is paused"} else {"Waiting for network; input is paused"}.into();
@@ -3047,6 +3051,19 @@ while True:
         assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");assert!(!actor.controlled);
         runtime.block_on(actor.command(json!({"type":"network","online":true}))).unwrap();assert!(actor.retry.is_some());
         actor.connect_task=Some(Box::pin(pending()));runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();assert!(actor.connect_task.is_none());assert!(actor.retry.is_some());
+
+        let manager=rex_core::ssh::SshManager::global();
+        let id=manager.register(
+            serde_json::from_value(json!({"host":"127.0.0.1","user":"test"})).unwrap(),
+            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
+        ).unwrap();
+        actor.endpoint=Some(Endpoint::new("ssh://localhost",Duration::from_secs(10)).unwrap().with_ssh(id).unwrap());
+        actor.connect_task=Some(Box::pin(pending()));actor.phase="connecting".into();actor.retry=None;
+        runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();
+        assert!(actor.connect_task.is_some());assert!(actor.retry.is_none());assert_eq!(actor.phase,"connecting");
+        runtime.block_on(actor.command(json!({"type":"network","online":false}))).unwrap();
+        assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");
+        manager.remove(id);
     }
 
     #[test] fn reordering_windows_preserves_program_metadata() {
