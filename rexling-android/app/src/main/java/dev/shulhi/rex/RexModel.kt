@@ -100,7 +100,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         BackgroundAlerts.reconcile(getApplication())
     }
     internal fun openAlert(target: AlertDestination) {
-        val profile=servers.firstOrNull {it.id==target.serverId && it.connectionKey==target.endpoint}
+        val profile=servers.firstOrNull {it.id==target.serverId && it.connectionKey==target.endpoint && !it.jumpOnly}
         if(profile==null) {notificationNotice="That server is no longer saved.";return}
         pendingAlert=target;connectServer(profile.id);tryOpenAlert()
     }
@@ -172,7 +172,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }.exceptionOrNull()?.message
     var servers by mutableStateOf(SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty()))
         private set
-    var activeServerId by mutableStateOf(preferences.getString("active_server",null)?.takeIf {id->servers.any {it.id==id}} ?: servers.firstOrNull()?.id.orEmpty())
+    var activeServerId by mutableStateOf(preferences.getString("active_server",null)?.takeIf {id->servers.any {it.id==id && !it.jumpOnly}} ?: servers.firstOrNull {!it.jumpOnly}?.id.orEmpty())
         private set
     var serverStatuses by mutableStateOf<Map<String,ServerStatus>>(emptyMap())
         private set
@@ -193,7 +193,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private var closingSessionId=""
     private val connections=mutableMapOf<String,RexConnection>()
     private val observers=mutableMapOf<String,Job>()
-    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
+    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id && !it.jumpOnly}}.toSet()
     private var palette: TerminalPalette?=null
     private var windowFocused=false
     internal fun windowFocusChanged(focused: Boolean) {windowFocused=focused;updateActivity()}
@@ -308,7 +308,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         putStringSet("connected_servers",desired)
     };if(foreground && BackgroundAlerts.foreground.value) BackgroundAlerts.reconcile(getApplication())}
     fun connectServer(id: String,select: Boolean=true) {
-        val profile=servers.firstOrNull {it.id==id} ?: return
+        val profile=servers.firstOrNull {it.id==id && !it.jumpOnly} ?: return
         val client=connection(profile)
         if(select && activeServerId!=id) {
             rememberLastSession();serverSwitchSerial++
@@ -327,13 +327,13 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         else saveServer(null,"",normalized)?.let {throw IllegalArgumentException(it)}
     }.exceptionOrNull()?.message
 
-    fun saveServer(id: String?,label: String,endpoint: String,icon: ServerIcon?=null): String? = runCatching {
+    fun saveServer(id: String?,label: String,endpoint: String,icon: ServerIcon?=null,connect: Boolean=true): String? = runCatching {
         require(!endpoint.trim().startsWith("ssh://")) {"Use Servers → Add server → SSH to configure authentication"}
         val profile=ServerProfile.create(label,endpoint,id ?: java.util.UUID.randomUUID().toString(),icon ?: servers.firstOrNull {it.id==id}?.icon ?: ServerIcon.GLOBE)
-        saveProfile(profile)?.let {error(it)}
+        saveProfile(profile,connect)?.let {error(it)}
     }.exceptionOrNull()?.message
 
-    internal suspend fun saveSshServer(profile: ServerProfile,credentials: ByteArray,resetTrust: Boolean): String? {
+    internal suspend fun saveSshServer(profile: ServerProfile,credentials: ByteArray,resetTrust: Boolean,connect: Boolean=true): String? {
         val ssh=profile.ssh ?: return "SSH configuration missing"
         val old=servers.firstOrNull {it.id==profile.id}
         var storedNew=false
@@ -361,7 +361,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
                 if(resetTrust) SshTransport.clearTrust(getApplication(),listOfNotNull(original,ssh))
             }
             check(servers.firstOrNull {it.id==profile.id}==old) {"Server changed while saving; reopen the editor"}
-            saveProfile(saved)
+            saveProfile(saved,connect)
         } catch(error: Exception) {error.message ?: "Could not save SSH server"}
         finally {
             credentials.fill(0)
@@ -371,24 +371,33 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private fun validateDestination(profile: ServerProfile) {
         require(servers.none {it.id!=profile.id && it.endpoint==profile.endpoint && it.ssh?.socketPath==profile.ssh?.socketPath && it.ssh?.jumpHost==profile.ssh?.jumpHost}) {"That server is already saved"}
     }
-    private fun saveProfile(profile: ServerProfile): String? = runCatching {
+    private fun saveProfile(profile: ServerProfile,connect: Boolean=true): String? = runCatching {
         validateDestination(profile)
         val old=servers.firstOrNull {it.id==profile.id}
         val updated=if(old==null) servers+profile else servers.map {if(it.id==profile.id) profile else it}
         // Persist the new credential reference before retiring the previous encrypted record.
         check(preferences.edit().putString("servers",SavedServers.encode(updated)).commit()) {"Could not save server settings"}
         servers=updated
-        if(old!=null && old.connectionKey!=profile.connectionKey) {
+        if(old!=null && (old.connectionKey!=profile.connectionKey || old.jumpOnly!=profile.jumpOnly)) {
+            if(!connect) desired=desired-profile.id
             images.forget(old.id)
             connections.remove(old.id)?.let {it.releaseControl();it.disconnect();it.close()}
             observers.remove(old.id)?.cancel();serverStatuses=serverStatuses-old.id
             SshTransport.forget(old.id)
             old.ssh?.takeIf {it.credentialRef!=profile.ssh?.credentialRef}?.let {SshCredentials(getApplication()).delete(it.credentialRef)}
         }
+        if(profile.jumpOnly) {
+            desired=desired-profile.id
+            if(activeServerId==profile.id) {
+                activeServerId=servers.firstOrNull {!it.jumpOnly}?.id.orEmpty()
+                activeClient=connection(activeServer);activeClient.visible=true
+            }
+        } else {
+            // Saving a new host does not open any sockets unless explicitly requested.
+            if(activeServerId==profile.id) {activeClient=connection(profile);activeClient.visible=true}
+            if(connect) connectServer(profile.id)
+        }
         persist()
-        val client=connection(profile)
-        if(activeServerId==profile.id) {activeClient=client;client.visible=true}
-        connectServer(profile.id)
         updateActivity()
     }.exceptionOrNull()?.message
 
@@ -410,7 +419,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         servers.firstOrNull {it.id==id}?.ssh?.let {SshCredentials(getApplication()).delete(it.credentialRef)}
         servers=servers.filterNot {it.id==id};serverStatuses=serverStatuses-id
         if(activeServerId==id) {
-            activeServerId=servers.firstOrNull()?.id.orEmpty()
+            activeServerId=servers.firstOrNull {!it.jumpOnly}?.id.orEmpty()
             activeClient=connection(activeServer);activeClient.visible=true
         }
         persist()

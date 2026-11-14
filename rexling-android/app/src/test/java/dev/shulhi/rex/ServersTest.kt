@@ -4,6 +4,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ServersTest {
+    @Test fun jumpOnlyHostsPersistWithoutBecomingRexTargetsAndOldProfilesRemainTargets() {
+        val ssh=SshOptions("bastion.example",user="ubuntu",credentialRef="encrypted-ref")
+        val jump=ServerProfile.create("Jump","ssh://ubuntu@bastion.example",ssh=ssh,jumpOnly=true)
+        val target=ServerProfile.create("Rex","https://rex.example")
+        assertEquals(listOf(jump,target),SavedServers.decode(SavedServers.encode(listOf(jump,target)),""))
+        assertFalse(SavedServers.decode("""[{"id":"old","label":"Old","endpoint":"https://old"}]""","").single().jumpOnly)
+        assertTrue(runCatching {ServerProfile.create("Invalid","https://example",jumpOnly=true)}.isFailure)
+    }
+    @Test fun jumpChoicesIncludeOfflineSshOnlyHostsButExcludeSelfWebUrlsAndNestedRoutes() {
+        val ssh=SshOptions("jump",user="dev",credentialRef="ref")
+        val jump=ServerProfile.create("Jump","ssh://dev@jump","jump",ssh=ssh,jumpOnly=true)
+        val target=ServerProfile.create("Target","ssh://dev@target","target",ssh=ssh.copy(host="target"))
+        val nested=ServerProfile.create("Nested","ssh://dev@nested","nested",ssh=ssh.copy(host="nested",jumpHost=SshJumpHost("first",user="dev")))
+        val web=ServerProfile.create("Web","https://web","web")
+        assertEquals(listOf(jump),jumpHostChoices(listOf(target,web,jump,nested),"target"))
+        assertEquals(listOf(target,jump),jumpHostChoices(listOf(target,web,jump,nested),"new"))
+    }
     @Test fun sshAddressSeparatesOnlyUnambiguousPorts() {
         assertEquals(SshAddress("2001:db8::22",22),SshAddress.parse("2001:db8::22"))
         assertEquals(SshAddress("2001:db8::22",2222),SshAddress.parse("[2001:db8::22]:2222"))

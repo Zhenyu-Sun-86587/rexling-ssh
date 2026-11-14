@@ -72,7 +72,7 @@ internal object BackgroundAlerts {
     }
     fun servers(preferences: SharedPreferences): List<ServerProfile> {
         val desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty()
-        return SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty()).filter {it.id in desired}
+        return SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty()).filter {it.id in desired && !it.jumpOnly}
     }
     /** Called only from visible UI, never from a receiver or a background restart. */
     fun reconcile(context: Context) {

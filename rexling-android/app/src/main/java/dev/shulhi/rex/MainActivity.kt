@@ -126,10 +126,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var wheelBackdrop by remember {mutableStateOf(false)}
     var ownerBackdrop by remember {mutableStateOf(false)}
     val palette=LocalTerminalPalette.current
-    var endpoint by rememberSaveable {mutableStateOf(client.savedEndpoint)}
     var showServer by rememberSaveable {mutableStateOf(true)}
     var servers by remember {mutableStateOf(false)}
-    var connectionError by remember {mutableStateOf<String?>(null)}
     var picker by remember {mutableStateOf("")}
     var newSession by remember {mutableStateOf(false)}
     var menu by remember {mutableStateOf(false)}
@@ -238,7 +236,16 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
     val workspaceBackdrop=rememberBackdropCapture(menu || picker in setOf("tabs","panes","sessions") || model.activityVisible)
-    Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
+    if(state.phase=="disconnected" && !client.hasScreen) Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
+        Column(Modifier.safeDrawingPadding()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                Text("REXLING SSH",Modifier.weight(1f),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick={appearance=true}) {Text("Appearance")}
+                ChromeButton(ChromeIcon.SETTINGS,"Preferences") {preferencesOpen=true}
+            }
+            HostsPanel(model,{},Modifier.weight(1f).fillMaxWidth())
+        }
+    } else Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
                 blocks.map {state.programs[it.id] ?: ProgramIdentity.Terminal},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
@@ -275,13 +282,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Text(stringResource(R.string.app_name),fontWeight=FontWeight.Bold,fontSize=20.sp)
                                 Text(stringResource(R.string.app_subtitle),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("Connect with SSH or Tailscale",fontWeight=FontWeight.SemiBold)
-                                OutlinedTextField(endpoint,{endpoint=it},Modifier.fillMaxWidth(),label={Text("Rex server URL")},singleLine=true,
-                                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),shape=RoundedCornerShape(12.dp))
-                                connectionError?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=11.sp)}
+                                Text(model.activeServer.label,fontWeight=FontWeight.SemiBold)
+                                Text(model.activeServer.endpoint,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick={connectionError=model.connect(endpoint)},enabled=state.phase!="connecting" && endpoint.isNotBlank()){Text("Connect")}
-                                    TextButton(onClick={servers=true}) {Text("Servers / SSH")}
+                                    TextButton(onClick={servers=true}) {Text("Your hosts")}
                                     if(state.connected || state.phase=="reconnecting") TextButton(onClick={model.disconnectServer(model.activeServerId)}){Text("Disconnect")}
                                     if(client.hasScreen) TextButton(onClick={showServer=false}){Text("Hide")}
                                 }

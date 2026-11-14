@@ -39,16 +39,18 @@ internal fun sameSshCredentials(left: JSONObject,right: JSONObject): Boolean {
     val a=left.optJSONObject("jumpHost");val b=right.optJSONObject("jumpHost")
     return if(a==null || b==null) a==null && b==null else sameSshCredentials(a,b)
 }
-data class ServerProfile(val id: String,val label: String,val endpoint: String,val icon: ServerIcon=ServerIcon.GLOBE,val ssh: SshOptions?=null) {
+data class ServerProfile(val id: String,val label: String,val endpoint: String,val icon: ServerIcon=ServerIcon.GLOBE,val ssh: SshOptions?=null,val jumpOnly: Boolean=false) {
     val storageKey: String get()=if(ssh==null) endpoint else "ssh-profile:"+id
     val connectionKey: String get()=if(ssh==null) endpoint else endpoint+":"+ssh.revision
     companion object {
         val Empty=ServerProfile("__empty__","No server","")
-        fun create(label: String,endpoint: String,id: String=UUID.randomUUID().toString(),icon: ServerIcon=ServerIcon.GLOBE,ssh: SshOptions?=null): ServerProfile {
+        fun create(label: String,endpoint: String,id: String=UUID.randomUUID().toString(),icon: ServerIcon=ServerIcon.GLOBE,ssh: SshOptions?=null,jumpOnly: Boolean=false): ServerProfile {
             val normalized=normalizeEndpoint(endpoint)
             val name=label.trim().ifEmpty {URI(normalized).host.substringBefore('.')}
             require(name.length<=64) {"Use a server name of at most 64 characters"}
             require(name.none {it.isISOControl()}) {"Use a single-line server name"}
+            require(!jumpOnly || ssh!=null) {"A jump-only host needs SSH settings"}
+            require(!jumpOnly || ssh?.jumpHost==null) {"Save a directly reachable SSH host as the jump; one hop is supported"}
             if(ssh!=null) {
                 require(ssh.addressFamily in listOf("auto","ipv4","ipv6")) {"Invalid address family"}
                 require(ssh.addressFamily!="ipv6" || ssh.jumpHost==null) {"IPv6 direct does not use a jump host"}
@@ -59,7 +61,7 @@ data class ServerProfile(val id: String,val label: String,val endpoint: String,v
                     normalizeEndpoint(URI("ssh",jump.user,jump.host,jump.port,null,null,null).toASCIIString())
                 }
             }
-            return ServerProfile(id,name,normalized,icon,ssh)
+            return ServerProfile(id,name,normalized,icon,ssh,jumpOnly)
         }
         fun normalizeEndpoint(value: String): String {
             val uri=runCatching {URI(value.trim())}.getOrElse {throw IllegalArgumentException("Enter a complete server URL")}
@@ -83,12 +85,16 @@ object SavedServers {
             (0 until array.length()).mapNotNull { index -> runCatching {
                 val item=array.getJSONObject(index)
                 ServerProfile.create(item.optString("label"),item.getString("endpoint"),item.getString("id"),ServerIcon.decode(item.optString("icon")),
-                    item.optJSONObject("ssh")?.let(SshOptions::parse))
+                    item.optJSONObject("ssh")?.let(SshOptions::parse),item.optBoolean("jumpOnly",false))
             }.getOrNull() }.distinctBy {it.id}
         }.getOrElse {legacy()}
     }
-    fun encode(servers: List<ServerProfile>): String = JSONArray(servers.map {JSONObject().put("id",it.id).put("label",it.label).put("endpoint",it.endpoint).put("icon",it.icon.key).put("ssh",it.ssh?.json())}).toString()
+    fun encode(servers: List<ServerProfile>): String = JSONArray(servers.map {JSONObject().put("id",it.id).put("label",it.label).put("endpoint",it.endpoint).put("icon",it.icon.key).put("ssh",it.ssh?.json()).put("jumpOnly",it.jumpOnly)}).toString()
 }
+
+/** Only directly reachable saved SSH hosts can supply our single jump hop. */
+internal fun jumpHostChoices(servers: List<ServerProfile>,targetId: String): List<ServerProfile> =
+    servers.filter {it.id!=targetId && it.ssh!=null && it.ssh.jumpHost==null}
 
 data class ServerStatus(val phase: String="disconnected",val error: String="") {
     val connected: Boolean get()=phase=="connected"
