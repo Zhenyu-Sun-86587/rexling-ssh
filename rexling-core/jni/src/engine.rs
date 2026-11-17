@@ -920,7 +920,11 @@ impl Actor {
             if encoded.is_empty() {return Ok(());}
             encoded.as_str()
         } else {value["text"].as_str().context("text required")?};
-        if !click && let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();self.dirty=true;}
+        // Render only if typing actually moved the viewport. An unconditional render here
+        // publishes an unchanged frame and starts the 16 ms render throttle just before
+        // the echo arrives, so every echo waited a full frame interval.
+        let scrolled_back=self.screen.as_ref().is_some_and(|f|f.scroll_offset+f.scroll_visible<f.scroll_total);
+        if !click && let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();if scrolled_back {self.dirty=true;}}
         // Unlike terminal.write, block.event is serialized by Rex on this connection.
         // An unidentified key with text preserves our already-encoded input bytes;
         // it bypasses Lua bindings, matching the previous raw-write behavior.
