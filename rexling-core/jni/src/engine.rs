@@ -395,7 +395,9 @@ impl Actor {
                         continue;
                     }
                     // Local scrollback does not issue RPCs or mutate input ownership.
-                    if value["type"]=="scroll" {self.execute_command(value).await;continue;}
+                    // Render a scroll on the next loop pass instead of the next 16 ms slot: the view is
+                    // sliding locally and runs out of overscan rows while it waits for this frame.
+                    if value["type"]=="scroll" {self.execute_command(value).await;if self.dirty {render_at=tokio::time::Instant::now();}continue;}
                     if matches!(value["type"].as_str(),Some("connect"|"retry"|"network"|"resume"|"activity")) {maintenance_at=tokio::time::Instant::now();}
                     if value["type"]=="network" {
                         self.execute_command(value).await;

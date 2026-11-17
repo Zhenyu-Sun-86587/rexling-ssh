@@ -20,7 +20,7 @@ typedef struct {
 #define RP_ABOVE 0xFF00
 #define RP_BELOW 0xFE00
 /* Spare rows above and below the viewport for smooth sub-line scrolling. */
-#define RP_OVERSCAN 4
+#define RP_OVERSCAN 16
 typedef struct {
   GhosttyTerminal terminal;
   GhosttySnapshotDecoder snapshot;

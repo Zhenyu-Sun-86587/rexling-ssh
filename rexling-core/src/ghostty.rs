@@ -811,7 +811,7 @@ mod tests {
         let bottom = terminal.frame().unwrap();
         // At the bottom: history above, nothing below; cells stay in the grid.
         assert_eq!(bottom.below.len(), 0);
-        assert!(!bottom.above.is_empty() && bottom.above.len() <= 4);
+        assert!(!bottom.above.is_empty() && bottom.above.len() <= 16); // RP_OVERSCAN in native/ghostty_shim.c
         let line = |row: &Vec<Cell>| row.iter().map(|c| c.text.as_str()).collect::<String>();
         assert_eq!(line(bottom.above.last().unwrap()).trim(), "L17", "nearest row above the visible L18, L19, END");
         assert!(bottom.cells.iter().all(|c| c.y < 3));
