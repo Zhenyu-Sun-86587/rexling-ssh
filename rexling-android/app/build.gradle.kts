@@ -29,7 +29,7 @@ android {
         applicationId = "dev.shulhi.rex"
         minSdk = 28
         targetSdk = 37
-        versionCode = 167
+        versionCode = 168
         versionName = dateVersion
         buildConfigField("String","GIT_REVISION","\"$revision\"")
         buildConfigField("boolean","LOCAL_CHANGES",modified.toString())
