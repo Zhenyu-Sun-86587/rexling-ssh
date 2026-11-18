@@ -76,7 +76,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         return ImageTarget(activeServerId,activeServer.endpoint,state.selectedSession,state.selectedBlock,client.selectionVersion,serverSwitchSerial,program.kind,"${program.title} · ${activeServer.label}")
     }
     internal fun attachImage(uri: android.net.Uri,target: ImageTarget?,onCopied: ()->Unit={}): Boolean {
-        if(target==null) {onCopied();images.notice="Take control of a pane before attaching an image.";return false}
+        if(target==null) {onCopied();images.notice="Take control of a pane before attaching a file.";return false}
         val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint}
         if(profile==null) {onCopied();images.notice="The original Rex server is no longer available.";return false}
         return images.start(uri,target,onCopied)

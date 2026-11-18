@@ -89,4 +89,15 @@ class ModelsTest {
         // Toolbar Shift with the keyboard's Enter is a real Shift+Enter.
         assertEquals(TerminalInput.SHIFT_ENTER,TerminalInput.modified(TerminalInput.imeKeys("\n",true),false,false,true))
     }
+
+    @Test fun uploadsKeepTheFileNameAndFallBackWhenItIsMissing() {
+        val png=byteArrayOf(0x89.toByte(),80,78,71,13,10,26,10,0,0,0,0)
+        assertEquals("report.pdf",uploadName("report.pdf",ByteArray(0)))
+        assertEquals("notes.txt",uploadName("dir/sub/notes.txt",ByteArray(0)))
+        assertEquals("ab.zip",uploadName("a\u0000b\n.zip",ByteArray(0)))
+        assertEquals("image.png",uploadName(null,png))
+        assertEquals("image.png",uploadName("  ",png))
+        assertEquals("file",uploadName("..",ByteArray(0)))
+        assertEquals("file",uploadName(null,byteArrayOf(1,2,3)))
+    }
 }

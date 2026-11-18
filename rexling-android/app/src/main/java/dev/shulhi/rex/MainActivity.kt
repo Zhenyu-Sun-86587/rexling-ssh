@@ -179,16 +179,27 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     fun pasteClipboard(): Boolean = runCatching {
         pasteTerminalClipboard(context,{uri->imageCommit(uri,{})},client::paste)
-    }.getOrElse {model.images.notice="Could not read the clipboard image. Try Attach image instead.";false}
+    }.getOrElse {model.images.notice="Could not read the clipboard file. Try Attach file instead.";false}
     val photoPicker=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) {uri->
         val target=model.pendingImageTarget;model.pendingImageTarget=null
         if(uri!=null) withUploadNetwork({model.attachImage(uri,target)})
     }
     fun chooseImage() {
         val target=model.imageTarget()
-        if(target==null) {model.images.notice="Take control of a pane before attaching an image.";return}
+        if(target==null) {model.images.notice="Take control of a pane before attaching a file.";return}
         model.pendingImageTarget=target
         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+    // Rex accepts any file type, so the document picker allows everything.
+    val filePicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {uri->
+        val target=model.pendingImageTarget;model.pendingImageTarget=null
+        if(uri!=null) withUploadNetwork({model.attachImage(uri,target)})
+    }
+    fun chooseFile() {
+        val target=model.imageTarget()
+        if(target==null) {model.images.notice="Take control of a pane before attaching a file.";return}
+        model.pendingImageTarget=target
+        filePicker.launch(arrayOf("*/*"))
     }
 
     DisposableEffect(client) {onDispose {model.setPaneObscured(true)}}
@@ -266,6 +277,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                 menu=false;pasteClipboard()
                             })
                             TerminalMenuItem("Attach image",ChromeIcon.IMAGE,enabled=controlled && model.images.state==null,onClick={menu=false;chooseImage()})
+                            TerminalMenuItem("Attach file",ChromeIcon.FILE,enabled=controlled && model.images.state==null,onClick={menu=false;chooseFile()})
                             TerminalMenuItem("Port forwarding",ChromeIcon.SERVER,onClick={menu=false;forwards=true})
                             TerminalMenuItem("Servers · ${model.connectedCount} connected",ChromeIcon.SERVER,onClick={menu=false;servers=true})
                             TerminalMenuItem("Refresh sessions",ChromeIcon.REFRESH,enabled=state.connected,onClick={menu=false;client.refresh()})
@@ -378,7 +390,7 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
         enabled=model.neovimShortcutsEnabled,onEnabled=model::enableNeovimShortcuts,
         layout=model.neovimShortcutLayout,onLayout=model::changeNeovimShortcutLayout,effect=model.neovimShortcutEffect,onEffect=model::changeNeovimShortcutEffect,
         hapticsEnabled=model.neovimShortcutHaptics,onHaptics=model::changeNeovimShortcutHaptics,hazeState=workspaceHaze)
-    if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("Image upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}})
+    if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("File upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}})
     if(about) AboutSheet(hazeState=workspaceHaze) {about=false}
     if(alerts) BackgroundAlertsDialog(model,hazeState=workspaceHaze) {alerts=false}
     if(forwards) PortForwardSheet(model.forwardServers(),model.activeServerId,workspaceHaze,onClose={forwards=false},onStart={id->

@@ -147,7 +147,7 @@ pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadCreate(mut env:JNI
     let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||->anyhow::Result<u64>{
         let request:String=env.get_string(&request)?.into();uploads::create(serde_json::from_str(&request)?)
     }));
-    match result {Ok(Ok(id))=>id as jlong,_=>{let _=env.throw_new("java/lang/IllegalStateException","Could not start image upload");0}}
+    match result {Ok(Ok(id))=>id as jlong,_=>{let _=env.throw_new("java/lang/IllegalStateException","Could not start file upload");0}}
 }
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadPoll(mut env:JNIEnv,_class:JClass,handle:jlong)->jstring {
