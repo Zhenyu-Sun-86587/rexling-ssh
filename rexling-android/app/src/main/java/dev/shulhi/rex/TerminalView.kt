@@ -132,6 +132,8 @@ class TerminalView(context: Context) : View(context) {
         if(onDisplayFrame) invalidate() else postInvalidateOnAnimation()
     }
     var keyboardSuggestions: Boolean = true
+    /** The on-screen keyboard's Enter submits (CR) instead of inserting a newline (LF). */
+    var imeEnterSubmits: Boolean = false
         set(value) {
             if(field!=value) {field=value;if(controlled && hasFocus()) (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)}
         }
@@ -747,7 +749,7 @@ class TerminalView(context: Context) : View(context) {
                     getComposingSpanStart(editor),getComposingSpanEnd(editor))
             }
             private fun submit(text: String,cursor: Int) {
-                val keys=imeLine.edit(text,cursor)
+                val keys=TerminalInput.imeKeys(imeLine.edit(text,cursor),imeEnterSubmits)
                 if(keys.isNotEmpty()) {
                     deliveringImeInput=true
                     try {onInput(keys)} finally {deliveringImeInput=false}

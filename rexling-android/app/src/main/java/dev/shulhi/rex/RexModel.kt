@@ -154,6 +154,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var arrowJoystickEnabled by mutableStateOf(preferences.getBoolean("arrow_joystick_enabled",true))
         private set
     internal fun changeArrowJoystick(value: Boolean) {arrowJoystickEnabled=value;preferences.edit {putBoolean("arrow_joystick_enabled",value)}}
+    internal var enterSubmits by mutableStateOf(preferences.getBoolean("keyboard_enter_submits",false))
+        private set
+    internal fun changeEnterSubmits(value: Boolean) {enterSubmits=value;preferences.edit {putBoolean("keyboard_enter_submits",value)}}
     internal var shortcutGesture by mutableStateOf(runCatching {ControlShortcutGesture.valueOf(preferences.getString("ctrl_shortcut_gesture","HOLD")!!)}.getOrDefault(ControlShortcutGesture.HOLD))
         private set
     internal fun changeShortcutGesture(value: ControlShortcutGesture) {shortcutGesture=value;preferences.edit {putString("ctrl_shortcut_gesture",value.name)}}
