@@ -748,7 +748,9 @@ impl Actor {
                     );
                 }
             }
-            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout,"splits":splits}));
+            // Rex draws a zoomed block over its whole window; layouts keep their normal sizes.
+            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout,"splits":splits,
+                "zoomed":window["zoomed_block_id"].as_str().unwrap_or("")}));
         }
         let next = json!(windows);
         let ids = |windows: &Value| -> BTreeSet<String> {
@@ -1405,6 +1407,14 @@ impl Actor {
                     self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"resize",
                         json!({"columns":columns.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
                 }
+            }
+            "zoom" => {
+                // Zoom a pane to fill its window, or restore the layout, for every client.
+                ensure!(value["session"]==self.selected_session,"Session changed");
+                let block=value["block"].as_str().filter(|b|!b.is_empty()).context("block required")?;
+                let zoom=value["zoom"].as_bool().context("zoom required")?;
+                self.control.as_mut().context("not connected")?.call("session.zoom_block",json!({"session_id":self.selected_session,
+                    "block_id":block,"zoom":zoom})).await?;
             }
             "resize_split" => {
                 // Dragging a pane border in the multi-pane layout.

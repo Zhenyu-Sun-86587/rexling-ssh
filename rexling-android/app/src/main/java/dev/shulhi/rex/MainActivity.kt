@@ -382,7 +382,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         val focusedBlock=blocks.firstOrNull {it.id==chosen}
                         if(tiles!=null && focusedBlock!=null) MultiPaneLayout(tiles,chosen,client.paneFrames,fontSize.toFloat(),::openPane,client::mirror,
                             bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,
-                            splits=window?.splits.orEmpty(),onResize=client::resizeSplit) {terminal(listOf(focusedBlock))}
+                            splits=window?.splits.orEmpty(),onResize=client::resizeSplit,zoomed=window?.zoomed.orEmpty(),onZoom=client::zoom) {terminal(listOf(focusedBlock))}
                         else terminal(carouselBlocks)
                         }
                         if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {

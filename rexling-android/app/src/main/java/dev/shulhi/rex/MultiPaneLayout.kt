@@ -32,7 +32,7 @@ import androidx.compose.ui.viewinterop.AndroidView
  */
 @Composable internal fun MultiPaneLayout(placements: List<PanePlacement>,focused: String,frames: Map<String,TerminalScreen>,
     fontSize: Float,onFocus: (String)->Unit,onMirror: (List<RexConnection.MirrorPane>)->Unit,bottomPaddingDp: Int=6,bottomMargin: Boolean=true,splits: List<PaneSplitLine> = emptyList(),onResize: (PaneSplitLine,Float)->Unit={_,_->},
-    focusedContent: @Composable ()->Unit) {
+    zoomed: String="",onZoom: (String,Boolean)->Unit={_,_->},focusedContent: @Composable ()->Unit) {
     val palette=LocalTerminalPalette.current
     val scheme=MaterialTheme.colorScheme
     // Rects are fractions of the tab; normalize to the tiled panes' own bounds.
@@ -40,7 +40,9 @@ import androidx.compose.ui.viewinterop.AndroidView
     val spanX=(placements.maxOf {it.x+it.width}-left).coerceAtLeast(.01f)
     val spanY=(placements.maxOf {it.y+it.height}-top).coerceAtLeast(.01f)
     val sizes=remember {mutableStateMapOf<String,Pair<Int,Int>>()}
-    val mirrors=placements.map {it.id}.filter {it!=focused}
+    // A pane zoomed in Rex covers the whole area; the rest stay in the layout but are not shown or mirrored.
+    val zoomedPane=placements.firstOrNull {it.id==zoomed}
+    val mirrors=(zoomedPane?.let {listOf(it)} ?: placements).map {it.id}.filter {it!=focused}
     val request=mirrors.mapNotNull {id->sizes[id]?.let {(columns,rows)->RexConnection.MirrorPane(id,columns,rows)}}
     // Debounced: while a border is dragged the panes resize on every frame, but their PTYs only once
     // the finger pauses or lifts (the focused pane's resize is debounced the same way).
@@ -48,8 +50,13 @@ import androidx.compose.ui.viewinterop.AndroidView
     // A border being dragged, and its ratio. The panes reflow live from it; it stays after release until
     // Rex reports the new layout (new [splits]), so nothing snaps back in between.
     var drag by remember(splits) {mutableStateOf<Pair<String,Float>?>(null)}
-    val (shownPanes,shownSplits)=drag?.let {(id,ratio)->splits.firstOrNull {it.id==id}?.let {movedSplit(placements,splits,it,ratio)}}
+    val (laidOut,laidOutSplits)=drag?.let {(id,ratio)->splits.firstOrNull {it.id==id}?.let {movedSplit(placements,splits,it,ratio)}}
         ?: (placements to splits)
+    val shownPanes=zoomedPane?.let {listOf(it.copy(x=left,y=top,width=spanX,height=spanY))} ?: laidOut
+    val shownSplits=if(zoomedPane!=null) emptyList() else laidOutSplits
+    // The pane whose corner menu is open; it closes by itself after a few seconds.
+    var menuFor by remember {mutableStateOf<String?>(null)}
+    LaunchedEffect(menuFor) {if(menuFor!=null) {kotlinx.coroutines.delay(4000);menuFor=null}}
     DisposableEffect(Unit) {onDispose {onMirror(emptyList())}}
     // Like the desktop: each pane a rounded card on the window background, with room between them and
     // a thin accent outline on the focused one.
@@ -81,6 +88,15 @@ import androidx.compose.ui.viewinterop.AndroidView
                     Box(Modifier.matchParentSize().semantics {contentDescription="Focus pane"}
                         .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {onFocus(pane.id)})
                 }
+                // Pane actions, like the desktop's: tap the top-right corner to show them. A zoomed
+                // pane always shows its way back.
+                val isZoomed=pane.id==zoomed
+                if(isZoomed || menuFor==pane.id) PaneActions(isZoomed,Modifier.align(androidx.compose.ui.Alignment.TopEnd).padding(6.dp)) {
+                    // Zooming a pane also focuses it, so typing goes to the pane on screen.
+                    menuFor=null;if(!isZoomed && !active) onFocus(pane.id);onZoom(pane.id,!isZoomed)
+                }
+                else Box(Modifier.align(androidx.compose.ui.Alignment.TopEnd).size(44.dp).semantics {contentDescription="Pane actions"}
+                    .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {menuFor=pane.id})
             }
         }
         // Pane borders: drag the grip in the gap and the panes reflow with it; on release Rex moves the
@@ -114,6 +130,16 @@ import androidx.compose.ui.viewinterop.AndroidView
                     .then(if(horizontal) Modifier.size(4.dp,36.dp) else Modifier.size(36.dp,4.dp)))
             }
         }
+    }
+}
+
+/** The floating pill of pane actions shown at a pane's top-right corner. For now: zoom, or restore. */
+@Composable private fun PaneActions(zoomed: Boolean,modifier: Modifier,onZoom: ()->Unit) {
+    val scheme=MaterialTheme.colorScheme
+    val pill=androidx.compose.foundation.shape.RoundedCornerShape(50)
+    Row(modifier.clip(pill).background(scheme.surface.copy(alpha=.92f)).border(1.dp,scheme.outline.copy(alpha=.3f),pill).padding(horizontal=4.dp,vertical=2.dp),
+        verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+        ChromeButton(if(zoomed) ChromeIcon.UNZOOM else ChromeIcon.ZOOM,if(zoomed) "Restore pane layout" else "Zoom pane",onClick=onZoom)
     }
 }
 

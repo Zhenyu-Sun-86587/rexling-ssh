@@ -296,6 +296,12 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(panes==mirrorRequest) return
         mirrorRequest=panes;sendMirror()
     }
+    /** Zooms a pane to fill its window, or restores the layout, as the desktop does; Rex tells every client. */
+    internal fun zoom(block: String,zoom: Boolean) {
+        val current=state.value
+        if(!current.connected || current.selectedSession.isBlank() || block.isBlank()) return
+        command("zoom","session" to current.selectedSession,"block" to block,"zoom" to zoom)
+    }
     /** Moves a pane border in the multi-pane layout; Rex re-lays the window out and the panes follow. */
     internal fun resizeSplit(split: PaneSplitLine,ratio: Float) {
         val current=state.value
