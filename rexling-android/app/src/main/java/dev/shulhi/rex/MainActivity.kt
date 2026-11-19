@@ -330,7 +330,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             tabLayout.position,tabLayout.style,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},
                             onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
-                            tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
+                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))}) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()

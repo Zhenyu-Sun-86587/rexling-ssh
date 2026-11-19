@@ -4,6 +4,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -16,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -74,8 +77,21 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,
     side: TabBarPosition,style: TabRailStyle,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},
     onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",
-    paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},animateWorking: Boolean=true,actions: @Composable ()->Unit) {
+    paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},animateWorking: Boolean=true,
+    onStyle: (TabRailStyle)->Unit={},actions: @Composable ()->Unit) {
     val titles=style==TabRailStyle.TITLES
+    // Swipe across the rail toward the terminal to show titles, back toward the screen edge to hide them.
+    // Resizes are debounced, so the animated width sends the pane only its final size.
+    val width by androidx.compose.animation.core.animateDpAsState(if(titles) 184.dp else 60.dp,
+        androidx.compose.animation.core.tween(180),label="Tab rail width")
+    val outward=if(side==TabBarPosition.LEFT) 1f else -1f
+    val threshold=with(androidx.compose.ui.platform.LocalDensity.current) {32.dp.toPx()}
+    var swipe by remember {mutableFloatStateOf(0f)}
+    // Gesture navigation treats edge swipes as Back. Android lets an app opt out for at most 200dp of
+    // each edge, so claim the rail's lowest 200dp (its buttons and nearest tabs); the toggle below
+    // always works.
+    val exclusion=with(androidx.compose.ui.platform.LocalDensity.current) {200.dp.toPx()}
+    val haptic=androidx.compose.ui.platform.LocalHapticFeedback.current
     val scheme=MaterialTheme.colorScheme
     val list=rememberLazyListState()
     var menuId by remember(reorderKey) {mutableStateOf<String?>(null)}
@@ -83,7 +99,24 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     val index=ids.indexOf(selectedId)
     LaunchedEffect(ids) {menuId=null}
     LaunchedEffect(selectedId,reorderKey,index) {if(index>=0) list.animateScrollToItem(index)}
-    Column(Modifier.fillMaxHeight().width(if(titles) 184.dp else 60.dp).background(scheme.surface).padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxHeight().width(width).background(scheme.surface)
+        .systemGestureExclusion {coordinates->
+            val height=coordinates.size.height.toFloat()
+            androidx.compose.ui.geometry.Rect(0f,(height-exclusion).coerceAtLeast(0f),coordinates.size.width.toFloat(),height)
+        }
+        .draggable(androidx.compose.foundation.gestures.rememberDraggableState {swipe+=it},androidx.compose.foundation.gestures.Orientation.Horizontal,
+            onDragStarted={swipe=0f},onDragStopped={
+                val next=when {
+                    swipe*outward>threshold -> TabRailStyle.TITLES
+                    swipe*outward< -threshold -> TabRailStyle.ICONS
+                    else -> style
+                }
+                swipe=0f
+                if(next!=style) {haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress);onStyle(next)}
+            })
+        .semantics {customActions=listOf(CustomAccessibilityAction(if(titles) "Show icons only" else "Show tab titles") {
+            onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES);true})}
+        .padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
             contentPadding=PaddingValues(horizontal=6.dp,vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w->
@@ -148,6 +181,12 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                     }
                 }
             }
+        }
+        // Points the way the rail will go: toward the terminal to show titles, toward the edge to hide them.
+        val towardTerminal=if(side==TabBarPosition.LEFT) -90f else 90f
+        ChromeButton(ChromeIcon.CHEVRON,if(titles) "Show icons only" else "Show tab titles",
+            modifier=Modifier.graphicsLayer {rotationZ=if(titles) -towardTerminal else towardTerminal}) {
+            onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES)
         }
         Box(Modifier.padding(top=4.dp)) {actions()}
     }
