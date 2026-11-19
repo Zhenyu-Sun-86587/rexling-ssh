@@ -221,6 +221,8 @@ struct Actor {
     other_owner: bool,
     data: Option<Data>,
     retained_floating: Option<RetainedFloating>,
+    /// The multi-pane layout's other panes; empty, and inert, in the single-pane layout.
+    mirror: crate::mirror::Mirror,
     replica: Option<Replica>,
     control_token: Option<String>,
     data_resume: Option<Resume>,
@@ -289,6 +291,7 @@ impl Actor {
             control: None,commands:Commands::default(),input_acks:VecDeque::new(),input_limit:8,batch_text:true,connect_task:None,network_online:true,connection_epoch:0,other_owner:false,
             data: None,
             retained_floating: None,
+            mirror: Default::default(),
             replica: None,
             control_token: None,
             data_resume: None,
@@ -355,6 +358,14 @@ impl Actor {
             self.updates.publish(shared.revision);
         }
     }
+    /// Hands mirror frames to Android without rebuilding the state JSON, which they leave unchanged.
+    fn publish_mirror_frames(&mut self) {
+        if let Ok(mut shared)=self.shared.lock() {
+            shared.revision+=1;
+            shared.pending_previews.extend(std::mem::take(&mut self.preview_updates));
+            self.updates.publish(shared.revision);
+        }
+    }
     fn publish_frame(&mut self) {
         if let Ok(mut shared)=self.shared.lock() {
             shared.revision+=1;shared.frame=self.screen.clone();
@@ -384,6 +395,7 @@ impl Actor {
                 continue;
             }
             let active = !self.paused;
+            let mirror_due=self.mirror.due().filter(|_|self.visible);
             tokio::select! {
                 value=rx.recv()=>{
                     let Some(value)=value else{break;};
@@ -391,7 +403,14 @@ impl Actor {
                     if value["type"]=="visibility" {
                         self.visible=!self.monitoring && value["visible"].as_bool().unwrap_or(true);
                         if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
-                        else {self.commands.clear();if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
+                        else {
+                            self.commands.clear();
+                            // Backgrounded: give the mirrored panes back too. Android asks again when visible.
+                            if let (Some(endpoint),Some(control))=(self.endpoint.clone(),self.control.as_mut()) {
+                                let _=self.mirror.sync(&endpoint,control,"",&self.selected_block,Vec::new()).await;
+                            }
+                            if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();
+                        }
                         continue;
                     }
                     // Local scrollback does not issue RPCs or mutate input ownership.
@@ -443,6 +462,7 @@ impl Actor {
                         Err(e)=>self.recover(e),
                     }
                 },
+                (index,chunk)=self.mirror.read()=>{self.mirror.feed(index,chunk);},
                 chunk=async {match &mut self.retained_floating {Some(p)=>p.data.read().await,None=>pending().await}}=>{
                     let keep=if let (Ok(bytes),Some(pane))=(chunk,self.retained_floating.as_mut()) {
                         let ok=pane.replica.feed(&bytes).is_ok();
@@ -493,8 +513,13 @@ impl Actor {
                     if let Ok(details)=result {self.apply_program_details(details);self.publish();}
                 },
                 _=async {if active {let deadline=if self.dirty && self.visible {render_at}else{maintenance_at};
+                    let deadline=mirror_due.map_or(deadline,|at|at.min(deadline));
                     tokio::time::sleep_until(animation_at.filter(|_|self.visible).map_or(deadline,|image|image.min(deadline))).await;}else{pending::<()>().await;}}=>{
                     let now=tokio::time::Instant::now();
+                    if self.visible {
+                        let frames=self.mirror.frames();
+                        if !frames.is_empty() {self.preview_updates.extend(frames);self.publish_mirror_frames();}
+                    }
                     render_at=now+Duration::from_millis(16);
                     maintenance_at=now+Duration::from_secs(1);
                     if self.network_online && self.connect_task.is_none() && self.retry.is_some_and(|at|at<=now) && !self.paused {
@@ -554,6 +579,7 @@ impl Actor {
     }
     async fn disconnect(&mut self) {
         self.close_retained_floating().await;
+        self.mirror=Default::default();
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
@@ -577,6 +603,7 @@ impl Actor {
     }
     fn lose_connections(&mut self) {
         self.retained_floating=None;
+        self.mirror.clear();
         self.progress_reports.clear();self.activity_dirty=true;
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
@@ -655,6 +682,11 @@ impl Actor {
                     "Connected; terminal state refreshed"
                 }
                 .into();
+            }
+            // Streams died with the connection; reopen the panes Android was mirroring.
+            let (mirrored,wanted)=self.mirror.wanted();
+            if mirrored==session && !wanted.is_empty() {
+                let _=self.mirror.sync(&endpoint,self.control.as_mut().unwrap(),&session,&self.selected_block,wanted).await;
             }
         }
         self.publish();
@@ -1351,6 +1383,14 @@ impl Actor {
                         json!({"columns":columns.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
                 }
             }
+            "mirror" => {
+                let (session,wanted)=crate::mirror::parse(&value);
+                // Only the selected session's panes; anything else clears the mirror.
+                let session=if session==self.selected_session {session} else {String::new()};
+                let endpoint=self.endpoint.clone().context("no server")?;
+                let control=self.control.as_mut().context("not connected")?;
+                self.mirror.sync(&endpoint,control,&session,&self.selected_block,wanted).await?;
+            }
             "release" => {
                 if let Some(c) = &mut self.control {
                     c.call("session.disown_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block]})).await?;
@@ -1529,12 +1569,18 @@ impl Actor {
         self.release_selected().await?;
         let restored=if self.retained_floating.as_ref().is_some_and(|p|p.block==block) {
             self.retained_floating.take()
-        } else {None};
+        } else {
+            // Focusing a mirrored pane takes over its stream instead of opening a second one.
+            self.mirror.take(&block).map(|(data,replica)|RetainedFloating {block:block.clone(),data,replica})
+        };
         let floating=self.windows.as_array().into_iter().flatten().any(|w|
             w["layout"].as_array().into_iter().flatten().any(|p|p["id"]==self.selected_block && p["floating"]==true));
         if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.close_retained_floating().await;
             self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
+        } else if self.mirror.is_active() && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+            // In the multi-pane layout the pane being left stays on screen: the mirror keeps its stream.
+            self.mirror.adopt(self.selected_block.clone(),data,replica);
         } else if let Some(mut data)=self.data.take() {
             let _=tokio::time::timeout(Duration::from_secs(2),data.close()).await;
         }

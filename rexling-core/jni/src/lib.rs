@@ -4,6 +4,7 @@ mod engine;
 mod updates;
 mod uploads;
 mod forwards;
+mod mirror;
 use engine::Session;
 use jni::{
     JNIEnv,

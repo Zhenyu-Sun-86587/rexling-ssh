@@ -211,6 +211,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     @OptIn(ExperimentalLayoutApi::class) val keyboardShown=WindowInsets.isImeVisible
     val toolbarHidden=model.toolbarWithKeyboardOnly && !keyboardShown
     val tabWidth=currentTabWidth()
+    val unfoldedFullScreen=isUnfoldedFullScreen()
     val tabLayout=model.tabLayout(tabWidth.first)
     // The auto-hidden toolbar's unclipped height (divider + key row until measured). Written during its
     // measurement and read by the terminal's, so it is a plain holder rather than snapshot state.
@@ -336,7 +337,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
                         Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=3.dp)) {
-                        if(!floatingActive || hiddenFloating!=chosen) LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
+                        // Multi-pane only when chosen, unfolded full screen, and the tab has 2-4 tiled panes;
+                        // otherwise the single-pane carousel, unchanged.
+                        val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
+                        if(!floatingActive || hiddenFloating!=chosen) {
+                        val terminal: @Composable (List<BlockItem>)->Unit={shown->LiveTerminal(client,shown,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},{view->terminalView=view;view.onOpenLink={url->
                                 val loopback=LoopbackLink.parse(url)
                                 if(loopback==null) PortForwards.openBrowser(context,url)
@@ -348,7 +353,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             }},
                             Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,hazeState=terminalHaze,captureBackdrop=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,tapOpensKeyboard=model.toolbarWithKeyboardOnly,
                                 keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
-                                squareCorners=tabLayout.side)
+                                squareCorners=tabLayout.side || tiles!=null)}
+                        val focusedBlock=blocks.firstOrNull {it.id==chosen}
+                        if(tiles!=null && focusedBlock!=null) MultiPaneLayout(tiles,chosen,client.paneFrames,fontSize.toFloat(),::openPane,client::mirror) {terminal(listOf(focusedBlock))}
+                        else terminal(carouselBlocks)
+                        }
                         if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                             Text("Floating panes minimized",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -405,6 +414,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         enterSubmits=model.enterSubmits,onEnterSubmits=model::changeEnterSubmits,
         toolbarWithKeyboardOnly=model.toolbarWithKeyboardOnly,onToolbarWithKeyboardOnly=model::changeToolbarWithKeyboardOnly,
         tabLayouts=model.tabLayouts,tabWidth=tabWidth,onTabLayout=model::changeTabLayout,
+        multiPaneUnfolded=model.multiPaneUnfolded,onMultiPaneUnfolded=model::changeMultiPaneUnfolded,
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
         minimizeFloatingPanes=model.minimizeFloatingPanes,onMinimizeFloatingPanes=model::changeMinimizeFloatingPanes,
         keepScreenAwake=model.keepScreenAwake,onKeepScreenAwake=model::changeKeepScreenAwake,onToolbar={preferencesOpen=false;toolbarSettings=true},onControlItems={preferencesOpen=false;controlSettings=true},hazeState=workspaceHaze)

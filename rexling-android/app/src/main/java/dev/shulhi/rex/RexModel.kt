@@ -169,6 +169,10 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         tabLayouts[width]=layout
         preferences.edit {putString(width.key,layout.encode())}
     }
+    /** Unfolded and full screen, show a tab's tiled panes side by side instead of one at a time. */
+    internal var multiPaneUnfolded by mutableStateOf(preferences.getBoolean("multi_pane_unfolded",false))
+        private set
+    internal fun changeMultiPaneUnfolded(value: Boolean) {multiPaneUnfolded=value;preferences.edit {putBoolean("multi_pane_unfolded",value)}}
     internal var toolbarWithKeyboardOnly by mutableStateOf(preferences.getBoolean("keyboard_toolbar_auto_hide",false))
         private set
     internal fun changeToolbarWithKeyboardOnly(value: Boolean) {toolbarWithKeyboardOnly=value;preferences.edit {putBoolean("keyboard_toolbar_auto_hide",value)}}

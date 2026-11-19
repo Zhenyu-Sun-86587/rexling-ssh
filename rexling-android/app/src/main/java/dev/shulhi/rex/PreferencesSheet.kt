@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
     shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={},
-    arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},tabLayouts: Map<TabWidthClass,TabBarLayout> = emptyMap(),tabWidth: Pair<TabWidthClass,Int> = TabWidthClass.NARROW to 0,onTabLayout: (TabWidthClass,TabBarLayout)->Unit={_,_->},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
+    arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},multiPaneUnfolded: Boolean=false,onMultiPaneUnfolded: (Boolean)->Unit={},tabLayouts: Map<TabWidthClass,TabBarLayout> = emptyMap(),tabWidth: Pair<TabWidthClass,Int> = TabWidthClass.NARROW to 0,onTabLayout: (TabWidthClass,TabBarLayout)->Unit={_,_->},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
     minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},onNetwork: ()->Unit={},
     keepScreenAwake: KeepScreenAwake=KeepScreenAwake.SYSTEM,onKeepScreenAwake: (KeepScreenAwake)->Unit={},onToolbar: ()->Unit={},onControlItems: ()->Unit={},onSshKeys: ()->Unit={},hazeState: dev.chrisbanes.haze.HazeState?=null) {
     // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
@@ -58,6 +58,15 @@ import androidx.compose.ui.unit.dp
                 }
             }
             SettingsSection("Panes",compact=true) {
+                Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("Unfolded, full screen",style=SettingsType.row)
+                    Text("On a foldable's inner screen or a tablet, with no other app beside Rexling",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected=!multiPaneUnfolded,onClick={onMultiPaneUnfolded(false)},label={Text("Single pane",style=SettingsType.row)})
+                        FilterChip(selected=multiPaneUnfolded,onClick={onMultiPaneUnfolded(true)},label={Text("Multiple panes",style=SettingsType.row)})
+                    }
+                }
+                SettingsDivider()
                 Row(Modifier.fillMaxWidth().toggleable(minimizeFloatingPanes,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onMinimizeFloatingPanes)
                     .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {

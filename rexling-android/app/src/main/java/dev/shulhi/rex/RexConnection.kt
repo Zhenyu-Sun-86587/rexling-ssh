@@ -186,7 +186,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) {pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value);if(value) sendMirror()}}
     private var pollJob: Job? = null
 
     init {
@@ -284,6 +284,22 @@ internal class RexConnection(application: Application, private val scope: Corout
             return false
         }
         return true
+    }
+    /** A pane shown beside the focused one in the multi-pane layout, and the grid that fits it. */
+    internal data class MirrorPane(val block: String,val columns: Int,val rows: Int)
+    private var mirrorRequest: List<MirrorPane> = emptyList()
+    /**
+     * Mirrors [panes] live beside the selected pane, each sized to its grid; empty stops mirroring.
+     * The engine gives the panes back when the app is hidden, so they are asked for again when visible.
+     */
+    internal fun mirror(panes: List<MirrorPane>) {
+        if(panes==mirrorRequest) return
+        mirrorRequest=panes;sendMirror()
+    }
+    private fun sendMirror() {
+        if(mirrorRequest.isEmpty() && !visible) return
+        command("mirror","session" to state.value.selectedSession,"panes" to org.json.JSONArray(mirrorRequest.map {
+            JSONObject().put("block",it.block).put("columns",it.columns).put("rows",it.rows)}))
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
