@@ -17,7 +17,8 @@ internal enum class ServerNetworkRoute(val key: String,val label: String) {
     companion object {fun decode(value: String?)=entries.firstOrNull {it.key==value} ?: PHONE}
 }
 
-data class ServerProfile(val id: String,val label: String,val endpoint: String,val icon: ServerIcon=ServerIcon.GLOBE,val needsSshSetup: Boolean=false) {
+data class ServerProfile(val id: String,val label: String,val endpoint: String,val icon: ServerIcon=ServerIcon.GLOBE,val needsSshSetup: Boolean=false,val relayOnly: Boolean=false) {
+    val canConnect: Boolean get()=!needsSshSetup && !relayOnly
     companion object {
         val Empty=ServerProfile("__empty__","No server","")
         fun create(label: String,endpoint: String,id: String=UUID.randomUUID().toString(),icon: ServerIcon=ServerIcon.GLOBE): ServerProfile {
@@ -51,15 +52,23 @@ object SavedServers {
                 // Never treat an old Rust profile as a direct Go connection on upgrade.
                 val requiresSetup=!item.isNull("ssh") || item.optBoolean("jumpOnly") || item.optBoolean("needsSshSetup")
                 ServerProfile.create(item.optString("label"),item.getString("endpoint"),item.getString("id"),ServerIcon.decode(item.optString("icon")))
-                    .copy(needsSshSetup=requiresSetup)
+                    .copy(needsSshSetup=requiresSetup,relayOnly=item.optBoolean("relayOnly"))
             }.getOrNull() }.distinctBy {it.id}
         }.getOrElse {legacy()}
     }
     fun encode(servers: List<ServerProfile>): String = JSONArray(servers.map {server->
         JSONObject().put("id",server.id).put("label",server.label).put("endpoint",server.endpoint).put("icon",server.icon.key).apply {
             if(server.needsSshSetup) put("needsSshSetup",true)
+            if(server.relayOnly) put("relayOnly",true)
         }
     }).toString()
+}
+
+/** Login aliases or distinct socket paths on the same SSH server aren't separate hops. */
+internal fun sameSshHost(first: String,second: String): Boolean {
+    val a=URI(first);val b=URI(second)
+    fun port(uri: URI)=if(uri.port==-1) 22 else uri.port
+    return a.host.equals(b.host,ignoreCase=true) && port(a)==port(b)
 }
 
 data class ServerStatus(val phase: String="disconnected",val error: String="") {

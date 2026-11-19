@@ -266,7 +266,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     LaunchedEffect(picker) {if(picker=="sessions") model.refreshSessionDetails()}
     val workspaceBackdrop=rememberBackdropCapture(menu || forwards || preferencesOpen || servers || networkSettings || sshKeysSettings || appearance || about || neovimSettings || toolbarSettings || controlSettings || fontPicker || alerts || picker in setOf("tabs","panes","sessions") || model.activityVisible)
-    if(state.phase=="disconnected" && !client.hasScreen) Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
+    val hostsHome=state.phase=="disconnected" && !client.hasScreen
+    val settingsHaze=if(hostsHome) null else workspaceHaze
+    if(hostsHome) Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background) {
         Column(Modifier.safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("REXLING SSH",Modifier.weight(1f),style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -403,8 +405,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
 if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,model.lastSessionKey,ready,model.closingSessionKey.ifBlank {model.renamingSessionKey},model.sessionActionError,model::closeSession,model::renameSession,
                     onSelect={picker="";model.selectSessionTarget(it)},onClose={picker=""},onNew={picker="";newSession=true},hazeState=workspaceHaze)
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen,hazeState=workspaceHaze)
-    if(sshKeysSettings) SshKeysSheet(onClose={sshKeysSettings=false},hazeState=workspaceHaze)
-    if(networkSettings) NetworkSheet(model.activeServer,state.connected,hazeState=workspaceHaze) {networkSettings=false}
+    if(sshKeysSettings) SshKeysSheet(onClose={sshKeysSettings=false},hazeState=settingsHaze)
+    if(networkSettings) NetworkSheet(model.activeServer,state.connected,hazeState=settingsHaze) {networkSettings=false}
     if(preferencesOpen) PreferencesSheet({preferencesOpen=false;appearance=true},{preferencesOpen=false;fontPicker=true},{preferencesOpen=false;alerts=true},{preferencesOpen=false;about=true},
         onNetwork={preferencesOpen=false;networkSettings=true},onSshKeys={preferencesOpen=false;sshKeysSettings=true},onClose={preferencesOpen=false},shortcutGesture=model.shortcutGesture,onShortcutGesture=model::changeShortcutGesture,
         onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
@@ -412,7 +414,7 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
         minimizeFloatingPanes=model.minimizeFloatingPanes,onMinimizeFloatingPanes=model::changeMinimizeFloatingPanes,
         secureTerminalKeyboard=model.secureTerminalKeyboard,onSecureTerminalKeyboard=model::changeSecureTerminalKeyboard,
-        keepScreenAwake=model.keepScreenAwake,onKeepScreenAwake=model::changeKeepScreenAwake,onToolbar={preferencesOpen=false;toolbarSettings=true},onControlItems={preferencesOpen=false;controlSettings=true},hazeState=workspaceHaze,
+        keepScreenAwake=model.keepScreenAwake,onKeepScreenAwake=model::changeKeepScreenAwake,onToolbar={preferencesOpen=false;toolbarSettings=true},onControlItems={preferencesOpen=false;controlSettings=true},hazeState=settingsHaze,
         developMode=model.developMode,onDevelopMode=model::changeDevelopMode,
         onExportLogs={diagnosticExport.launch("rexling-build${BuildConfig.VERSION_CODE}-logs.txt")},
         onCopyLogs={diagnosticScope.launch {
@@ -422,15 +424,15 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
                 android.widget.Toast.makeText(context,"Recent logs copied",android.widget.Toast.LENGTH_SHORT).show()
             } catch(e: Exception) {android.widget.Toast.makeText(context,"Cannot copy logs: ${e.message}",android.widget.Toast.LENGTH_LONG).show()}
         }})
-    if(controlSettings) ControlShortcutsSheet(model.controlItems,model::saveControlShortcuts,onClose={controlSettings=false},hazeState=workspaceHaze)
-    if(toolbarSettings) KeyboardToolbarSheet(model.toolbarKeys,model::changeToolbar,onClose={toolbarSettings=false},hazeState=workspaceHaze)
+    if(controlSettings) ControlShortcutsSheet(model.controlItems,model::saveControlShortcuts,onClose={controlSettings=false},hazeState=settingsHaze)
+    if(toolbarSettings) KeyboardToolbarSheet(model.toolbarKeys,model::changeToolbar,onClose={toolbarSettings=false},hazeState=settingsHaze)
     if(neovimSettings) NeovimShortcutsSheet(model.neovimShortcuts,model::saveNeovimShortcuts,onClose={neovimSettings=false},
         enabled=model.neovimShortcutsEnabled,onEnabled=model::enableNeovimShortcuts,
         layout=model.neovimShortcutLayout,onLayout=model::changeNeovimShortcutLayout,effect=model.neovimShortcutEffect,onEffect=model::changeNeovimShortcutEffect,
-        hapticsEnabled=model.neovimShortcutHaptics,onHaptics=model::changeNeovimShortcutHaptics,hazeState=workspaceHaze)
+        hapticsEnabled=model.neovimShortcutHaptics,onHaptics=model::changeNeovimShortcutHaptics,hazeState=settingsHaze)
     if(model.images.notice.isNotEmpty()) AlertDialog(onDismissRequest={model.images.notice=""},title={Text("File upload")},text={Text(model.images.notice)},confirmButton={TextButton(onClick={model.images.notice=""}) {Text("OK")}})
-    if(about) AboutSheet(hazeState=workspaceHaze) {about=false}
-    if(alerts) BackgroundAlertsDialog(model,hazeState=workspaceHaze) {alerts=false}
+    if(about) AboutSheet(hazeState=settingsHaze) {about=false}
+    if(alerts) BackgroundAlertsDialog(model,hazeState=settingsHaze) {alerts=false}
     if(forwards) PortForwardSheet(model.forwardServers(),model.activeServerId,workspaceHaze,onClose={forwards=false},onStart={id->
         val saved=PortForwards.items.firstOrNull {it.id==id}
         val target=model.forwardServers().firstOrNull {it.profile.id==saved?.serverId && it.profile.endpoint==saved.endpoint}
@@ -460,8 +462,8 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
             }) {Text("Close",color=MaterialTheme.colorScheme.error)}},
             dismissButton={TextButton(onClick={closeTarget=null}) {Text("Cancel")}})
     }
-    if(appearance) AppearanceSheet(model.appearance,model.themes,model.theme(false),model.theme(true),model::changeAppearance,model::chooseTheme,hazeState=workspaceHaze) {appearance=false}
-    if(fontPicker) FontSizeDialog(fontSize,model::changeFontSize,hazeState=workspaceHaze) {fontPicker=false}
+    if(appearance) AppearanceSheet(model.appearance,model.themes,model.theme(false),model.theme(true),model::changeAppearance,model::chooseTheme,hazeState=settingsHaze) {appearance=false}
+    if(fontPicker) FontSizeDialog(fontSize,model::changeFontSize,hazeState=settingsHaze) {fontPicker=false}
     if(newSession) NewSessionDialog(model.activeServer.label,ready,client::createSession) {newSession=false}
 
 }

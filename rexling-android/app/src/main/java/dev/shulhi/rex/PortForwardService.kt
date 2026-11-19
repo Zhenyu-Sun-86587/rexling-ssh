@@ -51,7 +51,7 @@ class PortForwardService: Service() {
                 .put("session",item.session).put("host",item.host).put("port",item.port).put("local_port",item.localPort)
             val preferences=getSharedPreferences("rex",Context.MODE_PRIVATE)
             val servers=SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty())
-            check(servers.any {it.id==item.serverId && it.endpoint==item.endpoint && !it.needsSshSetup}) {"Configure the original Rex server before restarting this forward"}
+            check(servers.any {it.id==item.serverId && it.endpoint==item.endpoint && it.canConnect}) {"Configure the original Rex server before restarting this forward"}
             val handle=NativeBridge.forwardCreate(request.toString())
             check(handle!=0L) {"Could not start forward"}
             val job=scope.launch {

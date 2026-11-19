@@ -52,8 +52,10 @@ class ServersTest {
         }
     }
     @Test fun profilesAndStableIdsRoundTripAcrossRestart() {
-        val servers=listOf(ServerProfile.create("Mac","https://mac.example.ts.net","a"),ServerProfile.create("Linux","https://linux.example.ts.net","b"))
-        assertEquals(servers,SavedServers.decode(SavedServers.encode(servers),"https://legacy"))
+        val servers=listOf(ServerProfile.create("Mac","https://mac.example.ts.net","a"),ServerProfile.create("Gateway","ssh://jumper@gateway","b").copy(relayOnly=true))
+        val restored=SavedServers.decode(SavedServers.encode(servers),"https://legacy")
+        assertEquals(servers,restored)
+        assertEquals(listOf("a"),restored.filter {it.canConnect}.map {it.id})
     }
     @Test fun migrationPreservesTheExistingServerAndAnExplicitEmptyListStaysEmpty() {
         assertEquals("https://legacy",SavedServers.decode(null,"https://legacy/").single().endpoint)

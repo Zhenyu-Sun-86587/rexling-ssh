@@ -1,11 +1,16 @@
 package dev.shulhi.rex
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.toPixelMap
 import org.junit.Assert.*
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -23,10 +28,14 @@ class SettingsScreensTest {
     @get:Rule val ui=createComposeRule()
     @Test fun settingsRemainReadableInBothThemes() {
         var dark by mutableStateOf(false)
+        var surface=Color.Unspecified
         ui.setContent {
             RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
-                // Match the workspace: no parent Surface providing a text color.
-                PreferencesSheet({},{},{},{},{})
+                surface=MaterialTheme.colorScheme.surface
+                // Simulate a busy home screen without a captured Haze source.
+                Box(Modifier.fillMaxSize().background(Color.Magenta)) {
+                    PreferencesSheet({},{},{},{},{})
+                }
             }
         }
         for(isDark in listOf(false,true)) {
@@ -37,6 +46,8 @@ class SettingsScreensTest {
             }
             val luminance=layout!!.layoutInput.style.color.luminance()
             assertTrue("Preference header must contrast with its background: dark=$isDark luminance=$luminance",if(isDark) luminance>.5f else luminance<.3f)
+            val pixels=ui.onNodeWithTag("Settings drawer").captureToImage().toPixelMap()
+            assertEquals("The sheet should hide the home screen behind it: dark=$isDark",surface.toArgb(),pixels[pixels.width/4,8].toArgb())
             ui.onNodeWithText("Background alerts").performScrollTo().assertIsDisplayed()
             ui.onNodeWithText("Portside").assertDoesNotExist()
             capture("preferences",isDark)

@@ -70,3 +70,129 @@ jobs:
           name: rexling-debug-arm64
           path: rexling-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  android-emulator-ui:
+    # Keep the emulator image and x86_64 build off the ARM64/host test runner's disk.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ANDROID_SERIAL: emulator-5554
+      SYSTEM_IMAGE: 'system-images;android-36;google_apis;x86_64'
+      CARGO_INCREMENTAL: '0'
+      GODEBUG: http2client=0
+      RUSTUP_TOOLCHAIN: stable
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: rexling-network/go.mod
+          cache: false
+      - name: Install Rust, Android tools and emulator image
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          tools="$ANDROID_HOME/cmdline-tools/latest/bin"
+          "$tools/sdkmanager" --licenses < <(yes) > /dev/null
+          "$tools/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;30.0.16248370' \
+            'platform-tools' 'emulator' "$SYSTEM_IMAGE"
+          "$tools/avdmanager" create avd --name rexling-ui --package "$SYSTEM_IMAGE" --device pixel_6 <<< no
+
+      - name: Build x86_64 debug and instrumentation APKs
+        shell: bash
+        run: |
+          # Gradle configures release signing even for debug; no APK uses this disposable identity.
+          umask 077
+          signing=$(mktemp -d "$RUNNER_TEMP/rex-signing.XXXXXX")
+          trap 'rm -rf "$signing"' EXIT
+          printf '%s\n' android > "$signing/password"
+          keytool -genkeypair -keystore "$signing/unused.p12" -alias ci -keyalg RSA \
+            -dname 'CN=Rexling CI' -validity 1 -storepass:file "$signing/password"
+          printf 'storeFile=%s\nkeyAlias=ci\npasswordFile=%s\n' \
+            "$signing/unused.p12" "$signing/password" > "$signing/signing.properties"
+          export REXLING_SSH_SIGNING_PROPERTIES="$signing/signing.properties"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/30.0.16248370"
+          ./rexling-android/scripts/gradle.sh --no-daemon --max-workers=4 -PemulatorDebug=true \
+            :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Boot KVM emulator and run visual instrumentation tests
+        id: ui-tests
+        timeout-minutes: 18
+        shell: bash
+        run: |
+          output="$RUNNER_TEMP/android-emulator-ui"
+          mkdir -p "$output"
+          sudo chmod a+rw /dev/kvm
+          emulator="$ANDROID_HOME/emulator/emulator"
+          device=("$ANDROID_HOME/platform-tools/adb" -s "$ANDROID_SERIAL")
+          "${device[@]}" start-server
+          "$emulator" -avd rexling-ui -port "${ANDROID_SERIAL#emulator-}" -accel on \
+            -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader \
+            > "$output/emulator.log" 2>&1 &
+          emulator_pid=$!
+          deadline=$((SECONDS + 300))
+          until [[ $(timeout 5s "${device[@]}" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]]; do
+            if (( SECONDS >= deadline )) || ! kill -0 "$emulator_pid" 2>/dev/null; then
+              echo '::error::Android emulator did not boot'
+              cat "$output/emulator.log"
+              exit 1
+            fi
+            sleep 2
+          done
+          "${device[@]}" shell input keyevent KEYCODE_WAKEUP
+          "${device[@]}" shell wm dismiss-keyguard
+          "${device[@]}" install rexling-android/app/build/outputs/apk/debug/app-debug.apk
+          "${device[@]}" install -t rexling-android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+          classes=dev.shulhi.rex.SettingsScreensTest,dev.shulhi.rex.AppearanceSheetTest,dev.shulhi.rex.HostsUiTest
+          timeout --kill-after=5s 10m "${device[@]}" shell am instrument -w -e class "$classes" \
+            dev.shulhi.rex.ssh.test/androidx.test.runner.AndroidJUnitRunner | tee "$output/instrumentation.log"
+          # am instrument can return zero even when assertions fail or the app crashes.
+          if ! grep -Eq '^OK \([1-9][0-9]* tests?\)[[:space:]]*$' "$output/instrumentation.log"; then
+            echo '::error::AndroidJUnitRunner did not report a successful test run'
+            exit 1
+          fi
+
+      - name: Collect screenshots and emulator diagnostics
+        if: ${{ always() && (steps.ui-tests.outcome == 'success' || steps.ui-tests.outcome == 'failure') }}
+        env:
+          TEST_OUTCOME: ${{ steps.ui-tests.outcome }}
+        shell: bash
+        run: |
+          output="$RUNNER_TEMP/android-emulator-ui"
+          mkdir -p "$output/screenshots"
+          device=("$ANDROID_HOME/platform-tools/adb" -s "$ANDROID_SERIAL")
+          app=dev.shulhi.rex.ssh
+          if files=$(timeout 15s "${device[@]}" shell -T run-as "$app" ls -1 cache); then
+            while IFS= read -r file; do
+              [[ $file =~ ^(settings|theme|hosts)-[a-z0-9-]+\.png$ ]] || continue
+              target="$output/screenshots/$file"
+              # No PTY: preserve PNG bytes and propagate the remote exit status.
+              if ! timeout 15s "${device[@]}" shell -T run-as "$app" cat "cache/$file" > "$target" || [[ ! -s $target ]]; then
+                echo "::warning::Could not retrieve $file"
+                rm -f "$target"
+              fi
+            done <<< "$files"
+          fi
+          timeout 15s "${device[@]}" logcat -d -t 2000 > "$output/logcat.txt" 2>&1 || true
+          timeout 15s "${device[@]}" emu kill || true
+          if [[ $TEST_OUTCOME == success ]]; then
+            for prefix in settings theme hosts; do
+              if ! compgen -G "$output/screenshots/$prefix-*.png" > /dev/null; then
+                echo "::error::No $prefix screenshots were retrieved from the app cache"
+                exit 1
+              fi
+            done
+          fi
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: ${{ always() && (steps.ui-tests.outcome == 'success' || steps.ui-tests.outcome == 'failure') }}
+        with:
+          name: android-emulator-ui
+          path: ${{ runner.temp }}/android-emulator-ui/
+          if-no-files-found: error

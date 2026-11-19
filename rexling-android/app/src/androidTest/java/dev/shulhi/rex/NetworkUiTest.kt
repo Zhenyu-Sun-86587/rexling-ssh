@@ -80,7 +80,7 @@ class NetworkUiTest {
         }
     }
     @Test fun serverEditorOffersPerServerNetworkAndSetup() {
-        compose.setContent {MaterialTheme {ServerEditor(null,{}, {_,_,_->null})}}
+        compose.setContent {MaterialTheme {ServerEditor(null,{}, {_,_,_,_->null})}}
         compose.onNodeWithText("Connection network").assertDoesNotExist()
         compose.onNodeWithText("Server URL").performTextInput("https://shipyard")
         compose.onNodeWithText("Phone network / VPN").performScrollTo().performClick()
@@ -161,7 +161,7 @@ class NetworkUiTest {
         compose.runOnIdle {assertEquals(0,continued)}
     }
     @Test fun sshEditorOffersKeyImportAndKeylessConnection() {
-        compose.setContent {MaterialTheme {ServerEditor(ServerProfile.create("Test SSH","ssh://tester@example.com"),{}, {_,_,_->null})}}
+        compose.setContent {MaterialTheme {ServerEditor(ServerProfile.create("Test SSH","ssh://tester@example.com"),{}, {_,_,_,_->null})}}
         compose.onNodeWithText("Import new key").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("No key").assertIsDisplayed()
         compose.waitForIdle()

@@ -43,6 +43,7 @@ type configuration struct {
 	Directory  string                   `json:"directory"`
 	SSH        map[string]sshCredential `json:"ssh"`
 	Trusted    map[string]string        `json:"trusted"`
+	Jumps      map[string]string        `json:"jumps"`
 }
 
 func (c configuration) tailscaleEnabled() bool {
@@ -256,12 +257,53 @@ func hostIdentity(u *url.URL) string {
 	}
 	return net.JoinHostPort(strings.ToLower(u.Hostname()), port)
 }
-func sshClient(ctx context.Context, u *url.URL) (*ssh.Client, error) {
-	endpoint := u.String()
+
+// Keep Kotlin's endpoint spelling for configuration lookups; url.URL.String
+// can re-escape userinfo. Treat a root slash like the saved root endpoint.
+func sshEndpoint(endpoint string, u *url.URL) string {
+	if u.Path == "/" && u.RawPath == "" && !u.ForceQuery && u.RawQuery == "" && u.Fragment == "" {
+		return strings.TrimSuffix(endpoint, "/")
+	}
+	return endpoint
+}
+
+func sshClient(ctx context.Context, endpoint string, u *url.URL) (*ssh.Client, error) {
 	state.Lock()
-	cached := state.clients[endpoint]
-	credential := state.config.SSH[endpoint]
+	settings := state.config
 	generation := state.generation
+	state.Unlock()
+
+	var jump *url.URL
+	if jumpEndpoint, ok := settings.Jumps[endpoint]; ok {
+		var err error
+		jump, err = url.Parse(jumpEndpoint)
+		if err != nil || jump.Scheme != "ssh" || jump.Hostname() == "" || jump.User.Username() == "" || jump.ForceQuery || jump.RawQuery != "" || jump.Fragment != "" {
+			return nil, errors.New("invalid saved SSH jump endpoint")
+		}
+		if _, hasPassword := jump.User.Password(); hasPassword {
+			return nil, errors.New("invalid saved SSH jump endpoint")
+		}
+		if hostIdentity(u) == hostIdentity(jump) {
+			return nil, errors.New("an SSH server cannot jump through itself")
+		}
+		jumpEndpoint = sshEndpoint(jumpEndpoint, jump)
+		if _, chained := settings.Jumps[jumpEndpoint]; chained {
+			return nil, errors.New("the SSH jump must be a direct server")
+		}
+		if settings.SSH[jumpEndpoint].Key == "" {
+			return nil, errors.New("assign an SSH key to the saved jump server")
+		}
+	}
+	return sshClientFor(ctx, endpoint, u, jump, settings, generation)
+}
+
+func sshClientFor(ctx context.Context, endpoint string, u, jump *url.URL, settings configuration, generation uint64) (*ssh.Client, error) {
+	state.Lock()
+	if generation != state.generation {
+		state.Unlock()
+		return nil, errors.New("SSH settings changed")
+	}
+	cached := state.clients[endpoint]
 	state.Unlock()
 	if cached != nil {
 		return cached, nil
@@ -279,7 +321,10 @@ func sshClient(ctx context.Context, u *url.URL) (*ssh.Client, error) {
 		fingerprint := ssh.FingerprintSHA256(key)
 		state.Lock()
 		defer state.Unlock()
-		trusted := state.config.Trusted[identity]
+		if generation != state.generation {
+			return errors.New("SSH settings changed")
+		}
+		trusted := settings.Trusted[identity]
 		if trusted == fingerprint {
 			delete(state.prompts, identity)
 			return nil
@@ -289,33 +334,42 @@ func sshClient(ctx context.Context, u *url.URL) (*ssh.Client, error) {
 	}
 	config.BannerCallback = func(message string) error {
 		state.Lock()
+		defer state.Unlock()
+		if generation != state.generation {
+			return errors.New("SSH settings changed")
+		}
 		state.banners[endpoint] = message
-		state.Unlock()
 		return nil
 	}
-	if credential.Key != "" {
+	if credential := settings.SSH[endpoint]; credential.Key != "" {
 		signer, err := ssh.ParsePrivateKey([]byte(credential.Key))
 		if err != nil {
 			return nil, errors.New("could not read the saved SSH key")
 		}
 		config.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
 	}
-	connection, err := networkDial(ctx, endpoint, identity)
+	var connection net.Conn
+	var err error
+	if jump == nil {
+		connection, err = networkDial(ctx, endpoint, identity)
+	} else {
+		jumpEndpoint := sshEndpoint(settings.Jumps[endpoint], jump)
+		firstHop, err := sshClientFor(ctx, jumpEndpoint, jump, nil, settings, generation)
+		if err != nil {
+			return nil, fmt.Errorf("SSH jump %s: %w", hostIdentity(jump), err)
+		}
+		connection, err = firstHop.DialContext(ctx, "tcp", identity)
+		if err != nil {
+			return nil, fmt.Errorf("SSH jump %s could not forward to %s: %w", hostIdentity(jump), identity, err)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(25 * time.Second)
-	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
-		deadline = limit
-	}
-	connection.SetDeadline(deadline)
-	transport, channels, requests, err := ssh.NewClientConn(connection, identity, config)
+	client, err := sshHandshake(ctx, connection, identity, config)
 	if err != nil {
-		connection.Close()
 		return nil, fmt.Errorf("SSH login failed: %w", err)
 	}
-	connection.SetDeadline(time.Time{})
-	client := ssh.NewClient(transport, channels, requests)
 	state.Lock()
 	if generation != state.generation {
 		state.Unlock()
@@ -330,8 +384,54 @@ func sshClient(ctx context.Context, u *url.URL) (*ssh.Client, error) {
 	state.clients[endpoint] = client
 	delete(state.banners, endpoint)
 	state.Unlock()
+	go func() {
+		client.Wait()
+		forgetSSHClient(endpoint, client)
+	}()
 	return client, nil
 }
+
+func sshHandshake(ctx context.Context, connection net.Conn, identity string, config *ssh.ClientConfig) (*ssh.Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
+	type result struct {
+		client *ssh.Client
+		err    error
+	}
+	// SSH forwarding channels do not implement deadlines. Bound the caller's
+	// wait even if the peer does not promptly acknowledge the tunnel close.
+	done := make(chan result)
+	go func() {
+		transport, channels, requests, err := ssh.NewClientConn(connection, identity, config)
+		var client *ssh.Client
+		if err == nil {
+			client = ssh.NewClient(transport, channels, requests)
+		}
+		select {
+		case done <- result{client, err}:
+		case <-ctx.Done():
+		}
+	}()
+	select {
+	case r := <-done:
+		if ctx.Err() == nil {
+			return r.client, r.err
+		}
+	case <-ctx.Done():
+	}
+	// Only close this connection (the individual tunnel for a jumped target).
+	go connection.Close()
+	return nil, ctx.Err()
+}
+
+func forgetSSHClient(endpoint string, client *ssh.Client) {
+	state.Lock()
+	if state.clients[endpoint] == client {
+		delete(state.clients, endpoint)
+	}
+	state.Unlock()
+}
+
 func rexSocket(ctx context.Context, client *ssh.Client, u *url.URL) (string, error) {
 	if u.Path != "" && u.Path != "/" {
 		return u.Path, nil
@@ -366,7 +466,8 @@ func dial(ctx context.Context, endpoint string) (net.Conn, error) {
 		return nil, err
 	}
 	if u.Scheme == "ssh" {
-		client, err := sshClient(ctx, u)
+		endpoint = sshEndpoint(endpoint, u)
+		client, err := sshClient(ctx, endpoint, u)
 		if err != nil {
 			return nil, err
 		}
@@ -378,11 +479,7 @@ func dial(ctx context.Context, endpoint string) (net.Conn, error) {
 				return conn, nil
 			}
 		}
-		state.Lock()
-		if state.clients[endpoint] == client {
-			delete(state.clients, endpoint)
-		}
-		state.Unlock()
+		forgetSSHClient(endpoint, client)
 		client.Close()
 		return nil, err
 	}

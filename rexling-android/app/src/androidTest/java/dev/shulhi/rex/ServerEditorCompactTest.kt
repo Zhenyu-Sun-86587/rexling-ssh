@@ -21,7 +21,7 @@ class ServerEditorCompactTest {
         var dark by mutableStateOf(false)
         try {
             ui.setContent {RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
-                ServerEditor(ServerProfile.create("Shipyard 2",endpoint),{}, {_,_,_->null})
+                ServerEditor(ServerProfile.create("Shipyard 2",endpoint),{}, {_,_,_,_->null})
             }}
             for(value in listOf(false,true)) {
                 ui.runOnIdle {dark=value}

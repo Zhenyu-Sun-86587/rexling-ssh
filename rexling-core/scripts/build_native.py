@@ -12,7 +12,10 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ANDROID = ROOT.parent / "rexling-android"
-TARGET = "aarch64-linux-android"
+ANDROID_TARGETS = {
+    "arm64-v8a": ("aarch64-linux-android", "arm64"),
+    "x86_64": ("x86_64-linux-android", "amd64"),
+}
 
 
 def run(command, **kwargs):
@@ -31,7 +34,9 @@ def download(url, expected, path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host-test", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--host-test", action="store_true")
+    mode.add_argument("--abi", choices=ANDROID_TARGETS, default="arm64-v8a")
     args = parser.parse_args()
     manifest = json.loads((ROOT / "native/ghostty-source.json").read_text())
     arch = {"arm64": "aarch64", "aarch64": "aarch64", "x86_64": "x86_64"}[platform.machine()]
@@ -66,7 +71,9 @@ def main():
     cargo = shutil.which("cargo") or str(Path.home() / ".cargo/bin/cargo")
     rustup = shutil.which("rustup") or str(Path.home() / ".cargo/bin/rustup")
     env["CARGO_TARGET_DIR"] = str(ROOT / ".build/rust")
-    prefix = ROOT / (".build/ghostty-host" if args.host_test else ".build/ghostty-arm64")
+    target, goarch = ANDROID_TARGETS[args.abi]
+    cache_abi = "arm64" if args.abi == "arm64-v8a" else args.abi
+    prefix = ROOT / (".build/ghostty-host" if args.host_test else f".build/ghostty-{cache_abi}")
     command = [zig_root / "zig", "build", "-Demit-lib-vt", "-Demit-macos-app=false", "-Demit-xcframework=false", "-Doptimize=ReleaseFast", "--prefix", prefix]
     if not args.host_test:
         sdk = Path(env.get("ANDROID_HOME") or env.get("ANDROID_SDK_ROOT") or Path.home() / "Library/Android/sdk")
@@ -74,20 +81,21 @@ def main():
         ndk = Path(env["ANDROID_NDK_HOME"]) if env.get("ANDROID_NDK_HOME") else ndks / manifest["android_ndk_version"]
         env["ANDROID_HOME"] = str(sdk)
         env["ANDROID_NDK_HOME"] = str(ndk)
-        command += ["-Dtarget=aarch64-linux-android.28"]
+        api = manifest["android_api"]
+        command += [f"-Dtarget={target}.{api}"]
         compiler_root = ndk / "toolchains/llvm/prebuilt" / ("darwin-x86_64" if host == "macos" else "linux-x86_64")
-        compiler = compiler_root / "bin/aarch64-linux-android28-clang"
-        env["CC_aarch64_linux_android"] = str(compiler)
-        env["CXX_aarch64_linux_android"] = str(compiler) + "++"
-        env["AR_aarch64_linux_android"] = str(compiler_root / "bin/llvm-ar")
-        env["CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"] = str(compiler)
-        env["CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS"] = "-C link-arg=-Wl,-z,max-page-size=16384"
-    if not args.host_test:
+        compiler = compiler_root / f"bin/{target}{api}-clang"
+        target_env = target.replace("-", "_")
+        env[f"CC_{target_env}"] = str(compiler)
+        env[f"CXX_{target_env}"] = str(compiler) + "++"
+        env[f"AR_{target_env}"] = str(compiler_root / "bin/llvm-ar")
+        env[f"CARGO_TARGET_{target_env.upper()}_LINKER"] = str(compiler)
+        env[f"CARGO_TARGET_{target_env.upper()}_RUSTFLAGS"] = "-C link-arg=-Wl,-z,max-page-size=16384"
         network = ROOT.parent / "rexling-network"
-        network_prefix = ROOT / ".build/network-arm64"
+        network_prefix = ROOT / f".build/network-{cache_abi}"
         network_prefix.mkdir(parents=True, exist_ok=True)
         network_env = env.copy()
-        network_env.update({"GOOS":"android", "GOARCH":"arm64", "CGO_ENABLED":"1", "CC":str(compiler), "CGO_LDFLAGS":"-Wl,-z,max-page-size=16384"})
+        network_env.update({"GOOS":"android", "GOARCH":goarch, "CGO_ENABLED":"1", "CC":str(compiler), "CGO_LDFLAGS":"-Wl,-z,max-page-size=16384"})
         run(["go", "build", "-mod=readonly", "-trimpath", "-buildmode=c-shared", "-ldflags=-s -w", "-o", network_prefix / "librex_network.so", "."], cwd=network, env=network_env)
         env["REXLING_NETWORK_PREFIX"] = str(network_prefix)
     # Archive builds must not detect the enclosing Rexling repository's tags.
@@ -96,14 +104,15 @@ def main():
     if args.host_test:
         run([cargo, "test", "--locked", "--workspace", "--all-features", "--manifest-path", ROOT / "Cargo.toml"], cwd=ROOT, env=env)
         return
-    run([rustup, "target", "add", TARGET], env=env)
-    run([cargo, "build", "--locked", "--release", "--target", TARGET, "--manifest-path", ROOT / "Cargo.toml", "-p", "rexling-jni"], cwd=ROOT, env=env)
-    destination = ANDROID / "app/src/main/jniLibs/arm64-v8a"
+    run([rustup, "target", "add", target], env=env)
+    run([cargo, "build", "--locked", "--release", "--target", target, "--manifest-path", ROOT / "Cargo.toml", "-p", "rexling-jni"], cwd=ROOT, env=env)
+    jni_root = "app/src/main/jniLibs" if args.abi == "arm64-v8a" else ".build/emulator-jniLibs"
+    destination = ANDROID / jni_root / args.abi
     destination.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(ROOT / f".build/rust/{TARGET}/release/librex_android.so", destination / "librex_android.so")
+    shutil.copyfile(ROOT / f".build/rust/{target}/release/librex_android.so", destination / "librex_android.so")
     shutil.copyfile(network_prefix / "librex_network.so", destination / "librex_network.so")
-    shutil.copyfile(compiler_root / "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so", destination / "libc++_shared.so")
-    print(f"Android arm64 JNI libraries built in {destination}")
+    shutil.copyfile(compiler_root / f"sysroot/usr/lib/{target}/libc++_shared.so", destination / "libc++_shared.so")
+    print(f"Android {args.abi} JNI libraries built in {destination}")
 
 
 if __name__ == "__main__":

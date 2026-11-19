@@ -105,6 +105,62 @@ class HostsUiTest {
         }
     }
 
+    @Test fun savesAJumpOnlyHostAndReusesItFromTheTargetEditor() {
+        val preferenceName="hosts-jump-ui-${System.nanoTime()}"
+        val prefs=app.getSharedPreferences(preferenceName,0)
+        val store=ViewModelStore()
+        val listener=ServerSocket(0).apply {soTimeout=500}
+        val gateway="ssh://ubuntu@127.0.0.1:${listener.localPort}"
+        val target="ssh://dev@ci-target-${listener.localPort}.invalid"
+        lateinit var model: RexModel
+        ui.runOnUiThread {model=RexModel(app,preferenceName);store.put("hosts",model)}
+        try {
+            var opened=0
+            ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {Surface(Modifier.fillMaxSize()) {HostsPanel(model,{opened++})}}}
+            fun newHost(name: String,url: String) {
+                ui.onNodeWithText("+ Add host").performScrollTo().performClick()
+                ui.onNode(hasSetTextAction() and hasText("Name")).performTextInput(name)
+                val field=ui.onNode(hasSetTextAction() and hasText("Server URL"))
+                field.performTextInput(url)
+                field.performImeAction()
+            }
+            newHost("Tokyo gateway",gateway)
+            ui.onNodeWithContentDescription("Jump host only").performScrollTo().performClick()
+            ui.onNodeWithText("Save & connect").assertDoesNotExist()
+            capture("jump-only-editor")
+            ui.onNodeWithText("Save only").performClick()
+            ui.waitUntil(10000) {model.servers.any {it.relayOnly}}
+            ui.onNodeWithText("SSH jump hosts").assertIsDisplayed()
+            newHost("Private target",target)
+            ui.onNodeWithText("Choose a saved SSH host").performScrollTo().performClick()
+            ui.onNodeWithText("Choose jump host").assertIsDisplayed()
+            capture("jump-picker")
+            ui.onNode(hasText("Tokyo gateway") and hasAnyAncestor(isDialog())).performClick()
+            ui.onNodeWithText("Via Tokyo gateway").assertIsDisplayed()
+            ui.onNodeWithText("Connection network").assertDoesNotExist()
+            capture("target-via-jump")
+            ui.onNodeWithText("Save only").performClick()
+            ui.waitUntil(10000) {model.servers.size==2}
+            ui.runOnIdle {
+                assertEquals(gateway,NetworkSettings.jumpEndpoint(target))
+                val jump=model.servers.single {it.relayOnly}
+                assertEquals(listOf(target),model.forwardServers().map {it.profile.endpoint})
+                assertNotNull(model.forgetServer(jump.id))
+                model.connectServer(jump.id)
+                assertEquals(0,opened)
+                assertTrue(prefs.getStringSet("connected_servers",emptySet()).orEmpty().isEmpty())
+            }
+            try {listener.accept().use {fail("Saving or selecting a jump-only host opened an SSH socket")}}
+            catch(_: SocketTimeoutException) { /* Save only never connects. */ }
+        } finally {
+            listener.close()
+            ui.runOnUiThread {model.servers.filterNot {it.relayOnly}.forEach {model.forgetServer(it.id)}}
+            ui.waitUntil(10000) {NetworkSettings.jumpEndpoint(target)==null}
+            ui.runOnUiThread {model.servers.toList().forEach {model.forgetServer(it.id)};store.clear()}
+            app.deleteSharedPreferences(preferenceName)
+        }
+    }
+
     @Test fun tailscaleExplainsDiscoveryAndBlocksIneligibleDevices() {
         var sheet by mutableStateOf(true)
         var selected: TailscaleDevice?=null

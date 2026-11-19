@@ -34,6 +34,9 @@ internal object NetworkSettings {
     private val preferences get()=context.getSharedPreferences("network",Context.MODE_PRIVATE)
     val builtIn get()=preferences.getBoolean("built_in",false)
     fun route(endpoint: String)=ServerNetworkRoute.decode(JSONObject(preferences.getString("routes","{}")!!).optString(endpoint))
+    private fun jumps()=JSONObject(preferences.getString("ssh_jumps","{}")!!)
+    fun jumpEndpoint(endpoint: String)=jumps().optString(endpoint).takeIf {it.isNotBlank()}
+    fun isUsedAsJump(endpoint: String)=jumps().let {routes->routes.keys().asSequence().any {routes.optString(it)==endpoint}}
     val tailscaleEnabled get()=!preferences.getBoolean("tailscale_suspended",false) && (builtIn || preferences.getBoolean("tailscale_prepared",false) || JSONObject(preferences.getString("routes","{}")).let {routes->routes.keys().asSequence().any {routes.optString(it)=="builtin"}})
     val controlUrl get()=preferences.getString("control_url","").orEmpty()
     private fun vaultKey(): SecretKey {
@@ -111,7 +114,7 @@ internal object NetworkSettings {
         library.assigned().forEach {(endpoint,id)->runCatching {ssh.put(endpoint,JSONObject().put("key",decrypt(library.secret(id))))}}
         val config=JSONObject().put("built_in",builtIn).put("control_url",controlUrl).put("directory",context.filesDir.resolve("tailscale").absolutePath)
             .put("built_in_suspended",preferences.getBoolean("tailscale_suspended",false)).put("built_in_enabled",tailscaleEnabled).put("routes",JSONObject(preferences.getString("routes","{}")!!))
-            .put("ssh",ssh).put("trusted",JSONObject(preferences.getString("trusted","{}")!!))
+            .put("ssh",ssh).put("jumps",jumps()).put("trusted",JSONObject(preferences.getString("trusted","{}")!!))
         val error=command("configure",JSONObject().put("config",config)).optString("error").takeIf {it.isNotEmpty()}
         if(error==null) revision.value=revision.value+1
         return error
@@ -125,12 +128,26 @@ internal object NetworkSettings {
         preferences.edit().putBoolean("built_in",enabled).apply {if(enabled) putBoolean("tailscale_suspended",false)}.putString("control_url",trimmed).commit()
         configure()
     }}
-    suspend fun saveRoute(endpoint: String,route: ServerNetworkRoute): String? = withContext(Dispatchers.IO) {mutex.withLock {
+    suspend fun saveHost(endpoint: String,route: ServerNetworkRoute,key: String?,jump: String?): String? = withContext(Dispatchers.IO) {mutex.withLock {
+        val jumps=jumps()
+        if(jump!=null && (!endpoint.startsWith("ssh://") || !jump.startsWith("ssh://") || sameSshHost(endpoint,jump)))
+            return@withLock "Choose a different SSH host as the jump host"
+        if(jump!=null && (jumps.has(jump) || jumps.keys().asSequence().any {jumps.optString(it)==endpoint}))
+            return@withLock "Only one jump is supported. Choose a direct SSH host."
         val routes=JSONObject(preferences.getString("routes","{}")!!)
-        if(ServerNetworkRoute.decode(routes.optString(endpoint))==route) return@withLock null
+        val library=keyLibrary()
+        if(ServerNetworkRoute.decode(routes.optString(endpoint))==route && library.selected(endpoint)==key && jumpEndpoint(endpoint)==jump) return@withLock null
+        val oldRoutes=routes.toString();val oldJumps=jumps.toString();val oldLibrary=library.encode()
         routes.put(endpoint,route.key)
-        preferences.edit().putString("routes",routes.toString()).commit()
-        configure()
+        if(jump==null) jumps.remove(endpoint) else jumps.put(endpoint,jump)
+        library.assign(endpoint,key)
+        fun write(routes: String,jumps: String,keys: String)=preferences.edit()
+            .putString("routes",routes).putString("ssh_jumps",jumps).putString("ssh_library",keys).commit()
+        val error=try {
+            if(write(routes.toString(),jumps.toString(),library.encode())) configure() else "Could not save host settings"
+        } catch(ex: Exception) {ex.message ?: "Could not configure host"}
+        if(error==null) sshKeyBindings.value=library.assigned() else write(oldRoutes,oldJumps,oldLibrary)
+        error
     }}
     suspend fun prepareBuiltIn(url: String): String? = withContext(Dispatchers.IO) {mutex.withLock {
         val trimmed=url.trim().trimEnd('/')
@@ -189,9 +206,10 @@ internal object NetworkSettings {
         fun authority(value: String): String? = runCatching {val uri=java.net.URI(value);val host=uri.host.removePrefix("[").removeSuffix("]");if(uri.scheme!="ssh") null else "${if(host.contains(':')) "[$host]" else host}:${if(uri.port<0) 22 else uri.port}"}.getOrNull()
         authority(endpoint)?.let {host->if(remaining.none {authority(it)==host}) trusted.remove(host)}
         val routes=JSONObject(preferences.getString("routes","{}")!!)
-        if(endpoint !in remaining) routes.remove(endpoint)
+        val jumps=jumps()
+        if(endpoint !in remaining) {routes.remove(endpoint);jumps.remove(endpoint)}
         saveLibrary(library)
-        preferences.edit().putString("trusted",trusted.toString()).putString("routes",routes.toString()).commit();configure()
+        preferences.edit().putString("trusted",trusted.toString()).putString("routes",routes.toString()).putString("ssh_jumps",jumps.toString()).commit();configure()
     }}}
     suspend fun login(): String? = withContext(Dispatchers.IO) {command("login").optString("error").takeIf {it.isNotEmpty()}}
 }

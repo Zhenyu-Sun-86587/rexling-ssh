@@ -21,6 +21,8 @@ fun gitOutput(vararg args: String): String = runCatching {
 }.getOrDefault("")
 val revision=gitOutput("rev-parse","--short=10","HEAD").takeIf {it.matches(Regex("[0-9a-f]{7,40}"))} ?: "unknown"
 val modified=gitOutput("status","--porcelain","--untracked-files=no").isNotBlank()
+val emulatorDebug = providers.gradleProperty("emulatorDebug").orNull == "true"
+val emulatorJniLibs = rootProject.file(".build/emulator-jniLibs")
 
 android {
     namespace = "dev.shulhi.rex"
@@ -30,12 +32,11 @@ android {
         applicationId = "dev.shulhi.rex.ssh"
         minSdk = 28
         targetSdk = 37
-        versionCode = 171
+        versionCode = 172
         versionName = dateVersion
         buildConfigField("String","GIT_REVISION","\"$revision\"")
         buildConfigField("boolean","LOCAL_CHANGES",modified.toString())
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += "arm64-v8a" }
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions {
@@ -59,10 +60,12 @@ android {
     }
     buildTypes {
         getByName("debug") {
+            ndk { abiFilters += if (emulatorDebug) "x86_64" else "arm64-v8a" }
             // A disposable package for on-device rendering tests; never touches the installed app's settings.
             if(providers.gradleProperty("renderBench").orNull=="true") applicationIdSuffix=".renderbench"
         }
         release {
+            ndk { abiFilters += "arm64-v8a" }
             // A persistent, external signing identity permits upgrades without clearing app credentials.
             signingConfig=signingConfigs.getByName("sshRelease")
             isMinifyEnabled = true
@@ -78,6 +81,16 @@ android {
             initWith(getByName("optimized"))
             isMinifyEnabled=false
             isShrinkResources=false
+        }
+    }
+    if (emulatorDebug) {
+        // Keep the two native build outputs out of each other's source sets.
+        val mainJniLibs = sourceSets.getByName("main").jniLibs.directories
+        val armJniLibs = mainJniLibs.toList()
+        mainJniLibs.clear()
+        sourceSets.getByName("debug").jniLibs.directories += emulatorJniLibs.absolutePath
+        for (buildType in listOf("release", "optimized", "profile")) {
+            sourceSets.getByName(buildType).jniLibs.directories += armJniLibs
         }
     }
 }
@@ -104,16 +117,28 @@ dependencies {
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("org.json:json:20250517")
 }
-val buildRust by tasks.registering(Exec::class) {
+fun registerNativeBuild(taskName: String, abi: String, destination: File) = tasks.register<Exec>(taskName) {
     workingDir(rootProject.projectDir)
-    commandLine("python3", "scripts/build_native.py")
+    commandLine("python3", "scripts/build_native.py", "--abi", abi)
+    inputs.property("abi", abi)
     inputs.files(rootProject.fileTree("../rexling-core") { exclude("**/target/**", "**/.build/**") })
     inputs.files(rootProject.fileTree("../rexling-network") { include("*.go", "go.mod", "go.sum") })
     inputs.file(rootProject.file("../rexling-core/scripts/build_native.py"))
     inputs.file(rootProject.file("scripts/build_native.py"))
-    outputs.dir(project.file("src/main/jniLibs/arm64-v8a"))
+    outputs.dir(destination)
 }
-tasks.named("preBuild").configure { dependsOn(buildRust) }
+val buildRust = registerNativeBuild("buildRust", "arm64-v8a", file("src/main/jniLibs/arm64-v8a"))
+if (emulatorDebug) {
+    val buildEmulatorRust = registerNativeBuild("buildEmulatorRust", "x86_64", emulatorJniLibs.resolve("x86_64"))
+    tasks.configureEach {
+        when (name) {
+            "preDebugBuild" -> dependsOn(buildEmulatorRust)
+            "preReleaseBuild", "preOptimizedBuild", "preProfileBuild" -> dependsOn(buildRust)
+        }
+    }
+} else {
+    tasks.named("preBuild").configure { dependsOn(buildRust) }
+}
 
 // Use the same configuration values as About, never the checkout at copy time.
 tasks.register("shareRelease") {

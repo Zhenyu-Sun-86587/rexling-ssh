@@ -77,7 +77,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }
     internal fun attachImage(uri: android.net.Uri,target: ImageTarget?,onCopied: ()->Unit={}): Boolean {
         if(target==null) {onCopied();images.notice="Take control of a pane before attaching a file.";return false}
-        val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint && !it.needsSshSetup}
+        val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint && it.canConnect}
         if(profile==null) {onCopied();images.notice="The original Rex server is no longer available.";return false}
         return images.start(uri,target,onCopied)
     }
@@ -99,7 +99,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         BackgroundAlerts.reconcile(getApplication())
     }
     internal fun openAlert(target: AlertDestination) {
-        val profile=servers.firstOrNull {it.id==target.serverId && it.endpoint==target.endpoint && !it.needsSshSetup}
+        val profile=servers.firstOrNull {it.id==target.serverId && it.endpoint==target.endpoint && it.canConnect}
         if(profile==null) {notificationNotice="That server is no longer saved.";return}
         pendingAlert=target;connectServer(profile.id);tryOpenAlert()
     }
@@ -189,7 +189,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     }.exceptionOrNull()?.message
     var servers by mutableStateOf(SavedServers.decode(preferences.getString("servers",null),preferences.getString("endpoint","").orEmpty()))
         private set
-    var activeServerId by mutableStateOf(preferences.getString("active_server",null)?.takeIf {id->servers.any {it.id==id && !it.needsSshSetup}} ?: servers.firstOrNull {!it.needsSshSetup}?.id.orEmpty())
+    var activeServerId by mutableStateOf(preferences.getString("active_server",null)?.takeIf {id->servers.any {it.id==id && it.canConnect}} ?: servers.firstOrNull {it.canConnect}?.id.orEmpty())
         private set
     var serverStatuses by mutableStateOf<Map<String,ServerStatus>>(emptyMap())
         private set
@@ -210,7 +210,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private var closingSessionId=""
     private val connections=mutableMapOf<String,RexConnection>()
     private val observers=mutableMapOf<String,Job>()
-    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id && !it.needsSshSetup}}.toSet()
+    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id && it.canConnect}}.toSet()
     private var palette: TerminalPalette?=null
     private var windowFocused=false
     internal fun windowFocusChanged(focused: Boolean) {windowFocused=focused;updateActivity()}
@@ -325,7 +325,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         putStringSet("connected_servers",desired)
     };if(foreground && BackgroundAlerts.foreground.value) BackgroundAlerts.reconcile(getApplication())}
     fun connectServer(id: String,select: Boolean=true) {
-        val profile=servers.firstOrNull {it.id==id && !it.needsSshSetup} ?: return
+        val profile=servers.firstOrNull {it.id==id && it.canConnect} ?: return
         val client=connection(profile)
         if(select && activeServerId!=id) {
             rememberLastSession();serverSwitchSerial++
@@ -339,39 +339,45 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     /** The legacy URL form also adds a new host without disconnecting existing ones. */
     fun connect(endpoint: String): String? = runCatching {
         val normalized=ServerProfile.normalizeEndpoint(endpoint)
-        val existing=servers.firstOrNull {it.endpoint==normalized && !it.needsSshSetup}
+        val existing=servers.firstOrNull {it.endpoint==normalized && it.canConnect}
         if(existing!=null) connectServer(existing.id)
-        else if(servers.any {it.endpoint==normalized}) error("Edit this saved host and configure SSH again")
+        else if(servers.any {it.endpoint==normalized}) error("Edit this saved host to use it as a Rex server")
         else saveServer(null,"",normalized)?.let {throw IllegalArgumentException(it)}
     }.exceptionOrNull()?.message
 
     internal fun forwardServers(): List<ForwardServer> {
         val knownSessions=sessionTargets
-        return servers.filterNot {it.needsSshSetup}.map {server->
+        return servers.filter {it.canConnect}.map {server->
         val state=connections[server.id]?.state?.value
         ForwardServer(server,state?.selectedSession?.takeIf {it.isNotBlank()} ?: knownSessions.firstOrNull {it.server.id==server.id}?.session?.id.orEmpty(),serverStatuses[server.id]?.connected==true)
         }
     }
-    fun saveServer(id: String?,label: String,endpoint: String,icon: ServerIcon?=null,connect: Boolean=true): String? = runCatching {
-        val profile=ServerProfile.create(label,endpoint,id ?: java.util.UUID.randomUUID().toString(),icon ?: servers.firstOrNull {it.id==id}?.icon ?: ServerIcon.GLOBE)
+    fun saveServer(id: String?,label: String,endpoint: String,icon: ServerIcon?=null,connect: Boolean=true,relayOnly: Boolean=false): String? = runCatching {
+        val profile=ServerProfile.create(label,endpoint,id ?: java.util.UUID.randomUUID().toString(),icon ?: servers.firstOrNull {it.id==id}?.icon ?: ServerIcon.GLOBE).copy(relayOnly=relayOnly)
+        require(!relayOnly || (profile.endpoint.startsWith("ssh://") && java.net.URI(profile.endpoint).path.isNullOrEmpty())) {"A jump-only host needs ssh://user@host without a Rex socket path"}
         saveProfile(profile,connect)?.let {error(it)}
     }.exceptionOrNull()?.message
 
     private fun saveProfile(profile: ServerProfile,connect: Boolean=true): String? = runCatching {
         require(servers.none {it.id!=profile.id && it.endpoint==profile.endpoint && !it.needsSshSetup}) {"That server is already saved"}
         val old=servers.firstOrNull {it.id==profile.id}
+        require(old==null || old.endpoint==profile.endpoint || !NetworkSettings.isUsedAsJump(old.endpoint)) {"Remove this jump host from its targets before changing its URL"}
         val updated=if(old==null) servers+profile else servers.map {if(it.id==profile.id) profile else it}
         check(preferences.edit().putString("servers",SavedServers.encode(updated)).commit()) {"Could not save server settings"}
         servers=updated
-        if(old!=null && (old.endpoint!=profile.endpoint || old.needsSshSetup)) {
-            if(!connect) desired=desired-profile.id
+        if(old!=null && (old.endpoint!=profile.endpoint || old.needsSshSetup || old.relayOnly!=profile.relayOnly)) {
+            if(!connect || profile.relayOnly) desired=desired-profile.id
             PortForwards.forgetServer(getApplication(),old.id)
             images.forget(old.id)
             connections.remove(old.id)?.let {it.releaseControl();it.disconnect();it.close()}
             observers.remove(old.id)?.cancel();serverStatuses=serverStatuses-old.id
+            if(old.endpoint!=profile.endpoint) NetworkSettings.forget(old.endpoint,updated.map {it.endpoint})
         }
-        if(activeServerId==profile.id) {activeClient=connection(profile);activeClient.visible=true}
-        if(connect) connectServer(profile.id)
+        if(activeServerId==profile.id) {
+            if(profile.relayOnly) activeServerId=servers.firstOrNull {it.canConnect}?.id.orEmpty()
+            activeClient=connection(activeServer);activeClient.visible=true
+        }
+        if(connect && profile.canConnect) connectServer(profile.id)
         persist()
         updateActivity()
     }.exceptionOrNull()?.message
@@ -380,19 +386,22 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         desired=desired-id;persist()
         connections[id]?.let {it.releaseControl();it.disconnect()}
     }
-    fun forgetServer(id: String) {
+    fun forgetServer(id: String): String? {
+        val profile=servers.firstOrNull {it.id==id} ?: return null
+        if(NetworkSettings.isUsedAsJump(profile.endpoint)) return "Remove this jump host from its targets before forgetting it"
         PortForwards.forgetServer(getApplication(),id)
-        servers.firstOrNull {it.id==id}?.let {profile->NetworkSettings.forget(profile.endpoint,servers.filter {it.id!=id}.map {it.endpoint})}
         images.forget(id)
         if(activeServerId==id) serverSwitchSerial++
         disconnectServer(id)
         observers.remove(id)?.cancel();connections.remove(id)?.close()
         servers=servers.filterNot {it.id==id};serverStatuses=serverStatuses-id
+        NetworkSettings.forget(profile.endpoint,servers.map {it.endpoint})
         if(activeServerId==id) {
-            activeServerId=servers.firstOrNull {!it.needsSshSetup}?.id.orEmpty()
+            activeServerId=servers.firstOrNull {it.canConnect}?.id.orEmpty()
             activeClient=connection(activeServer);activeClient.visible=true
         }
         persist()
+        return null
     }
     fun previewServer(id: String) {
         if(id!=activeServerId) return

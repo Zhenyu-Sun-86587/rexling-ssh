@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -10,23 +11,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.chrisbanes.haze.HazeState
 
-/** Shared chrome for secondary settings drawers; scrolling stays in their content. */
+/** Shared settings chrome. Only use a frosted surface when the caller captures a backdrop. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun SettingsDrawer(title: String,closeDescription: String,onClose: ()->Unit,
     hazeState: HazeState?=null,onBack: (() -> Unit)?=null,swipeToDismiss: Boolean=true,backDescription: String="Back to appearance",content: @Composable ColumnScope.()->Unit) {
-    val localHaze=remember {HazeState()}
     @Composable fun Body(modifier: Modifier=Modifier) {
-        val frost=if(swipeToDismiss) Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-            else Modifier.paneFrost(hazeState ?: localHaze,BottomSheetDefaults.ExpandedShape,edge=false,opacity=.72f,blur=24.dp)
-        Column(modifier.then(frost).fillMaxWidth()
+        val shape=BottomSheetDefaults.ExpandedShape
+        val surface=when {
+            hazeState==null -> Modifier.clip(shape).background(MaterialTheme.colorScheme.surface)
+            swipeToDismiss -> Modifier.drawerFrost(hazeState,shape)
+            else -> Modifier.paneFrost(hazeState,shape,edge=false,opacity=.72f,blur=24.dp)
+        }
+        Column(modifier.testTag("Settings drawer").then(surface).fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
             DrawerHandle()
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {

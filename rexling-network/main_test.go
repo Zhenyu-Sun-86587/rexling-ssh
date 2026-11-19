@@ -7,16 +7,22 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"net"
 	"net/url"
 	"os"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func testSSH(t *testing.T, keyAuth bool) (string, string, string) {
+	t.Helper()
+	return testSSHWithChannels(t, keyAuth, nil)
+}
+
+func testSSHWithChannels(t *testing.T, keyAuth bool, handle func(ssh.Conn, ssh.NewChannel)) (string, string, string) {
 	t.Helper()
 	_, private, _ := ed25519.GenerateKey(rand.Reader)
 	host, _ := ssh.NewSignerFromKey(private)
@@ -52,6 +58,10 @@ func testSSH(t *testing.T, keyAuth bool) (string, string, string) {
 				defer server.Close()
 				go ssh.DiscardRequests(requests)
 				for channel := range channels {
+					if handle != nil {
+						handle(server, channel)
+						continue
+					}
 					switch channel.ChannelType() {
 					case "session":
 						stream, requests, err := channel.Accept()

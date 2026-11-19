@@ -43,7 +43,7 @@ class ServerIconPickerTest {
         try {
             ui.runOnUiThread {model=RexModel(app,name);store.put("editor",model)}
             ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {
-                ServerEditor(server,onClose={closed++},onSave={label,url,icon->model.saveServer(server.id,label,url,icon,connect=false)})
+                ServerEditor(server,onClose={closed++},onSave={label,url,icon,_->model.saveServer(server.id,label,url,icon,connect=false)})
             }}
             ui.onNodeWithContentDescription("Choose server icon").performClick()
             ui.onNode(hasText("MacBook") and hasAnyAncestor(isPopup())).performClick()

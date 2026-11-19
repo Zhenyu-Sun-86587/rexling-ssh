@@ -39,8 +39,8 @@ Import a private key into the reusable SSH key library, or leave the key unset f
 Choose **Phone network / VPN** or **Built-in Tailscale** per server. Verify the SSH host fingerprint before trusting it.
 
 Old Rust SSH hosts remain in the list marked **Setup required** and don't connect automatically.
-Edit the host, pick a directly reachable destination, and reimport the key if needed.
-Password login, OpenSSH user certificates, ProxyJump, and saving SSH-only jump hosts are not supported.
+Edit the host and select its network or choose a saved SSH host as a single jump. Reimport the key if needed.
+A host saved as **Jump host only** doesn't need Rex installed. Password login and OpenSSH user certificates are not supported.
 Existing Go SSH and HTTPS profiles do not need to be reconfigured. See [connection setup](docs/connections.md).
 
 Tailscale API-key device discovery is separate from tailnet sign-in. Discovered devices open the

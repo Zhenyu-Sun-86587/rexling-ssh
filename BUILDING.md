@@ -102,9 +102,11 @@ workspace commands. Protocol-probe usage and evidence are in
 
 The [Build and test workflow](.github/workflows/ci.yml) runs on pull requests,
 pushes to `main`, and manual dispatch. It runs Go tests, Rust tests and the host
-JNI smoke test, Android unit tests and debug lint, then verifies the debug APK. It
-compiles the Android instrumentation tests but does not run them on a device.
-Download `rexling-debug-arm64` from the successful run's **Artifacts** section.
+JNI smoke test, Android unit tests and debug lint, then verifies the ARM64 debug APK.
+A separate KVM-backed Android emulator job runs the settings, appearance, and hosts
+UI tests with a native x86_64 debug APK. In the run's **Artifacts** section,
+`android-emulator-ui` contains screenshots and logs, and `rexling-debug-arm64`
+contains the verified ARM64 debug APK.
 The debug APK cannot update a release-signed installation in place. CI does not
 use the release signing key or publish a GitHub Release.
 
