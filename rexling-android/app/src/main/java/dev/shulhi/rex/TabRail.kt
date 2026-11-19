@@ -78,7 +78,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     side: TabBarPosition,style: TabRailStyle,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},
     onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",
     paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},animateWorking: Boolean=true,
-    onStyle: (TabRailStyle)->Unit={},actions: @Composable ()->Unit) {
+    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,actions: @Composable ()->Unit) {
     val titles=style==TabRailStyle.TITLES
     // Swipe across the rail toward the terminal to show titles, back toward the screen edge to hide them.
     // Resizes are debounced, so the animated width sends the pane only its final size.
@@ -100,6 +100,8 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     LaunchedEffect(ids) {menuId=null}
     LaunchedEffect(selectedId,reorderKey,index) {if(index>=0) list.animateScrollToItem(index)}
     Column(Modifier.fillMaxHeight().width(width).background(scheme.surface)
+        // Reaches the screen edge under the gesture handle; its buttons stay above it.
+        .then(if(extendUnderNav) Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) else Modifier)
         .systemGestureExclusion {coordinates->
             val height=coordinates.size.height.toFloat()
             androidx.compose.ui.geometry.Rect(0f,(height-exclusion).coerceAtLeast(0f),coordinates.size.width.toFloat(),height)

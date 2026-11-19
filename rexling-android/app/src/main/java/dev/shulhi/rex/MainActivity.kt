@@ -211,8 +211,19 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     @OptIn(ExperimentalLayoutApi::class) val keyboardShown=WindowInsets.isImeVisible
     val toolbarHidden=model.toolbarWithKeyboardOnly && !keyboardShown
     val tabWidth=currentTabWidth()
+    // Whether the bottom panel shows (it then takes the bottom inset), and whether the terminal row
+    // instead extends under the gesture handle: side tabs with the key toolbar hidden.
+    val panelShown=state.connected || state.phase=="preview" || client.hasScreen
     val unfoldedFullScreen=isUnfoldedFullScreen()
     val tabLayout=model.tabLayout(tabWidth.first)
+    // From the setting, not the keyboard, so the layout keeps one mode while the keyboard animates.
+    val extendUnderNav=panelShown && tabLayout.side && model.toolbarWithKeyboardOnly
+    // Beside an edge-to-edge rail, the terminal stops just clear of the gesture handle rather than
+    // above the whole navigation inset. A gesture bar is well under 40dp (Samsung reports it as
+    // tappable, so that inset cannot tell); three-button navigation (~48dp) keeps its full height.
+    val navBottom=WindowInsets.navigationBars.getBottom(keyboardDensity)
+    val paneClearance=with(keyboardDensity) {navBottom.toDp().let {if(it<40.dp) 14.dp else it+3.dp}}
+    val bottomPanel=panelShown && !extendUnderNav
     // The auto-hidden toolbar's unclipped height (divider + key row until measured). Written during its
     // measurement and read by the terminal's, so it is a plain holder rather than snapshot state.
     val toolbarHeight=remember(keyboardDensity) {intArrayOf(with(keyboardDensity) {1.dp.roundToPx()+45.dp.roundToPx()})}
@@ -262,7 +273,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     val workspaceBackdrop=rememberBackdropCapture(menu || forwards || preferencesOpen || servers || networkSettings || sshKeysSettings || appearance || about || neovimSettings || toolbarSettings || controlSettings || fontPicker || alerts || picker in setOf("tabs","panes","sessions") || model.activityVisible)
     Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
+        // The bottom navigation inset (the gesture handle) is left to the lowest element, so it can
+        // extend its background to the screen edge. imePadding consumes the keyboard first, so
+        // that element's navigation padding shrinks to nothing as the keyboard opens.
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top+WindowInsetsSides.Horizontal)).imePadding()
+            .then(if(panelShown) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
                 blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
                 serverIcons=model.sessionTargets.associate {it.key to it.server.icon}+(currentSessionKey to model.activeServer.icon),
@@ -332,11 +347,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
-                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))}) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
-                        Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=3.dp)) {
+                        // Only the rail reaches under the gesture handle; the terminal stops just above it.
+                        Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=if(extendUnderNav) paneClearance else 3.dp)) {
                         // Multi-pane only when chosen, unfolded full screen, and the tab has 2-4 tiled panes;
                         // otherwise the single-pane carousel, unchanged.
                         val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
@@ -352,10 +368,18 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                 else PortForwards.notice="Wait for this pane to connect before forwarding its link."
                             }},
                             Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,hazeState=terminalHaze,captureBackdrop=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,tapOpensKeyboard=model.toolbarWithKeyboardOnly,
-                                keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
-                                squareCorners=tabLayout.side || tiles!=null)}
+                                // The IME viewport assumes the navigation inset is consumed below the terminal. Beside
+                                // an edge-to-edge rail nothing below consumes it, so it counts as covered too, keeping
+                                // the single-pane grid fixed while the keyboard opens.
+                                keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0]+(if(extendUnderNav) navBottom else 0) else 0},
+                                squareCorners=tabLayout.side || tiles!=null,
+                                // In the multi-pane layout the focused pane resizes with its card on keyboard
+                                // open, like the panes beside it; the single-pane IME viewport assumes its card
+                                // loses the whole keyboard height, which a share of a split area does not.
+                                imeViewport=tiles==null)}
                         val focusedBlock=blocks.firstOrNull {it.id==chosen}
-                        if(tiles!=null && focusedBlock!=null) MultiPaneLayout(tiles,chosen,client.paneFrames,fontSize.toFloat(),::openPane,client::mirror) {terminal(listOf(focusedBlock))}
+                        if(tiles!=null && focusedBlock!=null) MultiPaneLayout(tiles,chosen,client.paneFrames,fontSize.toFloat(),::openPane,client::mirror,
+                            bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav) {terminal(listOf(focusedBlock))}
                         else terminal(carouselBlocks)
                         }
                         if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
@@ -380,7 +404,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     }
                     if(state.connected || state.phase=="preview" || client.hasScreen) {
                         // Square beside a side tab rail; the bottom tab bar keeps its rounded top.
-                        Column(Modifier.fillMaxWidth().clip(if(tabLayout.side) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)) {
+                        Column(Modifier.fillMaxWidth().clip(if(tabLayout.side) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)
+                            .then(if(extendUnderNav) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))) {
                             if(!tabLayout.side) TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,animateWorking=!model.activityVisible,tabAttention={w->activityBadges.tabs[w.id] ?: 0},paneProgress={w->
                                     state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()
                                 },
@@ -533,11 +558,11 @@ internal fun sessionsPageHeight(targets: List<SessionTarget>)=
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
-    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false) {
+    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,imeViewport: Boolean=true) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
-        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners)
+        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners,imeViewport=imeViewport)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,hazeState: HazeState?=null,onClose: ()->Unit) {

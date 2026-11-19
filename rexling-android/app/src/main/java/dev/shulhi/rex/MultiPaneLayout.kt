@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -28,7 +28,7 @@ import androidx.compose.ui.viewinterop.AndroidView
  * [onMirror] asks the engine to stream and size them; leaving the layout stops the mirrors.
  */
 @Composable internal fun MultiPaneLayout(placements: List<PanePlacement>,focused: String,frames: Map<String,TerminalScreen>,
-    fontSize: Float,onFocus: (String)->Unit,onMirror: (List<RexConnection.MirrorPane>)->Unit,focusedContent: @Composable ()->Unit) {
+    fontSize: Float,onFocus: (String)->Unit,onMirror: (List<RexConnection.MirrorPane>)->Unit,bottomPaddingDp: Int=6,bottomMargin: Boolean=true,focusedContent: @Composable ()->Unit) {
     val palette=LocalTerminalPalette.current
     val scheme=MaterialTheme.colorScheme
     // Rects are fractions of the tab; normalize to the tiled panes' own bounds.
@@ -40,20 +40,28 @@ import androidx.compose.ui.viewinterop.AndroidView
     val request=mirrors.mapNotNull {id->sizes[id]?.let {(columns,rows)->RexConnection.MirrorPane(id,columns,rows)}}
     LaunchedEffect(request) {onMirror(request)}
     DisposableEffect(Unit) {onDispose {onMirror(emptyList())}}
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val gap=4.dp
+    // Like the desktop: each pane a rounded card on the window background, with room between them and
+    // a thin accent outline on the focused one.
+    val shape=androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    // Without [bottomMargin] the bottom row ends at the area's edge, which the caller already keeps clear.
+    BoxWithConstraints(Modifier.fillMaxSize().background(scheme.background).padding(start=4.dp,top=4.dp,end=4.dp,bottom=if(bottomMargin) 4.dp else 0.dp)) {
+        val gap=8.dp
         for(pane in placements) key(pane.id) {
             val x=maxWidth*((pane.x-left)/spanX);val y=maxHeight*((pane.y-top)/spanY)
             val width=maxWidth*(pane.width/spanX);val height=maxHeight*(pane.height/spanY)
             val active=pane.id==focused
-            Box(Modifier.offset(x+gap/2,y+gap/2).size((width-gap).coerceAtLeast(0.dp),(height-gap).coerceAtLeast(0.dp))
-                .border(if(active) 1.5.dp else 0.5.dp,if(active) scheme.primary else scheme.outline.copy(alpha=.4f))
-                .clipToBounds()) {
+            val lastRow=!bottomMargin && pane.y+pane.height>=top+spanY-.001f
+            Box(Modifier.offset(x+gap/2,y+gap/2).size((width-gap).coerceAtLeast(0.dp),(height-if(lastRow) gap/2 else gap).coerceAtLeast(0.dp))
+                .clip(shape).background(Color(palette.background))
+                // Same border width and padding focused or not, so focusing never changes a pane's grid.
+                .border(1.5.dp,if(active) scheme.primary else scheme.outline.copy(alpha=.25f),shape)
+                .padding(1.5.dp)) {
                 if(active) focusedContent()
                 else {
                     AndroidView(factory={TerminalView(it)},modifier=Modifier.fillMaxSize().background(Color(palette.background)),update={view->
                         view.palette=palette;view.textSp=fontSize
-                        view.setTerminalPaddingDp(12,8,6)
+                        // Matches the live terminal's padding, which the pane gets when focused.
+                        view.setTerminalPaddingDp(12,8,bottomPaddingDp)
                         view.interactive=false;view.controlled=false
                         view.onDimensions={columns,rows->sizes[pane.id]=columns to rows}
                         frames[pane.id]?.let {view.screen=it}
