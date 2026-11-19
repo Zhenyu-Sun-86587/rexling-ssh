@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
@@ -78,11 +79,14 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     side: TabBarPosition,style: TabRailStyle,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},
     onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",
     paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},animateWorking: Boolean=true,
-    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,actions: @Composable ()->Unit) {
+    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,island: Boolean=false,islandBottom: androidx.compose.ui.unit.Dp=8.dp,
+    actions: @Composable ()->Unit) {
     val titles=style==TabRailStyle.TITLES
     // Swipe across the rail toward the terminal to show titles, back toward the screen edge to hide them.
     // Resizes are debounced, so the animated width sends the pane only its final size.
-    val width by androidx.compose.animation.core.animateDpAsState(if(titles) 184.dp else 60.dp,
+    // Beside the multi-pane layout the rail is a floating card like the panes: rounded, inset, and
+    // ending level with them; slightly narrower so the terminal keeps about the same width.
+    val width by androidx.compose.animation.core.animateDpAsState(if(island) (if(titles) 176.dp else 56.dp) else if(titles) 184.dp else 60.dp,
         androidx.compose.animation.core.tween(180),label="Tab rail width")
     val outward=if(side==TabBarPosition.LEFT) 1f else -1f
     val threshold=with(androidx.compose.ui.platform.LocalDensity.current) {32.dp.toPx()}
@@ -99,9 +103,13 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     val index=ids.indexOf(selectedId)
     LaunchedEffect(ids) {menuId=null}
     LaunchedEffect(selectedId,reorderKey,index) {if(index>=0) list.animateScrollToItem(index)}
-    Column(Modifier.fillMaxHeight().width(width).background(scheme.surface)
-        // Reaches the screen edge under the gesture handle; its buttons stay above it.
-        .then(if(extendUnderNav) Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) else Modifier)
+    val islandShape=androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    Column(Modifier.fillMaxHeight()
+        .then(if(island) Modifier.padding(start=if(side==TabBarPosition.LEFT) 8.dp else 0.dp,end=if(side==TabBarPosition.RIGHT) 8.dp else 0.dp,top=8.dp,bottom=islandBottom)
+            .width(width).clip(islandShape).background(scheme.surface).border(1.5.dp,scheme.outline.copy(alpha=.25f),islandShape)
+        else Modifier.width(width).background(scheme.surface)
+            // Reaches the screen edge under the gesture handle; its buttons stay above it.
+            .then(if(extendUnderNav) Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) else Modifier))
         .systemGestureExclusion {coordinates->
             val height=coordinates.size.height.toFloat()
             androidx.compose.ui.geometry.Rect(0f,(height-exclusion).coerceAtLeast(0f),coordinates.size.width.toFloat(),height)
@@ -120,7 +128,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
             onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES);true})}
         .padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
-            contentPadding=PaddingValues(horizontal=6.dp,vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+            contentPadding=PaddingValues(horizontal=6.dp,vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w->
                 fun moveBy(delta: Int): Boolean {
                     val target=i+delta

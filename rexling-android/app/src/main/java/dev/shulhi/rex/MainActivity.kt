@@ -341,21 +341,23 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             keyboardLabel=if(!controlled) "Take control and show keyboard" else "Show keyboard",
                             onKeyboard=if(toolbarHidden) ({if(!controlled) client.takeControl() else terminalView?.keyboard()}) else null,vertical=vertical)
                     }
+                    // Multi-pane only when chosen, unfolded full screen, and the tab has 2-4 tiled panes;
+                    // otherwise the single-pane carousel, unchanged.
+                    val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
                     val tabRail: @Composable ()->Unit={
                         TerminalTabRail(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,client::tabPrograms,client::tabPaneIndex,
                             tabLayout.position,tabLayout.style,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},
                             onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
-                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
+                            // Beside the multi-pane layout: a floating card ending level with the panes.
+                            island=tiles!=null && !floatingActive,islandBottom=if(extendUnderNav) paneClearance else 3.dp+8.dp) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
                         // Only the rail reaches under the gesture handle; the terminal stops just above it.
                         Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=if(extendUnderNav) paneClearance else 3.dp)) {
-                        // Multi-pane only when chosen, unfolded full screen, and the tab has 2-4 tiled panes;
-                        // otherwise the single-pane carousel, unchanged.
-                        val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
                         if(!floatingActive || hiddenFloating!=chosen) {
                         val terminal: @Composable (List<BlockItem>)->Unit={shown->LiveTerminal(client,shown,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},{view->terminalView=view;view.onOpenLink={url->
