@@ -22,3 +22,57 @@ data class PanePlacement(val id: String,val x: Float,val y: Float,val width: Flo
         }
     }
 }
+
+/**
+ * A border between tiled panes that can be dragged: [horizontal] splits are side by side (a vertical
+ * border), others stacked. [ratio] is the share of the split's rect ([x], [y], [width], [height], in
+ * window fractions) that the [before] side gets; [before] and [after] are one pane on each side.
+ */
+data class PaneSplitLine(val id: String,val horizontal: Boolean,val ratio: Float,val x: Float,val y: Float,val width: Float,val height: Float,
+    val before: String,val after: String) {
+    companion object {
+        fun parse(value: JSONObject?): PaneSplitLine? {
+            value ?: return null
+            val before=value.optString("before").takeIf {it.isNotBlank()} ?: return null
+            val after=value.optString("after").takeIf {it.isNotBlank() && it!=before} ?: return null
+            val direction=value.optString("direction")
+            if(direction!="horizontal" && direction!="vertical") return null
+            val ratio=value.optDouble("ratio",Double.NaN).takeIf {it.isFinite() && it>0 && it<1} ?: return null
+            val rect=value.optJSONArray("rect")?.takeIf {it.length()==4} ?: return null
+            val n=(0..3).map {rect.optDouble(it,Double.NaN)}
+            if(n.any {!it.isFinite()} || n[2]<=0 || n[3]<=0) return null
+            return PaneSplitLine(value.optString("id"),direction=="horizontal",ratio.toFloat(),n[0].toFloat(),n[1].toFloat(),n[2].toFloat(),n[3].toFloat(),before,after)
+        }
+    }
+}
+
+/**
+ * The layout with [split] moved to [ratio], as Rex will lay it out: everything inside the split's rect
+ * on either side of the border is stretched or squeezed along the split's axis in proportion, nested
+ * splits included. Used to reflow panes live while a border is dragged.
+ */
+internal fun movedSplit(placements: List<PanePlacement>,splits: List<PaneSplitLine>,split: PaneSplitLine,ratio: Float): Pair<List<PanePlacement>,List<PaneSplitLine>> {
+    val start=if(split.horizontal) split.x else split.y
+    val size=if(split.horizontal) split.width else split.height
+    val old=start+size*split.ratio;val new=start+size*ratio
+    fun map(v: Float): Float = when {
+        v<=old -> start+(v-start)*(new-start)/(old-start).coerceAtLeast(1e-6f)
+        else -> new+(v-old)*(start+size-new)/(start+size-old).coerceAtLeast(1e-6f)
+    }
+    val eps=1e-4f
+    fun inside(x: Float,y: Float,w: Float,h: Float)=x>=split.x-eps && y>=split.y-eps && x+w<=split.x+split.width+eps && y+h<=split.y+split.height+eps
+    fun axis(a: Float,b: Float): Pair<Float,Float> {val from=map(a);return from to (map(a+b)-from)}
+    val panes=placements.map {p->
+        if(p.floating || !inside(p.x,p.y,p.width,p.height)) p
+        else if(split.horizontal) axis(p.x,p.width).let {(x,w)->p.copy(x=x,width=w)}
+        else axis(p.y,p.height).let {(y,h)->p.copy(y=y,height=h)}
+    }
+    val lines=splits.map {s->
+        if(s.id==split.id) s.copy(ratio=ratio)
+        else if(!inside(s.x,s.y,s.width,s.height)) s
+        else if(split.horizontal) axis(s.x,s.width).let {(x,w)->s.copy(x=x,width=w)}
+        else axis(s.y,s.height).let {(y,h)->s.copy(y=y,height=h)}
+    }
+    return panes to lines
+}
+

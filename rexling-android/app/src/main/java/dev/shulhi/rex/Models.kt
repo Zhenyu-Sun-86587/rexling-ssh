@@ -6,7 +6,7 @@ import org.json.JSONObject
 data class SessionItem(val id: String, val label: String)
 data class SessionDetail(val attachment: String, val tabs: Int, val panes: Int)
 data class BlockItem(val id: String, val label: String)
-data class WindowItem(val id: String, val label: String, val blocks: List<BlockItem>,val layout: List<PanePlacement> = emptyList())
+data class WindowItem(val id: String, val label: String, val blocks: List<BlockItem>,val layout: List<PanePlacement> = emptyList(),val splits: List<PaneSplitLine> = emptyList())
 data class TerminalScroll(val total: Long=0,val offset: Long=0,val visible: Long=0) {
     val available: Long get()=(total-visible).coerceAtLeast(0)
     val below: Long get()=(available-offset).coerceAtLeast(0)
@@ -95,7 +95,8 @@ data class AppState(
                     val ids=blocks.mapTo(hashSetOf()) {it.id}
                     val layout=w.optJSONArray("layout").objects {PanePlacement.parse(it as? JSONObject)}.filterNotNull()
                         .filter {it.id in ids}.sortedBy {it.layer}.asReversed().distinctBy {it.id}.asReversed()
-                    WindowItem(w.optString("id"), w.optString("label", "Window"),blocks,layout)
+                    val splits=w.optJSONArray("splits").objects {PaneSplitLine.parse(it as? JSONObject)}.filterNotNull()
+                    WindowItem(w.optString("id"), w.optString("label", "Window"),blocks,layout,splits)
                 },
                 selectedSession = root.optString("selectedSession"), selectedBlock = root.optString("selectedBlock"),
                 controlled = root.optBoolean("controlled"), creating = root.optBoolean("creating"), screen = root.optJSONObject("screen")?.let(TerminalScreen::parse),

@@ -3,6 +3,8 @@ package dev.shulhi.rex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
@@ -10,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -28,7 +31,8 @@ import androidx.compose.ui.viewinterop.AndroidView
  * [onMirror] asks the engine to stream and size them; leaving the layout stops the mirrors.
  */
 @Composable internal fun MultiPaneLayout(placements: List<PanePlacement>,focused: String,frames: Map<String,TerminalScreen>,
-    fontSize: Float,onFocus: (String)->Unit,onMirror: (List<RexConnection.MirrorPane>)->Unit,bottomPaddingDp: Int=6,bottomMargin: Boolean=true,focusedContent: @Composable ()->Unit) {
+    fontSize: Float,onFocus: (String)->Unit,onMirror: (List<RexConnection.MirrorPane>)->Unit,bottomPaddingDp: Int=6,bottomMargin: Boolean=true,splits: List<PaneSplitLine> = emptyList(),onResize: (PaneSplitLine,Float)->Unit={_,_->},
+    focusedContent: @Composable ()->Unit) {
     val palette=LocalTerminalPalette.current
     val scheme=MaterialTheme.colorScheme
     // Rects are fractions of the tab; normalize to the tiled panes' own bounds.
@@ -38,7 +42,14 @@ import androidx.compose.ui.viewinterop.AndroidView
     val sizes=remember {mutableStateMapOf<String,Pair<Int,Int>>()}
     val mirrors=placements.map {it.id}.filter {it!=focused}
     val request=mirrors.mapNotNull {id->sizes[id]?.let {(columns,rows)->RexConnection.MirrorPane(id,columns,rows)}}
-    LaunchedEffect(request) {onMirror(request)}
+    // Debounced: while a border is dragged the panes resize on every frame, but their PTYs only once
+    // the finger pauses or lifts (the focused pane's resize is debounced the same way).
+    LaunchedEffect(request) {kotlinx.coroutines.delay(100);onMirror(request)}
+    // A border being dragged, and its ratio. The panes reflow live from it; it stays after release until
+    // Rex reports the new layout (new [splits]), so nothing snaps back in between.
+    var drag by remember(splits) {mutableStateOf<Pair<String,Float>?>(null)}
+    val (shownPanes,shownSplits)=drag?.let {(id,ratio)->splits.firstOrNull {it.id==id}?.let {movedSplit(placements,splits,it,ratio)}}
+        ?: (placements to splits)
     DisposableEffect(Unit) {onDispose {onMirror(emptyList())}}
     // Like the desktop: each pane a rounded card on the window background, with room between them and
     // a thin accent outline on the focused one.
@@ -46,7 +57,7 @@ import androidx.compose.ui.viewinterop.AndroidView
     // Without [bottomMargin] the bottom row ends at the area's edge, which the caller already keeps clear.
     BoxWithConstraints(Modifier.fillMaxSize().background(scheme.background).padding(start=4.dp,top=4.dp,end=4.dp,bottom=if(bottomMargin) 4.dp else 0.dp)) {
         val gap=8.dp
-        for(pane in placements) key(pane.id) {
+        for(pane in shownPanes) key(pane.id) {
             val x=maxWidth*((pane.x-left)/spanX);val y=maxHeight*((pane.y-top)/spanY)
             val width=maxWidth*(pane.width/spanX);val height=maxHeight*(pane.height/spanY)
             val active=pane.id==focused
@@ -70,6 +81,37 @@ import androidx.compose.ui.viewinterop.AndroidView
                     Box(Modifier.matchParentSize().semantics {contentDescription="Focus pane"}
                         .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {onFocus(pane.id)})
                 }
+            }
+        }
+        // Pane borders: drag the grip in the gap and the panes reflow with it; on release Rex moves the
+        // border for every client.
+        val density=androidx.compose.ui.platform.LocalDensity.current
+        for(split in shownSplits) key(split.id) {
+            val original=splits.firstOrNull {it.id==split.id} ?: split
+            val dragging=drag?.first==split.id
+            val shown=split.ratio
+            val horizontal=split.horizontal
+            val startX=maxWidth*((split.x-left)/spanX);val startY=maxHeight*((split.y-top)/spanY)
+            val spanW=maxWidth*(split.width/spanX);val spanH=maxHeight*(split.height/spanY)
+            val along=if(horizontal) spanW else spanH
+            val alongPx=with(density) {along.toPx()}.coerceAtLeast(1f)
+            val touch=24.dp
+            val handle=if(horizontal) Modifier.offset(startX+spanW*shown-touch/2,startY).size(touch,spanH)
+                else Modifier.offset(startX,startY+spanH*shown-touch/2).size(spanW,touch)
+            Box(handle.semantics {contentDescription=if(horizontal) "Resize panes side by side" else "Resize stacked panes"}
+                // Keyed on the split alone: re-keying on its moving ratio would restart the gesture mid-drag.
+                .pointerInput(split.id,horizontal,alongPx) {
+                    var ratio=original.ratio
+                    val start: (androidx.compose.ui.geometry.Offset)->Unit={ratio=drag?.takeIf {it.first==original.id}?.second ?: original.ratio;drag=original.id to ratio}
+                    val end: ()->Unit={drag?.takeIf {it.first==original.id}?.let {onResize(original,it.second)}}
+                    val cancel: ()->Unit={drag=null}
+                    if(horizontal) detectHorizontalDragGestures(start,end,cancel) {change,amount->
+                        change.consume();ratio=(ratio+amount/alongPx).coerceIn(.1f,.9f);drag=original.id to ratio}
+                    else detectVerticalDragGestures(start,end,cancel) {change,amount->
+                        change.consume();ratio=(ratio+amount/alongPx).coerceIn(.1f,.9f);drag=original.id to ratio}
+                },contentAlignment=androidx.compose.ui.Alignment.Center) {
+                Box(Modifier.background(if(dragging) scheme.primary else scheme.outline.copy(alpha=.5f),androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
+                    .then(if(horizontal) Modifier.size(4.dp,36.dp) else Modifier.size(36.dp,4.dp)))
             }
         }
     }

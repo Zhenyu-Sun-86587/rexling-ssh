@@ -193,6 +193,27 @@ fn collect_pane_layout(node: &Value,ids: &BTreeSet<&str>,layer: usize,floating: 
     }
     for child in ["before","after"] {collect_pane_layout(&node["split"][child],ids,layer,floating,depth+1,out);}
 }
+/// Any terminal block in a layout subtree; it stands for that side of a split in session.resize_pane.
+fn first_block<'a>(node: &'a Value,ids: &BTreeSet<&str>,depth: usize) -> Option<&'a str> {
+    if !node.is_object() || depth>64 {return None;}
+    if let Some(id)=node["block_id"].as_str() && ids.contains(id) {return Some(id);}
+    ["before","after"].iter().find_map(|child|first_block(&node["split"][*child],ids,depth+1))
+}
+/// A tiled layer's splits, for dragging pane borders: direction, ratio, the split's rect, and one
+/// block from each side. Rex resolves the innermost split between two such blocks, which is this one.
+fn collect_splits(node: &Value,ids: &BTreeSet<&str>,depth: usize,out: &mut Vec<Value>) {
+    if !node.is_object() || depth>64 || out.len()>=64 {return;}
+    let split=&node["split"];
+    if !split.is_object() {return;}
+    if let (Some(direction),Some(ratio),Some(rect),Some(before),Some(after))=(
+        split["direction"].as_str().filter(|d|matches!(*d,"horizontal"|"vertical")),
+        split["ratio"].as_f64().filter(|r|r.is_finite()),
+        node["rect"].as_array().filter(|r|r.len()==4 && r.iter().all(|v|v.as_f64().is_some_and(f64::is_finite))),
+        first_block(&split["before"],ids,depth+1),first_block(&split["after"],ids,depth+1)) {
+        out.push(json!({"id":split["split_id"],"direction":direction,"ratio":ratio,"rect":rect,"before":before,"after":after}));
+    }
+    for child in ["before","after"] {collect_splits(&split[child],ids,depth+1,out);}
+}
 type ConnectTask = Pin<Box<dyn Future<Output = Result<Control>>>>;
 type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
@@ -704,11 +725,13 @@ impl Actor {
         for window in view["windows"].as_array().into_iter().flatten() {
             let mut blocks = Vec::new();
             let mut layout=Vec::new();
+            let mut splits=Vec::new();
             for (index,layer) in window["layers"].as_array().into_iter().flatten().enumerate() {
                 let ids=layer["blocks"].as_array().into_iter().flatten()
                     .filter(|b|b["creator_name"]=="com.superlogical.terminal")
                     .filter_map(|b|b["block_id"].as_str()).collect();
                 collect_pane_layout(&layer["layout"],&ids,index,layer["kind"]!="tiled",0,&mut layout);
+                if layer["kind"]=="tiled" {collect_splits(&layer["layout"],&ids,0,&mut splits);}
                 for block in layer["blocks"].as_array().into_iter().flatten() {
                     if block["creator_name"] != "com.superlogical.terminal" {
                         continue;
@@ -725,7 +748,7 @@ impl Actor {
                     );
                 }
             }
-            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout}));
+            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout,"splits":splits}));
         }
         let next = json!(windows);
         let ids = |windows: &Value| -> BTreeSet<String> {
@@ -1383,6 +1406,14 @@ impl Actor {
                         json!({"columns":columns.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
                 }
             }
+            "resize_split" => {
+                // Dragging a pane border in the multi-pane layout.
+                ensure!(value["session"]==self.selected_session,"Session changed");
+                let direction=value["direction"].as_str().filter(|d|matches!(*d,"horizontal"|"vertical")).context("direction required")?;
+                let ratio=value["ratio"].as_f64().filter(|r|r.is_finite()).context("ratio required")?.clamp(0.05,0.95);
+                self.control.as_mut().context("not connected")?.call("session.resize_pane",json!({"session_id":self.selected_session,
+                    "direction":direction,"before_block_id":value["before"],"after_block_id":value["after"],"ratio":ratio})).await?;
+            }
             "mirror" => {
                 let (session,wanted)=crate::mirror::parse(&value);
                 // Only the selected session's panes; anything else clears the mirror.
@@ -1932,6 +1963,23 @@ fn frame_value(frame: &Frame) -> Value {
     json!({"columns":frame.columns,"rows":frame.rows,"scrollbar":[frame.scroll_total,frame.scroll_offset,frame.scroll_visible],"input_flags":frame.input_flags,"cursor":frame.cursor,"cursor_position":frame.cursor_position,"foreground":rgb(frame.foreground),"background":rgb(frame.background),"cells":cells})
 }
 
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+    #[test]
+    fn splits_name_one_block_per_side_and_skip_non_terminals() {
+        let layout=json!({"rect":[0,0,1,1],"split":{"split_id":"s1","direction":"horizontal","ratio":0.5,
+            "before":{"rect":[0,0,0.5,1],"block_id":"a"},
+            "after":{"rect":[0.5,0,0.5,1],"split":{"split_id":"s2","direction":"vertical","ratio":0.3,
+                "before":{"rect":[0.5,0,0.5,0.3],"block_id":"web"},
+                "after":{"rect":[0.5,0.3,0.5,0.7],"block_id":"c"}}}}});
+        let ids:BTreeSet<&str>=["a","c"].into_iter().collect();
+        let mut out=Vec::new();
+        collect_splits(&layout,&ids,0,&mut out);
+        // s2's before side holds only a non-terminal block, so it cannot be named and is skipped.
+        assert_eq!(out,vec![json!({"id":"s1","direction":"horizontal","ratio":0.5,"rect":[0,0,1,1],"before":"a","after":"c"})]);
+    }
+}
 #[cfg(test)]
 mod tests {
     fn navigation_actor()->Actor {

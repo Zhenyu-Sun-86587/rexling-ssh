@@ -296,6 +296,13 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(panes==mirrorRequest) return
         mirrorRequest=panes;sendMirror()
     }
+    /** Moves a pane border in the multi-pane layout; Rex re-lays the window out and the panes follow. */
+    internal fun resizeSplit(split: PaneSplitLine,ratio: Float) {
+        val current=state.value
+        if(!current.connected || current.selectedSession.isBlank()) return
+        command("resize_split","session" to current.selectedSession,"direction" to if(split.horizontal) "horizontal" else "vertical",
+            "before" to split.before,"after" to split.after,"ratio" to ratio.coerceIn(.1f,.9f).toDouble())
+    }
     private fun sendMirror() {
         if(mirrorRequest.isEmpty() && !visible) return
         command("mirror","session" to state.value.selectedSession,"panes" to org.json.JSONArray(mirrorRequest.map {
