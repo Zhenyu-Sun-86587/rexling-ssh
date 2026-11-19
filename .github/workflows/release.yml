@@ -1,0 +1,119 @@
+name: Publish Android release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft tag (vYYYY.MM.DD-buildNNN), targeting a full commit SHA on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: release
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GODEBUG: http2client=0
+      RUSTUP_TOOLCHAIN: stable
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check draft and select release source
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v([0-9]{4}\.[0-9]{2}\.[0-9]{2})-build([1-9][0-9]*)$ ]]
+          version=${BASH_REMATCH[1]}
+          build=${BASH_REMATCH[2]}
+          draft=$(gh release view "$RELEASE_TAG" --json isDraft,targetCommitish)
+          jq -e '.isDraft' <<< "$draft" >/dev/null
+          source=$(jq -r '.targetCommitish' <<< "$draft")
+          [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$source" HEAD
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            [[ $(git rev-parse "refs/tags/$RELEASE_TAG^{commit}") == "$source" ]]
+          fi
+          git switch --detach "$source"
+          epoch=$(date -u -d "${version//./-}" +%s)
+          [[ $(date -u -d "@$epoch" +%Y.%m.%d) == "$version" ]]
+          printf 'sha=%s\nversion=%s\nbuild=%s\nepoch=%s\n' "$source" "$version" "$build" "$epoch" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: rexling-network/go.mod
+          cache: false
+      - name: Install Rust and Android build tools
+        run: |
+          rustup toolchain install stable --profile minimal
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager" --licenses < <(yes) > /dev/null
+          "$sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;30.0.16248370'
+
+      - name: Build signed ARM64 APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SOURCE_DATE_EPOCH: ${{ steps.source.outputs.epoch }}
+        run: |
+          umask 077
+          signing=$(mktemp -d "$RUNNER_TEMP/rex-signing.XXXXXX")
+          trap 'rm -rf "$signing"' EXIT
+          : "${KEYSTORE_BASE64:?Missing release keystore}" "${KEYSTORE_PASSWORD:?Missing release password}" "${KEY_ALIAS:?Missing release key alias}"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$signing/keystore"
+          printf '%s\n' "$KEYSTORE_PASSWORD" > "$signing/password"
+          printf 'storeFile=%s\nkeyAlias=%s\npasswordFile=%s\n' \
+            "$signing/keystore" "$KEY_ALIAS" "$signing/password" > "$signing/signing.properties"
+          unset KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS
+          export REXLING_SSH_SIGNING_PROPERTIES="$signing/signing.properties"
+          ./rexling-android/scripts/gradle.sh --no-daemon --max-workers=4 :app:shareRelease
+
+      - name: Verify and publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.source.outputs.sha }}
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
+          RELEASE_BUILD: ${{ steps.source.outputs.build }}
+        run: |
+          apk="Rexling-$RELEASE_VERSION-build$RELEASE_BUILD-${RELEASE_SHA:0:10}-arm64-release.apk"
+          dist=rexling-android/dist
+          python3 rexling-android/scripts/verify_apk.py --apk "dist/$apk" --require-release \
+            | jq -e --arg version "$RELEASE_VERSION" --argjson build "$RELEASE_BUILD" \
+                '.version_name == $version and .version_code == $build'
+          (cd "$dist" && sha256sum -c "$apk.sha256")
+          # This fingerprint is public and pins compatibility with the existing release signing key.
+          actual=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$dist/$apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          if [[ "$actual" != dd5b324e6502b10b1fe8e329b95a33840e0c56b898e54cb993b1200814f457d7 ]]; then
+            echo '::error::APK signer does not match the existing Rexling SSH releases'
+            exit 1
+          fi
+          gh release view "$RELEASE_TAG" --json isDraft,targetCommitish \
+            | jq -e --arg sha "$RELEASE_SHA" '.isDraft and .targetCommitish == $sha' >/dev/null
+          gh release upload "$RELEASE_TAG" "$dist/$apk" "$dist/$apk.sha256" --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

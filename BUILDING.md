@@ -220,3 +220,15 @@ Release signing has no debug-key fallback. Use the same application ID and key f
 Build with `./rexling-android/scripts/gradle.sh :app:assembleRelease` and inspect with
 `python3 rexling-android/scripts/verify_apk.py --apk app/build/outputs/apk/release/app-release.apk --require-release`.
 The APK is `rexling-android/app/build/outputs/apk/release/app-release.apk`.
+
+### Publish through GitHub Actions
+
+Create a draft GitHub Release with a tag such as `v2026.11.19-build172` and set
+its target to the full, tested commit SHA on `main`. Manually run **Publish Android
+release** from `main` with that tag. The workflow checks out the draft's target,
+builds and verifies the signed ARM64 APK, uploads it and its checksum, then
+publishes the draft. Ordinary CI never uses release credentials.
+
+Keep the existing keystore (base64), password, and alias in the `release`
+environment as `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, and
+`ANDROID_KEY_ALIAS`. Restrict that environment to deployments from `main`.
