@@ -4,7 +4,6 @@ pub mod data;
 pub mod ghostty;
 pub mod snapshot;
 pub mod transport;
-pub mod ssh;
 
 pub mod upload;
 

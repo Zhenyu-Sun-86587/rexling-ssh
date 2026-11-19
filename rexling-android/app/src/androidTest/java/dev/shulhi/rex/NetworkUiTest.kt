@@ -113,11 +113,11 @@ class NetworkUiTest {
     @Test fun emptyServerStateOpensAddServerInsteadOfQuickTailscaleSetup() {
         var added=0
         compose.setContent {MaterialTheme {HostsContent(emptyList(),emptyMap(),"",
-            onAdd={added++},onTailscale={},onDirect={},onSelect={},onEdit={},onDisconnect={},onForget={})}}
+            onAdd={added++},onTailscale={},onSelect={},onEdit={},onDisconnect={},onForget={})}}
         compose.onNodeWithText("Your hosts").assertIsDisplayed()
         compose.onNodeWithText("Rex server URL").assertDoesNotExist()
         compose.onNodeWithText("Connect over Tailscale").assertDoesNotExist()
-        compose.onNodeWithText("Add SSH host").performScrollTo().performClick()
+        compose.onNodeWithText("Add server").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(1,added)}
     }
     @Test fun connectedDevicesAndRoutesShareTheTailnetStatusCard() {

@@ -4,22 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ServersTest {
-    @Test fun jumpOnlyHostsPersistWithoutBecomingRexTargetsAndOldProfilesRemainTargets() {
-        val ssh=SshOptions("bastion.example",user="ubuntu",credentialRef="encrypted-ref")
-        val jump=ServerProfile.create("Jump","ssh://ubuntu@bastion.example",ssh=ssh,jumpOnly=true)
-        val target=ServerProfile.create("Rex","https://rex.example")
-        assertEquals(listOf(jump,target),SavedServers.decode(SavedServers.encode(listOf(jump,target)),""))
-        assertFalse(SavedServers.decode("""[{"id":"old","label":"Old","endpoint":"https://old"}]""","").single().jumpOnly)
-        assertTrue(runCatching {ServerProfile.create("Invalid","https://example",jumpOnly=true)}.isFailure)
-    }
-    @Test fun jumpChoicesIncludeOfflineSshOnlyHostsButExcludeSelfWebUrlsAndNestedRoutes() {
-        val ssh=SshOptions("jump",user="dev",credentialRef="ref")
-        val jump=ServerProfile.create("Jump","ssh://dev@jump","jump",ssh=ssh,jumpOnly=true)
-        val target=ServerProfile.create("Target","ssh://dev@target","target",ssh=ssh.copy(host="target"))
-        val nested=ServerProfile.create("Nested","ssh://dev@nested","nested",ssh=ssh.copy(host="nested",jumpHost=SshJumpHost("first",user="dev")))
-        val web=ServerProfile.create("Web","https://web","web")
-        assertEquals(listOf(jump),jumpHostChoices(listOf(target,web,jump,nested),"target"))
-        assertEquals(listOf(target,jump),jumpHostChoices(listOf(target,web,jump,nested),"new"))
+    @Test fun onlyLegacySshProfilesRequireSetupAndStayInactiveAfterSavingTheList() {
+        val saved="""[
+            {"id":"jump","label":"Gateway","endpoint":"ssh://dev@gateway","jumpOnly":true},
+            {"id":"via","label":"Internal","endpoint":"ssh://dev@target","ssh":{"credentialRef":"old-key","jumpHost":{"host":"gateway"}}},
+            {"id":"direct","label":"Direct","endpoint":"ssh://dev@direct","ssh":{"credentialRef":"old-key"}},
+            {"id":"go","label":"Go","endpoint":"ssh://dev@target"},
+            {"id":"web","label":"HTTPS","endpoint":"https://web","ssh":null}
+        ]"""
+        val decoded=SavedServers.decode(saved,"")
+        assertEquals(listOf("jump","via","direct"),decoded.filter {it.needsSshSetup}.map {it.id})
+        assertEquals(listOf("go","web"),decoded.filterNot {it.needsSshSetup}.map {it.id})
+        assertEquals("ssh://dev@target",decoded.first {it.id=="via"}.endpoint)
+        val encoded=SavedServers.encode(decoded)
+        assertFalse(encoded.contains("old-key"))
+        assertEquals(decoded,SavedServers.decode(encoded,""))
     }
     @Test fun sshAddressSeparatesOnlyUnambiguousPorts() {
         assertEquals(SshAddress("2001:db8::22",22),SshAddress.parse("2001:db8::22"))
@@ -30,34 +29,15 @@ class ServersTest {
         for(value in listOf("[::1]:0","[::1]:65536","::wrong","host:no","[::1]junk","user@host"))
             assertTrue(value,runCatching {SshAddress.parse(value)}.isFailure)
     }
-    @Test fun ipv6DirectProfileSurvivesPersistence() {
-        val ssh=SshOptions("2001:db8::1",22,"user","key","key-ref",addressFamily="ipv6")
-        val profile=ServerProfile.create("IPv6","ssh://user@[2001:db8::1]",ssh=ssh)
+    @Test fun ipv6SshUrlSurvivesPersistence() {
+        val profile=ServerProfile.create("IPv6","ssh://user@[2001:db8::1]:2222/tmp/rex.sock")
         assertEquals(profile,SavedServers.decode(SavedServers.encode(listOf(profile)),"").single())
     }
 
-    @Test fun sshMetadataEditsPreserveConnectionIdentityButRouteChangesDoNot() {
-        val original=SshOptions("target",user="dev",credentialRef="old",revision="old")
-        val edited=original.copy(credentialRef="new",revision="new")
-        assertTrue(edited.sameConnection(original))
-        assertFalse(edited.copy(socketPath="/tmp/other.sock").sameConnection(original))
-        assertFalse(edited.copy(jumpHost=SshJumpHost("jump",user="dev")).sameConnection(original))
-        val profile=ServerProfile.create("Old","ssh://dev@target",ssh=original)
-        assertEquals(profile.connectionKey,profile.copy(label="New",icon=ServerIcon.SERVER).connectionKey)
-    }
-    @Test fun sshCredentialChangesIncludeBothHopsAndIgnorePropertyOrder() {
-        val a=org.json.JSONObject("""{"method":"password","password":"a","jumpHost":{"method":"password","password":"b"}}""")
-        val b=org.json.JSONObject("""{"jumpHost":{"password":"b","method":"password"},"password":"a","method":"password"}""")
-        assertTrue(sameSshCredentials(a,b))
-        b.getJSONObject("jumpHost").put("password","changed")
-        assertFalse(sameSshCredentials(a,b))
-        b.remove("jumpHost")
-        assertFalse(sameSshCredentials(a,b))
-    }
     @Test fun sshURLsKeepUserAndOptionalSocketWithoutAllowingPasswords() {
         assertEquals("ssh://alice@host:2222/tmp/rex%20socket",ServerProfile.normalizeEndpoint("ssh://alice@HOST:2222/tmp/rex%20socket"))
         assertEquals("ssh://alice@host",ServerProfile.normalizeEndpoint("ssh://alice@host"))
-        for(url in listOf("ssh://host","ssh://user:password@host","ssh://user@host?secret=x")) assertTrue(url,runCatching {ServerProfile.normalizeEndpoint(url)}.isFailure)
+        for(url in listOf("ssh://host","ssh://@host","ssh://user:password@host","ssh://user@host?secret=x")) assertTrue(url,runCatching {ServerProfile.normalizeEndpoint(url)}.isFailure)
     }
 
     @Test fun serverURLsNormalizeWithoutDroppingPortsOrTransportChoice() {

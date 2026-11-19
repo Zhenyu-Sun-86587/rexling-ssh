@@ -1,24 +1,22 @@
 # Connecting Rexling
 
-In this SSH fork, this guide describes the **Built-in Tailscale / SSH URL / Rex URL**
-entry. Existing **Add host** profiles retain password, private-key/certificate and
-single-jump authentication through the phone's network or VPN. Those profiles do
-not use built-in Tailscale and do not auto-start Rex; their server must already be
-running or socket-activated. See the [fork guide](../README.md#ssh-fork).
-
-The default uses your phone’s network, including an existing Tailscale VPN. Existing saved HTTPS servers keep working.
+Open **Your hosts → Add host** to enter an SSH or HTTPS URL. The default uses your phone’s network, including an existing Tailscale VPN. Existing Go SSH and HTTPS servers keep working.
 
 ## SSH
 
-In Servers, add `ssh://user@host`, optionally with a port (`ssh://user@host:2222`). The host needs Rex installed and an SSH server that permits Unix socket forwarding. Rexling discovers and starts that user’s Rex server. Linux and macOS hosts are supported; Windows named-pipe hosts are not yet supported over SSH.
+Enter `ssh://user@host`, optionally with a port (`ssh://user@host:2222`). The host needs Rex installed and an SSH server that permits Unix socket forwarding. Unless the remote `REX_AUTOSTART` setting disables it, Rexling can start that user’s Rex server when discovering its socket. Linux and macOS hosts are supported; Windows named-pipe hosts are not yet supported over SSH.
 
-Import an OpenSSH or PEM private key in the server editor. Encrypted keys prompt for a passphrase during import. The imported key is stored encrypted using Android Keystore; its passphrase is not retained. This authenticates the SSH connection and does not provide SSH agent forwarding. Password authentication is not supported.
+Import an OpenSSH or PEM private key in the server editor. Encrypted keys prompt for a passphrase during import. The imported key is stored encrypted using Android Keystore; its passphrase is not retained. This authenticates the SSH connection and does not provide SSH agent forwarding. Password authentication, OpenSSH user certificates and ProxyJump are not supported.
 
 For Tailscale SSH, leave the key unset. This works when the host accepts keyless authentication under its Tailscale SSH policy. Browser approval messages appear automatically, with Copy Message and Open Browser actions.
 
-Before first connection, verify the displayed host fingerprint against the host. A changed key requires a new explicit trust decision. Removing a server forgets its key and its trusted host fingerprint unless another saved SSH server uses the same host and port.
+Before first connection, verify the displayed host fingerprint against the host. A changed key requires a new explicit trust decision. Removing a server removes its key assignment, but the key remains available in the SSH key library.
 
 An explicit remote Rex socket can be specified as a URL path, such as `ssh://user@host/tmp/rex.sock`. Otherwise Rexling uses Rex’s CLI to discover the socket. A missing Rex installation is reported rather than installed automatically.
+
+### Upgrading an old Rust SSH profile
+
+Old Rust SSH entries, including jump-only hosts, are marked **Setup required** and never reconnect automatically. Tap one to edit its URL and select a route and key. The old SSH credentials and fingerprints are not imported. If the host was only reachable through a jump host, choose another reachable address (such as a tailnet address), or leave the old entry disconnected.
 
 ## Built-in Tailscale and Headscale
 

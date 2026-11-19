@@ -30,32 +30,32 @@ import kotlinx.coroutines.launch
 @Composable internal fun HostsPanel(model: RexModel,onOpen: ()->Unit,modifier: Modifier=Modifier) {
     var editing by remember {mutableStateOf<ServerProfile?>(null)}
     var editor by remember {mutableStateOf(false)}
-    var initialMode by remember {mutableStateOf("ssh")}
-    var networkEditor by remember {mutableStateOf(false)}
     var tailscale by remember {mutableStateOf(false)}
     var suggestion by remember {mutableStateOf<TailscaleDevice?>(null)}
     var forgetting by remember {mutableStateOf<ServerProfile?>(null)}
-    fun add(mode: String) {editing=null;suggestion=null;initialMode=mode;networkEditor=mode=="direct";editor=true}
+    fun edit(host: ServerProfile?) {editing=host;suggestion=null;editor=true}
     HostsContent(model.servers,model.serverStatuses,model.activeServerId,
-        onAdd={add("ssh")},onTailscale={tailscale=true},onDirect={add("direct")},
-        onSelect={host->if(host.jumpOnly) {editing=host;suggestion=null;networkEditor=false;editor=true} else {model.connectServer(host.id);onOpen()}},
-        onEdit={editing=it;suggestion=null;networkEditor=it.ssh==null;editor=true},onDisconnect={model.disconnectServer(it.id)},onForget={forgetting=it},modifier=modifier)
+        onAdd={edit(null)},onTailscale={tailscale=true},
+        onSelect={host->if(host.needsSshSetup) edit(host) else {model.connectServer(host.id);onOpen()}},
+        onEdit={edit(it)},onDisconnect={model.disconnectServer(it.id)},onForget={forgetting=it},modifier=modifier)
     if(editor) {
-        if(networkEditor) ServerEditor(editing,onClose={editor=false},onSave={label,url,icon->model.saveServer(editing?.id,label,url,icon)})
-        else ServerEditor(editing,model,initialMode,suggestion?.address.orEmpty(),suggestion?.label.orEmpty()) {editor=false}
+        val id=editing?.id
+        ServerEditor(editing,onClose={editor=false},onSave={label,url,icon->
+            model.saveServer(id,label,url,icon).also {if(it==null) onOpen()}
+        },suggestion=suggestion,onSaveOnly={label,url,icon->model.saveServer(id,label,url,icon,connect=false)})
     }
     if(tailscale) TailscaleSheet(onDismiss={tailscale=false},onChoose={device->
-        tailscale=false;suggestion=device;editing=null;initialMode="ssh";networkEditor=false;editor=true
+        tailscale=false;suggestion=device;editing=null;editor=true
     })
     forgetting?.let {host->AlertDialog(onDismissRequest={forgetting=null},title={Text("Forget ${host.label}?")},
-        text={Text("Remove this saved host and its login from this device. Routes that copied its jump settings are kept.")},
+        text={Text("Remove this saved host from this device. Keys in your SSH key library are kept.")},
         confirmButton={TextButton(onClick={model.forgetServer(host.id);forgetting=null}) {Text("Forget")}},
         dismissButton={TextButton(onClick={forgetting=null}) {Text("Cancel")}})}
 }
 
 @Composable internal fun HostsContent(
     servers: List<ServerProfile>,statuses: Map<String,ServerStatus>,activeId: String,
-    onAdd: ()->Unit,onTailscale: ()->Unit,onDirect: ()->Unit,onSelect: (ServerProfile)->Unit,
+    onAdd: ()->Unit,onTailscale: ()->Unit,onSelect: (ServerProfile)->Unit,
     onEdit: (ServerProfile)->Unit,onDisconnect: (ServerProfile)->Unit,onForget: (ServerProfile)->Unit,
     modifier: Modifier=Modifier,
 ) {
@@ -71,34 +71,33 @@ import kotlinx.coroutines.launch
         }
         if(servers.isEmpty()) {
             Text("Your workspace starts here",style=MaterialTheme.typography.titleLarge)
-            Text("Connect to Rex over SSH, or discover a device on your tailnet. Save a jump host even when it has no Rex server.",style=MaterialTheme.typography.bodyMedium,color=scheme.onSurfaceVariant)
-            HostEntryCard("SSH host","A Rex target or an SSH-only jump host. Save first, connect when you are ready.","Add SSH host",onAdd,true)
-            HostEntryCard("Tailscale devices","Find machines on your tailnet, then configure their SSH login. Your phone still needs the Tailscale VPN.","Discover devices",onTailscale,false)
-            TextButton(onClick=onDirect,modifier=Modifier.fillMaxWidth()) {Text("Built-in Tailscale / SSH URL / Rex URL")}
+            Text("Connect to Rex over SSH or HTTPS on your phone’s network or with built-in Tailscale.",style=MaterialTheme.typography.bodyMedium,color=scheme.onSurfaceVariant)
+            HostEntryCard("Rex server","Enter an SSH or HTTPS URL. Save first, or connect now.","Add server",onAdd,true)
+            HostEntryCard("Tailscale devices","Find a device on your tailnet and set it up in the same server editor.","Discover devices",onTailscale,false)
         } else {
-            SshField(search,{search=it},title="Search hosts")
+            OutlinedTextField(search,{search=it},Modifier.fillMaxWidth(),label={Text("Search hosts")},singleLine=true)
             val matching=servers.filter {search.isBlank() || it.label.contains(search,true) || it.endpoint.contains(search,true)}
-            for(jumpOnly in listOf(false,true)) {
-                val group=matching.filter {it.jumpOnly==jumpOnly}
+            for(needsSetup in listOf(false,true)) {
+                val group=matching.filter {it.needsSshSetup==needsSetup}
                 if(group.isNotEmpty()) {
-                    Text(if(jumpOnly) "SSH jump hosts · Rex not required" else "Rex hosts",style=MaterialTheme.typography.labelLarge,color=scheme.onSurfaceVariant)
+                    Text(if(needsSetup) "Old SSH hosts · setup required" else "Rex hosts",style=MaterialTheme.typography.labelLarge,color=scheme.onSurfaceVariant)
                     group.forEach {host->HostRow(host,statuses[host.id] ?: ServerStatus(),host.id==activeId,onSelect,onEdit,onDisconnect,onForget)}
                 }
             }
             if(matching.isEmpty()) Text("No matching hosts.",style=MaterialTheme.typography.bodyMedium)
             OutlinedButton(onClick=onTailscale,modifier=Modifier.fillMaxWidth()) {Text("Discover Tailscale devices")}
-            TextButton(onClick=onDirect,modifier=Modifier.fillMaxWidth()) {Text("Built-in Tailscale / SSH URL / Rex URL")}
         }
-        Text("Only Rex targets open workspaces. Jump hosts supply an SSH login and forwarding; they never auto-connect to Rex.",style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
     }
 }
 
-/** Upstream URL-based network editor; existing password/ProxyJump profiles use the full SSH editor. */
-@Composable internal fun ServerEditor(server: ServerProfile?,onClose: ()->Unit,onSave: (String,String,ServerIcon)->String?) {
+@Composable internal fun ServerEditor(server: ServerProfile?,onClose: ()->Unit,onSave: (String,String,ServerIcon)->String?,
+    suggestion: TailscaleDevice?=null,onSaveOnly: ((String,String,ServerIcon)->String?)?=null) {
     val networkStatus by NetworkSettings.status.collectAsState()
     val tailnetConnected=networkStatus.optJSONObject("tailscale")?.optString("BackendState")=="Running"
-    var name by remember(server?.id) {mutableStateOf(server?.label.orEmpty())}
-    var endpoint by remember(server?.id) {mutableStateOf(server?.endpoint.orEmpty())}
+    var name by remember(server?.id,suggestion?.id) {mutableStateOf(server?.label ?: suggestion?.label.orEmpty())}
+    var endpoint by remember(server?.id,suggestion?.id) {mutableStateOf(server?.endpoint ?: suggestion?.let {
+        java.net.URI("ssh","",it.address,-1,null,null,null).toASCIIString()
+    }.orEmpty())}
     var icon by remember(server?.id) {mutableStateOf(server?.icon ?: ServerIcon.GLOBE)}
     var error by remember {mutableStateOf<String?>(null)}
     var route by remember(server?.id) {mutableStateOf(NetworkSettings.route(server?.endpoint.orEmpty()))}
@@ -107,6 +106,27 @@ import kotlinx.coroutines.launch
     var networkOpen by remember {mutableStateOf(false)}
     var busy by remember {mutableStateOf(false)}
     val scope=rememberCoroutineScope()
+    fun save(action: (String,String,ServerIcon)->String?) {
+        val profile=runCatching {ServerProfile.create(name,endpoint,icon=icon)}.getOrElse {error=it.message;return}
+        val requestedRoute=route
+        val requestedKey=selectedKey
+        busy=true
+        scope.launch {
+            val previous=NetworkSettings.route(profile.endpoint)
+            val previousKey=NetworkSettings.selectedKey(profile.endpoint)
+            val ssh=profile.endpoint.startsWith("ssh://")
+            error=runCatching {
+                NetworkSettings.saveRoute(profile.endpoint,requestedRoute) ?:
+                    (if(ssh) NetworkSettings.assignKey(profile.endpoint,requestedKey) else null) ?:
+                    action(profile.label,profile.endpoint,profile.icon)
+            }.getOrElse {it.message ?: "Could not save server"}
+            if(error!=null) {
+                if(previous!=requestedRoute) NetworkSettings.saveRoute(profile.endpoint,previous)
+                if(ssh && previousKey!=NetworkSettings.selectedKey(profile.endpoint)) NetworkSettings.assignKey(profile.endpoint,previousKey)
+            }
+            busy=false;if(error==null) onClose()
+        }
+    }
     if(networkOpen) NetworkSheet(onClose={networkOpen=false})
     AlertDialog(onDismissRequest={if(!busy) onClose()},title={Text(if(server==null) "Add server" else "Edit server",style=SettingsType.title)},text={
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -116,7 +136,12 @@ import kotlinx.coroutines.launch
             }
             OutlinedTextField(endpoint,{endpoint=it;error=null},Modifier.fillMaxWidth(),label={Text("Server URL")},singleLine=true,textStyle=SettingsType.body,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),placeholder={Text("https://host.tailnet.ts.net",fontSize=11.sp)})
-            Text(if(endpoint.startsWith("ssh://")) "SSH to a host running Rex. This URL mode may start an installed Rex server; use Add SSH host for password, certificates or ProxyJump without autostart." else "Use an HTTPS address, or ssh://user@host.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(server?.needsSshSetup==true) Text("Set up this host again. Old SSH credentials and trust are not reused. Passwords, user certificates and jump hosts are no longer supported.",style=SettingsType.detail,color=MaterialTheme.colorScheme.primary)
+            Text(when {
+                suggestion!=null && endpoint.startsWith("ssh://@") -> "Enter the remote username before @. The API key only discovers devices."
+                endpoint.startsWith("ssh://") -> "Use ssh://user@host. SSH may start Rex if it’s installed on the host."
+                else -> "Use an HTTPS address, or ssh://user@host."
+            },style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(runCatching {ServerProfile.normalizeEndpoint(endpoint)}.isSuccess) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.5f)).padding(12.dp)) {
                 Text("Connection network",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 Box {
@@ -133,28 +158,11 @@ import kotlinx.coroutines.launch
             if(endpoint.startsWith("ssh://") && runCatching {ServerProfile.normalizeEndpoint(endpoint)}.isSuccess) SshKeyEditor(selectedKey) {selectedKey=it}
             error?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp)}
         }
-    },confirmButton={Button(onClick={
-        val profile=runCatching {ServerProfile.create(name,endpoint,icon=icon)}.getOrElse {error=it.message;return@Button}
-        val requestedRoute=route
-        val requestedKey=selectedKey
-        busy=true
-        scope.launch {
-            val previous=NetworkSettings.route(profile.endpoint)
-            val previousKey=NetworkSettings.selectedKey(profile.endpoint)
-            val ssh=profile.endpoint.startsWith("ssh://")
-            error=runCatching {
-                NetworkSettings.saveRoute(profile.endpoint,requestedRoute) ?:
-                    (if(ssh) NetworkSettings.assignKey(profile.endpoint,requestedKey) else null) ?:
-                    onSave(profile.label,profile.endpoint,profile.icon)
-            }.getOrElse {it.message ?: "Could not save server"}
-            if(error!=null) {
-                if(previous!=requestedRoute) NetworkSettings.saveRoute(profile.endpoint,previous)
-                if(ssh && previousKey!=NetworkSettings.selectedKey(profile.endpoint)) NetworkSettings.assignKey(profile.endpoint,previousKey)
-            }
-            busy=false;if(error==null) onClose()
-        }
-    },enabled=endpoint.isNotBlank() && !busy) {Text(if(busy) "Saving…" else "Save & connect")}},
-        dismissButton={TextButton(enabled=!busy,onClick=onClose) {Text("Cancel")}})
+    },confirmButton={Button(onClick={save(onSave)},enabled=endpoint.isNotBlank() && !busy) {Text(if(busy) "Saving…" else "Save & connect")}},
+        dismissButton={
+            TextButton(enabled=!busy,onClick=onClose) {Text("Cancel")}
+            if(onSaveOnly!=null) TextButton(enabled=endpoint.isNotBlank() && !busy,onClick={save(onSaveOnly)}) {Text("Save only")}
+        })
 }
 
 @Composable private fun HostEntryCard(title: String,description: String,action: String,onClick: ()->Unit,primary: Boolean) {
@@ -182,19 +190,18 @@ import kotlinx.coroutines.launch
             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 Text(host.label,style=MaterialTheme.typography.titleSmall,maxLines=1,overflow=TextOverflow.Ellipsis)
                 Text(host.endpoint,style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis,color=scheme.onSurfaceVariant)
-                Text(if(host.jumpOnly) "SSH only · tap to edit" else when(status.phase) {
+                Text(if(host.needsSshSetup) "Setup required · tap to edit" else when(status.phase) {
                     "connected"->if(selected) "Connected · viewing" else "Connected"
                     "connecting"->"Connecting…";"reconnecting"->"Reconnecting…";"paused"->"Paused"
                     "error"->"Connection failed · tap to retry";else->"Saved · tap to connect"
                 },style=MaterialTheme.typography.labelSmall,color=if(status.connected) scheme.primary else scheme.onSurfaceVariant)
-                host.ssh?.jumpHost?.let {Text("Via ${it.user}@${it.host}",style=MaterialTheme.typography.labelSmall,color=scheme.primary)}
                 if(status.error.isNotBlank()) Text(status.error,style=MaterialTheme.typography.bodySmall,maxLines=2,overflow=TextOverflow.Ellipsis,color=scheme.error)
             }
             Box {
                 ChromeButton(ChromeIcon.MORE,"Host actions for ${host.label}") {menu=true}
                 DropdownMenu(menu,{menu=false}) {
                     DropdownMenuItem(text={Text("Edit host")},onClick={menu=false;onEdit(host)})
-                    if(!host.jumpOnly && status.maintained) DropdownMenuItem(text={Text("Disconnect")},onClick={menu=false;onDisconnect(host)})
+                    if(!host.needsSshSetup && status.maintained) DropdownMenuItem(text={Text("Disconnect")},onClick={menu=false;onDisconnect(host)})
                     DropdownMenuItem(text={Text("Forget host")},onClick={menu=false;onForget(host)})
                 }
             }

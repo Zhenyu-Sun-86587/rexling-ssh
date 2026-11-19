@@ -631,10 +631,7 @@ impl Actor {
         self.lose_connections();
         if input_pending {self.notice="Request outcome is uncertain; input was not resent".into();}
         self.error = format!("{error:#}");
-        if self.endpoint.as_ref().is_some_and(Endpoint::ssh_blocked) {
-            self.phase = "error".into();
-            self.retry = None;
-        } else if self.endpoint.is_some() && !self.paused {
+        if self.endpoint.is_some() && !self.paused {
             self.phase = "reconnecting".into();
             self.retry = self.network_online.then(||tokio::time::Instant::now() + Duration::from_secs(self.backoff));
             self.backoff = (self.backoff * 2).min(15);
@@ -1003,10 +1000,7 @@ impl Actor {
                         || server.starts_with("ssh://"),
                     "Enter a complete HTTP(S), WS(S), or SSH server URL"
                 );
-                let mut endpoint = Endpoint::new(&server, Duration::from_secs(10))?;
-                if let Some(id) = value["ssh_transport"].as_u64().or_else(||value["sshTransport"].as_u64()) {
-                    endpoint = endpoint.with_ssh(id)?;
-                }
+                let endpoint = Endpoint::new(&server, Duration::from_secs(10))?;
                 self.disconnect().await;
                 self.endpoint = Some(endpoint);
                 self.server = server;
@@ -1042,10 +1036,6 @@ impl Actor {
                 if self.paused || self.endpoint.is_none() {return Ok(());}
                 // Route callbacks alone must not destroy healthy channels or in-flight input.
                 if network && self.phase=="connected" {return Ok(());}
-                // A manual retry wakes SSH cooldown, but must not restart a
-                // handshake that is already making progress. Route changes still cancel it.
-                if !network && self.endpoint.as_ref().is_some_and(Endpoint::retry_ssh)
-                    && self.connect_task.is_some() {return Ok(());}
                 self.lose_connections();self.backoff=1;self.phase="reconnecting".into();
                 self.retry=self.network_online.then(tokio::time::Instant::now);self.error.clear();
                 self.notice=if self.network_online {"Reconnecting; input is paused"} else {"Waiting for network; input is paused"}.into();
@@ -1970,23 +1960,13 @@ mod tests {
         let shared=Arc::new(Mutex::new(Shared {revision:0,json:String::new(),activity:Arc::default(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
         Actor::new(shared,Arc::new(crate::updates::Updates::default()))
     }
-    #[tokio::test] async fn ssh_urls_and_registered_profiles_select_distinct_transports() {
-        let manager=rex_core::ssh::SshManager::global();
-        let id=manager.register(
-            serde_json::from_value(json!({"host":"127.0.0.1","user":"test"})).unwrap(),
-            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
-        ).unwrap();
+    #[tokio::test] async fn connect_accepts_an_ssh_url_without_a_profile_handle() {
         let mut actor=navigation_actor();
-        actor.command(json!({"type":"connect","server":"ssh://alice@example.invalid"})).await.unwrap();
-        assert!(!actor.endpoint.as_ref().unwrap().retry_ssh(),"URL-only SSH must use Go, not russh credentials");
-        for field in ["ssh_transport","sshTransport"] {
-            let mut request=json!({"type":"connect","server":"ssh://localhost"});
-            request[field]=json!(id);
-            actor.command(request).await.unwrap();
-            assert!(actor.endpoint.as_ref().unwrap().retry_ssh(),"registered SSH must retain the russh profile");
-        }
-        actor.disconnect().await;
-        manager.remove(id);
+        let server="ssh://alice@example.invalid:2222/tmp/rex.sock";
+        actor.command(json!({"type":"connect","server":server})).await.unwrap();
+        assert_eq!(actor.server,server);
+        assert_eq!(actor.phase,"connecting");
+        assert!(actor.endpoint.is_some() && actor.retry.is_some());
     }
     #[test] fn navigation_intent_is_published_only_for_accepted_navigation() {
         let (tx,mut rx)=mpsc::channel(1);
@@ -3326,19 +3306,6 @@ while True:
         assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");assert!(!actor.controlled);
         runtime.block_on(actor.command(json!({"type":"network","online":true}))).unwrap();assert!(actor.retry.is_some());
         actor.connect_task=Some(Box::pin(pending()));runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();assert!(actor.connect_task.is_none());assert!(actor.retry.is_some());
-
-        let manager=rex_core::ssh::SshManager::global();
-        let id=manager.register(
-            serde_json::from_value(json!({"host":"127.0.0.1","user":"test"})).unwrap(),
-            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
-        ).unwrap();
-        actor.endpoint=Some(Endpoint::new("ssh://localhost",Duration::from_secs(10)).unwrap().with_ssh(id).unwrap());
-        actor.connect_task=Some(Box::pin(pending()));actor.phase="connecting".into();actor.retry=None;
-        runtime.block_on(actor.command(json!({"type":"retry"}))).unwrap();
-        assert!(actor.connect_task.is_some());assert!(actor.retry.is_none());assert_eq!(actor.phase,"connecting");
-        runtime.block_on(actor.command(json!({"type":"network","online":false}))).unwrap();
-        assert!(actor.connect_task.is_none());assert!(actor.retry.is_none());assert_eq!(actor.selected_block,"b");
-        manager.remove(id);
     }
 
     #[test] fn reordering_windows_preserves_program_metadata() {

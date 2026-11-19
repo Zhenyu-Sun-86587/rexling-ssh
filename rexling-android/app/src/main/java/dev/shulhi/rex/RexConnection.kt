@@ -16,9 +16,8 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import androidx.core.content.edit
 
-internal class RexConnection(application: Application, private val scope: CoroutineScope, val savedEndpoint: String, private val preferences: SharedPreferences = application.getSharedPreferences("rex",0), private val storageKey: String=savedEndpoint, private val profile: ServerProfile?=null) {
-    private val applicationContext=application.applicationContext
-    private var connectJob: Job?=null
+internal class RexConnection(application: Application, private val scope: CoroutineScope, val savedEndpoint: String, private val preferences: SharedPreferences = application.getSharedPreferences("rex",0)) {
+    private val storageKey=savedEndpoint
     var lastSessionId by mutableStateOf(preferences.getString("last_session:$storageKey","").orEmpty())
         private set
     var paneFrames by mutableStateOf<Map<String,TerminalScreen>>(emptyMap())
@@ -393,19 +392,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         paneFrames=emptyMap()
         lastSessionId=preferences.getString("last_session:$storageKey","").orEmpty()
         preferences.edit { putString("endpoint", value) }
-        connectJob?.cancel()
-        if(profile?.ssh!=null) {
-            setState(state.value.copy(phase="connecting",endpoint=value,error=""))
-            connectJob=scope.launch {
-                try {
-                    val transport=withContext(Dispatchers.IO) {SshTransport.acquire(applicationContext,profile)}
-                    if(!closed) command("connect","server" to value,"sshTransport" to transport)
-                } catch(cancelled: kotlinx.coroutines.CancellationException) {throw cancelled}
-                catch(error: Exception) {if(!closed) setState(state.value.copy(phase="error",error=error.message ?: "Could not configure SSH"))}
-            }
-        } else command("connect", "server" to value)
+        command("connect", "server" to value)
     }
-    fun disconnect() { discardWaitingInput("disconnect");connectJob?.cancel();pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
+    fun disconnect() { discardWaitingInput("disconnect");pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();cancelKeyRepeats();resetModifiers(); navigationRequest = NavigationRequest(); command("disconnect") }
     fun preview() = command("preview")
     fun selectSession(id: String) {
         presentation.flush()
@@ -640,7 +629,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         presentation.flush()
         cancelDisplay()
         discardWaitingInput("closed");navigationTimer?.cancel()
-        closed=true;connectJob?.cancel();pollJob?.cancel();resizeJob?.cancel()
+        closed=true;pollJob?.cancel();resizeJob?.cancel()
         if (handle != 0L) NativeBridge.destroy(handle)
         handle = 0
     }

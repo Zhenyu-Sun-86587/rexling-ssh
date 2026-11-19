@@ -17,56 +17,15 @@ internal enum class ServerNetworkRoute(val key: String,val label: String) {
     companion object {fun decode(value: String?)=entries.firstOrNull {it.key==value} ?: PHONE}
 }
 
-data class SshJumpHost(val host: String,val port: Int=22,val user: String,val authMethod: String="key") {
-    fun json()=JSONObject().put("host",host).put("port",port).put("user",user).put("authMethod",authMethod)
-    companion object {
-        fun parse(o: JSONObject)=SshJumpHost(o.getString("host"),o.optInt("port",22),o.getString("user"),o.optString("authMethod","key"))
-    }
-}
-data class SshOptions(
-    val host: String,val port: Int=22,val user: String,val authMethod: String="key",
-    val credentialRef: String,val socketPath: String="",val revision: String=UUID.randomUUID().toString(),
-    val jumpHost: SshJumpHost?=null,val addressFamily: String="auto",
-) {
-    fun sameConnection(other: SshOptions): Boolean = copy(credentialRef=other.credentialRef,revision=other.revision)==other
-    fun json()=JSONObject().put("host",host).put("port",port).put("user",user).put("authMethod",authMethod)
-        .put("credentialRef",credentialRef).put("socketPath",socketPath).put("revision",revision).put("jumpHost",jumpHost?.json()).put("addressFamily",addressFamily)
-    companion object {
-        fun parse(o: JSONObject)=SshOptions(o.getString("host"),o.optInt("port",22),o.getString("user"),o.optString("authMethod","key"),
-            o.getString("credentialRef"),o.optString("socketPath"),o.getString("revision"),o.optJSONObject("jumpHost")?.let(SshJumpHost::parse),o.optString("addressFamily","auto"))
-    }
-}
-
-/** Compare the actual authentication fields, independent of JSON property order. */
-internal fun sameSshCredentials(left: JSONObject,right: JSONObject): Boolean {
-    val fields=listOf("method","privateKey","passphrase","certificate","password")
-    if(fields.any {left.optString(it)!=right.optString(it)}) return false
-    val a=left.optJSONObject("jumpHost");val b=right.optJSONObject("jumpHost")
-    return if(a==null || b==null) a==null && b==null else sameSshCredentials(a,b)
-}
-data class ServerProfile(val id: String,val label: String,val endpoint: String,val icon: ServerIcon=ServerIcon.GLOBE,val ssh: SshOptions?=null,val jumpOnly: Boolean=false) {
-    val storageKey: String get()=if(ssh==null) endpoint else "ssh-profile:"+id
-    val connectionKey: String get()=if(ssh==null) endpoint else endpoint+":"+ssh.revision
+data class ServerProfile(val id: String,val label: String,val endpoint: String,val icon: ServerIcon=ServerIcon.GLOBE,val needsSshSetup: Boolean=false) {
     companion object {
         val Empty=ServerProfile("__empty__","No server","")
-        fun create(label: String,endpoint: String,id: String=UUID.randomUUID().toString(),icon: ServerIcon=ServerIcon.GLOBE,ssh: SshOptions?=null,jumpOnly: Boolean=false): ServerProfile {
+        fun create(label: String,endpoint: String,id: String=UUID.randomUUID().toString(),icon: ServerIcon=ServerIcon.GLOBE): ServerProfile {
             val normalized=normalizeEndpoint(endpoint)
             val name=label.trim().ifEmpty {URI(normalized).host.substringBefore('.')}
             require(name.length<=64) {"Use a server name of at most 64 characters"}
             require(name.none {it.isISOControl()}) {"Use a single-line server name"}
-            require(!jumpOnly || ssh!=null) {"A jump-only host needs SSH settings"}
-            require(!jumpOnly || ssh?.jumpHost==null) {"Save a directly reachable SSH host as the jump; one hop is supported"}
-            if(ssh!=null) {
-                require(ssh.addressFamily in listOf("auto","ipv4","ipv6")) {"Invalid address family"}
-                require(ssh.addressFamily!="ipv6" || ssh.jumpHost==null) {"IPv6 direct does not use a jump host"}
-                require(ssh.host.isNotBlank() && ssh.user.isNotBlank() && ssh.port in 1..65535) {"Enter SSH host, username and a valid port"}
-                require(ssh.socketPath.isBlank() || (ssh.socketPath.startsWith("/") && ssh.socketPath.none {it.isISOControl()})) {"Use an absolute remote socket path"}
-                ssh.jumpHost?.let {jump->
-                    require(jump.host.isNotBlank() && jump.user.isNotBlank() && jump.port in 1..65535) {"Enter jump host, username and a valid port"}
-                    normalizeEndpoint(URI("ssh",jump.user,jump.host,jump.port,null,null,null).toASCIIString())
-                }
-            }
-            return ServerProfile(id,name,normalized,icon,ssh,jumpOnly)
+            return ServerProfile(id,name,normalized,icon)
         }
         fun normalizeEndpoint(value: String): String {
             val uri=runCatching {URI(value.trim())}.getOrElse {throw IllegalArgumentException("Enter a complete server URL")}
@@ -89,17 +48,19 @@ object SavedServers {
             val array=JSONArray(text)
             (0 until array.length()).mapNotNull { index -> runCatching {
                 val item=array.getJSONObject(index)
-                ServerProfile.create(item.optString("label"),item.getString("endpoint"),item.getString("id"),ServerIcon.decode(item.optString("icon")),
-                    item.optJSONObject("ssh")?.let(SshOptions::parse),item.optBoolean("jumpOnly",false))
+                // Never treat an old Rust profile as a direct Go connection on upgrade.
+                val requiresSetup=!item.isNull("ssh") || item.optBoolean("jumpOnly") || item.optBoolean("needsSshSetup")
+                ServerProfile.create(item.optString("label"),item.getString("endpoint"),item.getString("id"),ServerIcon.decode(item.optString("icon")))
+                    .copy(needsSshSetup=requiresSetup)
             }.getOrNull() }.distinctBy {it.id}
         }.getOrElse {legacy()}
     }
-    fun encode(servers: List<ServerProfile>): String = JSONArray(servers.map {JSONObject().put("id",it.id).put("label",it.label).put("endpoint",it.endpoint).put("icon",it.icon.key).put("ssh",it.ssh?.json()).put("jumpOnly",it.jumpOnly)}).toString()
+    fun encode(servers: List<ServerProfile>): String = JSONArray(servers.map {server->
+        JSONObject().put("id",server.id).put("label",server.label).put("endpoint",server.endpoint).put("icon",server.icon.key).apply {
+            if(server.needsSshSetup) put("needsSshSetup",true)
+        }
+    }).toString()
 }
-
-/** Only directly reachable saved SSH hosts can supply our single jump hop. */
-internal fun jumpHostChoices(servers: List<ServerProfile>,targetId: String): List<ServerProfile> =
-    servers.filter {it.id!=targetId && it.ssh!=null && it.ssh.jumpHost==null}
 
 data class ServerStatus(val phase: String="disconnected",val error: String="") {
     val connected: Boolean get()=phase=="connected"

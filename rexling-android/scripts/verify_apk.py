@@ -36,7 +36,13 @@ def main():
     version_code = int(re.search(r"(?m)^package: .*versionCode='([0-9]+)'", badging).group(1))
     label = re.search(r"(?m)^application-label:'([^']*)'$", badging).group(1)
     assert label == "Rexling SSH", label
-    expected = {f"Java_dev_shulhi_rex_NativeBridge_{name}" for name in ["create", "command", "poll", "awaitUpdate", "readUpdate", "destroy", "uploadCreate", "uploadPoll", "uploadDestroy", "sshCreate", "sshStatus", "sshTrust", "sshRemove", "sshNetwork", "sshGenerate", "setDevelop", "readDevelopLog", "forwardCreate", "forwardPoll", "forwardDestroy", "networkCommand"]}
+    jni_prefix = "Java_dev_shulhi_rex_NativeBridge_"
+    expected = {jni_prefix + name for name in [
+        "create", "command", "poll", "awaitUpdate", "readUpdate", "destroy",
+        "uploadCreate", "uploadPoll", "uploadDestroy",
+        "forwardCreate", "forwardPoll", "forwardDestroy",
+        "setDevelop", "readDevelopLog", "networkCommand",
+    ]}
     libraries = []
     profiles = []
     with zipfile.ZipFile(apk) as archive, tempfile.TemporaryDirectory(prefix="rex-apk-") as temporary:
@@ -51,8 +57,11 @@ def main():
             alignments = [int(line.split()[-1], 16) for line in headers.splitlines() if line.strip().startswith("LOAD ")]
             assert alignments and all(value >= 16384 for value in alignments), (name, alignments)
             if name.endswith("librex_android.so"):
-                symbols = run([tools / "llvm-nm", "-D", "--defined-only", path])
-                assert all(symbol in symbols for symbol in expected), "missing JNI export"
+                output = run([tools / "llvm-nm", "-D", "--defined-only", path])
+                symbols = {line.split()[-1] for line in output.splitlines() if line.strip()}
+                assert expected <= symbols, f"missing JNI exports: {sorted(expected - symbols)}"
+                obsolete = {symbol for symbol in symbols if symbol.startswith(jni_prefix + "ssh")}
+                assert not obsolete, f"obsolete SSH JNI exports: {sorted(obsolete)}"
             assert archive.getinfo(name).compress_type == zipfile.ZIP_STORED, name
             libraries.append({"name": name, "bytes": path.stat().st_size, "load_alignment": min(alignments)})
     assert any(item["name"].endswith("librex_android.so") for item in libraries)

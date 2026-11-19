@@ -27,10 +27,7 @@ pub fn create(value: Value) -> Result<u64> {
             .map(str::to_owned)
             .with_context(|| format!("Forward {key} missing"))
     };
-    let mut endpoint = Endpoint::new(&field("endpoint")?, Duration::from_secs(10))?;
-    if let Some(id) = value["ssh_transport"].as_u64().or_else(||value["sshTransport"].as_u64()) {
-        endpoint = endpoint.with_ssh(id)?;
-    }
+    let endpoint = Endpoint::new(&field("endpoint")?, Duration::from_secs(10))?;
     let port = value["port"]
         .as_u64()
         .filter(|p| *p > 0 && *p <= 65535)
@@ -107,28 +104,5 @@ pub fn destroy(id: u64) {
         if let Some(job) = jobs.remove(&id) {
             let _ = job.cancel.send(());
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn optional_ssh_transport_is_resolved_before_starting_a_forward() {
-        let manager=rex_core::ssh::SshManager::global();
-        let id=manager.register(
-            serde_json::from_value(json!({"host":"127.0.0.1","user":"test"})).unwrap(),
-            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
-        ).unwrap();
-        for field in ["ssh_transport","sshTransport"] {
-            // An invalid port stops us before any worker or network I/O starts.
-            let mut request=json!({"endpoint":"ssh://localhost","port":0});
-            request[field]=json!(id);
-            assert_eq!(create(request.clone()).unwrap_err().to_string(),"Enter a port from 1 to 65535");
-            request[field]=json!(u64::MAX);
-            assert_eq!(create(request).unwrap_err().to_string(),"SSH profile is no longer available");
-        }
-        assert_eq!(create(json!({"endpoint":"ssh://alice@example.invalid","port":0})).unwrap_err().to_string(),"Enter a port from 1 to 65535");
-        manager.remove(id);
     }
 }

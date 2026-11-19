@@ -42,12 +42,15 @@ class ServerIconPickerTest {
         var closed=0
         try {
             ui.runOnUiThread {model=RexModel(app,name);store.put("editor",model)}
-            ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {ServerEditor(server,model) {closed++}}}
+            ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {
+                ServerEditor(server,onClose={closed++},onSave={label,url,icon->model.saveServer(server.id,label,url,icon,connect=false)})
+            }}
             ui.onNodeWithContentDescription("Choose server icon").performClick()
             ui.onNode(hasText("MacBook") and hasAnyAncestor(isPopup())).performClick()
             ui.runOnIdle {assertEquals(server,model.servers.single());assertEquals(0,closed)}
             ui.onNodeWithText("Save & connect").performClick()
-            ui.runOnIdle {assertEquals(server.copy(icon=ServerIcon.MACBOOK),model.servers.single());assertEquals(1,closed)}
+            ui.waitUntil(5000) {closed==1}
+            ui.runOnIdle {assertEquals(server.copy(icon=ServerIcon.MACBOOK),model.servers.single())}
         } finally {
             ui.runOnUiThread {store.clear()}
             app.deleteSharedPreferences(name)

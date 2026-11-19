@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Rule
@@ -34,94 +35,69 @@ class HostsUiTest {
     }
 
     @Test fun hostsAreGroupedAndSearchable() {
-        val jump=ServerProfile.create("Tokyo gateway","ssh://ubuntu@gateway.example","jump",ServerIcon.CLOUD,
-            SshOptions("gateway.example",user="ubuntu",credentialRef="fixture"),jumpOnly=true)
-        val target=ServerProfile.create("Development","ssh://dev@10.0.0.8","target",ServerIcon.SERVER,
-            SshOptions("10.0.0.8",user="dev",credentialRef="fixture",jumpHost=SshJumpHost("gateway.example",user="ubuntu")))
+        val jump=ServerProfile.create("Tokyo gateway","ssh://ubuntu@gateway.example","jump",ServerIcon.CLOUD).copy(needsSshSetup=true)
+        val target=ServerProfile.create("Development","ssh://dev@10.0.0.8","target",ServerIcon.SERVER)
         var hosts by mutableStateOf(emptyList<ServerProfile>())
         var dark by mutableStateOf(true)
         var selected: ServerProfile?=null
         var added=0
         ui.setContent {RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
             Surface(Modifier.fillMaxSize()) {
-                HostsContent(hosts,emptyMap(),"",{added++},{},{},{selected=it},{},{},{})
+                HostsContent(hosts,emptyMap(),"",{added++},{},{selected=it},{},{},{})
             }
         }}
-        ui.onNodeWithText("Add SSH host").performClick()
+        ui.onNodeWithText("Add server").performClick()
         ui.runOnIdle {assertEquals(1,added)}
         capture("empty-dark")
         ui.runOnIdle {hosts=listOf(target,jump)}
         ui.onNodeWithText("Rex hosts").assertIsDisplayed()
-        ui.onNodeWithText("SSH jump hosts · Rex not required").performScrollTo().assertIsDisplayed()
+        ui.onNodeWithText("Old SSH hosts · setup required").performScrollTo().assertIsDisplayed()
         ui.onNodeWithText("Tokyo gateway").performClick()
         ui.runOnIdle {assertEquals(jump,selected)}
-        ui.onNodeWithContentDescription("Search hosts").performScrollTo().performTextInput("Development")
+        ui.onNodeWithText("Search hosts").performScrollTo().performTextInput("Development")
         ui.onNodeWithText("Tokyo gateway").assertDoesNotExist()
-        ui.onNodeWithText("Via ubuntu@gateway.example").assertIsDisplayed()
-        ui.onNodeWithContentDescription("Search hosts").performTextClearance()
+        ui.onNodeWithText("Development").assertIsDisplayed()
+        ui.onNode(hasSetTextAction() and hasText("Search hosts")).performTextClearance()
         capture("saved-dark")
         ui.runOnIdle {dark=false}
         capture("saved-light")
     }
 
-    @Test fun saveOnlyCopiesJumpCredentialsAndDoesNotOpenASocket() {
+    @Test fun oldSshProfileRequiresExplicitSetupAndSaveOnlyDoesNotDial() {
         val preferenceName="hosts-ui-${System.nanoTime()}"
         val store=ViewModelStore()
         lateinit var model: RexModel
-        ui.runOnUiThread {model=RexModel(app,preferenceName);store.put("hosts",model)}
         val listener=ServerSocket(0).apply {soTimeout=500}
+        val endpoint="ssh://dev@127.0.0.1:${listener.localPort}"
+        val prefs=app.getSharedPreferences(preferenceName,0)
+        val oldHost=JSONObject().put("id","old").put("label","Development").put("endpoint",endpoint)
+            .put("ssh",JSONObject().put("credentialRef","old-key").put("jumpHost",JSONObject().put("host","gateway.example")))
+        prefs.edit().putString("servers",JSONArray().put(oldHost).toString()).putString("active_server","old")
+            .putStringSet("connected_servers",setOf("old")).commit()
+        ui.runOnUiThread {model=RexModel(app,preferenceName);store.put("hosts",model)}
         try {
-            ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {Surface(Modifier.fillMaxSize()) {HostsPanel(model,{})}}}
-            ui.onNodeWithText("+ Add host").performClick()
-            fill("Name","Tokyo gateway")
-            fill("Host","127.0.0.1")
-            ui.onNodeWithContentDescription("Port").performTextReplacement(listener.localPort.toString())
-            fill("Username","ubuntu")
-            ui.onNodeWithText("Jump host only").performScrollTo().performClick()
-            ui.onNodeWithText("Password").performScrollTo().performClick()
-            fill("Password","gateway-fixture-secret")
-            capture("jump-only-editor")
-            ui.onNodeWithText("Save & connect").assertDoesNotExist()
-            ui.onNodeWithText("Save only").performClick()
-            ui.waitUntil(10000) {model.servers.size==1}
+            var opened=0
+            ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {Surface(Modifier.fillMaxSize()) {HostsPanel(model,{opened++})}}}
             ui.runOnIdle {
-                assertTrue(model.servers.single().jumpOnly)
-                model.connectServer(model.servers.single().id)
+                assertTrue(model.servers.single().needsSshSetup)
+                assertTrue(model.forwardServers().isEmpty())
+                assertTrue(BackgroundAlerts.servers(prefs).isEmpty())
+                model.connectServer("old")
                 assertEquals("",model.activeServerId)
             }
-            ui.onNodeWithText("+ Add host").performScrollTo().performClick()
-            fill("Name","Development")
-            fill("Host","10.0.0.8")
-            fill("Username","dev")
-            ui.onNodeWithText("Password").performScrollTo().performClick()
-            fill("Password","target-fixture-secret")
-            ui.onNodeWithContentDescription("Use jump host").performScrollTo().performClick()
-            ui.onNodeWithText("+ Choose a saved SSH host").performScrollTo().performClick()
-            val choice=ui.onNode(hasText("Tokyo gateway") and hasAnyAncestor(isDialog()))
-            choice.assertIsDisplayed()
-            capture("jump-picker")
-            choice.performClick()
-            ui.waitUntil(10000) {ui.onAllNodes(hasText("Save only") and isEnabled()).fetchSemanticsNodes().isNotEmpty()}
-            ui.onNodeWithText("◎  dev@10.0.0.8").performScrollTo().assertIsDisplayed()
-            capture("route-editor")
+            ui.onNodeWithText("Development").performClick()
+            ui.onNodeWithText("Set up this host again.",substring=true).assertIsDisplayed()
+            capture("go-reconfigure-editor")
             ui.onNodeWithText("Save only").performClick()
-            ui.waitUntil(10000) {model.servers.size==2}
-            val target=model.servers.single {!it.jumpOnly}
-            val jump=model.servers.single {it.jumpOnly}
-            assertEquals(jump.ssh!!.host,target.ssh!!.jumpHost!!.host)
-            val prefs=app.getSharedPreferences(preferenceName,0)
-            assertTrue(prefs.getStringSet("connected_servers",emptySet()).orEmpty().isEmpty())
-            ui.runOnIdle {model.forgetServer(jump.id)}
-            val bytes=SshCredentials(app).load(target.ssh.credentialRef)
-            try {
-                val credentials=JSONObject(bytes.toString(Charsets.UTF_8))
-                assertEquals("target-fixture-secret",credentials.getString("password"))
-                assertEquals("gateway-fixture-secret",credentials.getJSONObject("jumpHost").getString("password"))
-            } finally {bytes.fill(0)}
-            assertFalse(prefs.getString("servers","")!!.contains("fixture-secret"))
-            try {listener.accept().use {fail("Saving or selecting a jump-only host opened an SSH socket")}}
-            catch(_: SocketTimeoutException) { /* Saving never dials. */ }
-            ui.onNodeWithText("Development").assertIsDisplayed()
+            ui.waitUntil(10000) {!model.servers.single().needsSshSetup}
+            ui.runOnIdle {
+                assertEquals(endpoint,model.servers.single().endpoint)
+                assertEquals(0,opened)
+                assertTrue(prefs.getStringSet("connected_servers",emptySet()).orEmpty().isEmpty())
+            }
+            try {listener.accept().use {fail("Old profile or Save only opened an SSH socket")}}
+            catch(_: SocketTimeoutException) { /* No socket should be opened. */ }
+            ui.onNodeWithText("Saved · tap to connect").assertIsDisplayed()
         } finally {
             listener.close()
             ui.runOnUiThread {model.servers.toList().forEach {model.forgetServer(it.id)};store.clear()}
@@ -151,7 +127,4 @@ class HostsUiTest {
         ui.runOnIdle {assertEquals("a",selected!!.id)}
     }
 
-    private fun fill(description: String,value: String) {
-        ui.onNodeWithContentDescription(description).performScrollTo().performTextInput(value)
-    }
 }

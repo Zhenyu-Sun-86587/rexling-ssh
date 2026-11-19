@@ -3,7 +3,6 @@ mod progress;
 mod engine;
 mod updates;
 mod uploads;
-mod ssh;
 mod forwards;
 use engine::Session;
 use jni::{

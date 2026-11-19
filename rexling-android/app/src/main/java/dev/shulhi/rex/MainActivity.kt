@@ -108,7 +108,6 @@ class MainActivity : ComponentActivity() {
         }
         ForwardLinkUi(Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(end=12.dp,bottom=116.dp),hazeState=noticeHaze)
     }
-    SshTrustPrompts(model)
     NetworkPrompts()
     if(model.notificationNotice.isNotBlank()) AlertDialog(onDismissRequest={model.notificationNotice=""},title={Text("Notification")},text={Text(model.notificationNotice)},confirmButton={TextButton(onClick={model.notificationNotice=""}) {Text("OK")}})
 }
@@ -141,7 +140,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val palette=LocalTerminalPalette.current
     var showServer by rememberSaveable {mutableStateOf(true)}
     var servers by remember {mutableStateOf(false)}
-    var addServer by remember {mutableStateOf(false)}
     var forwards by remember {mutableStateOf(false)}
     var picker by remember {mutableStateOf("")}
     var newSession by remember {mutableStateOf(false)}
@@ -227,7 +225,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val floatingActive=floating.any {it.id==chosen}
     var hiddenFloating by rememberSaveable(displayedSession,window?.id) {mutableStateOf("")}
     val controlled=state.controlled && ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen)
-    SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
+    SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
     fun openPane(id: String) {hiddenFloating="";client.selectBlock(id)}
     fun minimizeFloating() {
         hiddenFloating=chosen
@@ -442,7 +440,6 @@ if(picker=="sessions") SessionSwitcher(model.sessionTargets,currentSessionKey,mo
         withUploadNetwork({PortForwards.start(context,target.profile,target.session,host,port,local)})
     }
     if(servers) ServersSheet(model,hazeState=workspaceHaze){servers=false}
-    if(addServer) ServerEditor(null,model,onClose={addServer=false})
     if(picker=="tabs" || picker=="panes") TabPaneSwitcher(windows,window?.id.orEmpty(),chosen,
         state.programs,state.titles,state.directories,client::tabPaneIndex,ready,
         canCreateTab=ready && state.selectedSession.isNotBlank(),canCreatePane=ready && state.selectedSession.isNotBlank(),

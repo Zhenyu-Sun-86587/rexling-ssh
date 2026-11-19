@@ -11,8 +11,8 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import org.json.JSONObject
 
-/** Only authenticated ciphertext is persisted; the wrapping key stays in Android Keystore. */
-internal class SshCredentials(context: Context) {
+/** Keep the original store and alias so remembered discovery API keys survive upgrades. */
+internal class TailscaleDiscoveryCredentials(context: Context) {
     private val preferences=context.applicationContext.getSharedPreferences("ssh_credentials",Context.MODE_PRIVATE)
     private val alias="rexling-ssh-credentials-v1"
     private fun key(): SecretKey = synchronized(keyLock) {
