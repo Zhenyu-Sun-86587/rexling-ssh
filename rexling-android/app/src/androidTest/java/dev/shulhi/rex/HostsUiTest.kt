@@ -56,7 +56,7 @@ class HostsUiTest {
         ui.runOnIdle {assertEquals(jump,selected)}
         ui.onNodeWithText("Search hosts").performScrollTo().performTextInput("Development")
         ui.onNodeWithText("Tokyo gateway").assertDoesNotExist()
-        ui.onNodeWithText("Development").assertIsDisplayed()
+        ui.onNode(hasText("Development") and !hasSetTextAction()).assertIsDisplayed()
         ui.onNode(hasSetTextAction() and hasText("Search hosts")).performTextClearance()
         capture("saved-dark")
         ui.runOnIdle {dark=false}

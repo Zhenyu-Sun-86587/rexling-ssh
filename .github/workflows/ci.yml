@@ -177,8 +177,8 @@ jobs:
             while IFS= read -r file; do
               [[ $file =~ ^(settings|theme|hosts)-[a-z0-9-]+\.png$ ]] || continue
               target="$output/screenshots/$file"
-              # No PTY: preserve PNG bytes and propagate the remote exit status.
-              if ! timeout 15s "${device[@]}" shell -T run-as "$app" cat "cache/$file" > "$target" || [[ ! -s $target ]]; then
+              # No stdin (the loop is reading it) or PTY (the output is a PNG).
+              if ! timeout 15s "${device[@]}" shell -n -T run-as "$app" cat "cache/$file" > "$target" || [[ ! -s $target ]]; then
                 echo "::warning::Could not retrieve $file"
                 rm -f "$target"
               fi
@@ -187,9 +187,10 @@ jobs:
           timeout 15s "${device[@]}" logcat -d -t 2000 > "$output/logcat.txt" 2>&1 || true
           timeout 15s "${device[@]}" emu kill || true
           if [[ $TEST_OUTCOME == success ]]; then
-            for prefix in settings theme hosts; do
-              if ! compgen -G "$output/screenshots/$prefix-*.png" > /dev/null; then
-                echo "::error::No $prefix screenshots were retrieved from the app cache"
+            for screenshot in settings-preferences-{light,dark} theme-{abyssal-trench,alpine-milk} \
+                hosts-{jump-only-editor,jump-picker,target-via-jump}; do
+              if [[ ! -s "$output/screenshots/$screenshot.png" ]]; then
+                echo "::error::Screenshot $screenshot.png was not retrieved from the app cache"
                 exit 1
               fi
             done
