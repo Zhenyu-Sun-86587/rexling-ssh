@@ -100,4 +100,16 @@ class ModelsTest {
         assertEquals("file",uploadName("..",ByteArray(0)))
         assertEquals("file",uploadName(null,byteArrayOf(1,2,3)))
     }
+
+    @Test fun tailscaleDeviceNamesAreOneLowercaseDnsLabel() {
+        assertEquals("",TailscaleHostname.normalize("  "))
+        assertEquals("shulhi-s22",TailscaleHostname.normalize(" Shulhi-S22 "))
+        assertEquals("a",TailscaleHostname.normalize("a"))
+        assertEquals("a".repeat(63),TailscaleHostname.normalize("a".repeat(63)))
+        assertEquals(null,TailscaleHostname.normalize("a".repeat(64)))
+        assertEquals(null,TailscaleHostname.normalize("-phone"))
+        assertEquals(null,TailscaleHostname.normalize("phone-"))
+        assertEquals(null,TailscaleHostname.normalize("my phone"))
+        assertEquals(null,TailscaleHostname.normalize("phone.local"))
+    }
 }
