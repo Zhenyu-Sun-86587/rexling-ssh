@@ -33,9 +33,12 @@ import kotlinx.coroutines.launch
 @Composable internal fun ServersSheet(model: RexModel,hazeState: dev.chrisbanes.haze.HazeState?=null,onDismiss: ()->Unit) {
     var editing by remember {mutableStateOf<ServerProfile?>(null)}
     var editor by remember {mutableStateOf(false)}
+    // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
+    // sheet that host is the sheet's own window, which then redraws itself every frame while open.
+    val frost=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
         containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,dragHandle=null,contentWindowInsets={WindowInsets(0,0,0,0)}) {
-        Column(Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
+        Column(frost.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
             DrawerHandle()
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Servers",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
