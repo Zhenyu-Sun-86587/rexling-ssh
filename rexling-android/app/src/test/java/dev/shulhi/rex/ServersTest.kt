@@ -54,6 +54,12 @@ class ServersTest {
         b.remove("jumpHost")
         assertFalse(sameSshCredentials(a,b))
     }
+    @Test fun sshURLsKeepUserAndOptionalSocketWithoutAllowingPasswords() {
+        assertEquals("ssh://alice@host:2222/tmp/rex%20socket",ServerProfile.normalizeEndpoint("ssh://alice@HOST:2222/tmp/rex%20socket"))
+        assertEquals("ssh://alice@host",ServerProfile.normalizeEndpoint("ssh://alice@host"))
+        for(url in listOf("ssh://host","ssh://user:password@host","ssh://user@host?secret=x")) assertTrue(url,runCatching {ServerProfile.normalizeEndpoint(url)}.isFailure)
+    }
+
     @Test fun serverURLsNormalizeWithoutDroppingPortsOrTransportChoice() {
         assertEquals("https://rex.example.ts.net",ServerProfile.normalizeEndpoint(" HTTPS://REX.EXAMPLE.TS.NET:443/ "))
         assertEquals("http://host:9080",ServerProfile.normalizeEndpoint("http://HOST:9080/"))

@@ -30,7 +30,7 @@ android {
         applicationId = "dev.shulhi.rex.ssh"
         minSdk = 28
         targetSdk = 37
-        versionCode = 118
+        versionCode = 170
         versionName = dateVersion
         buildConfigField("String","GIT_REVISION","\"$revision\"")
         buildConfigField("boolean","LOCAL_CHANGES",modified.toString())
@@ -58,6 +58,10 @@ android {
         }
     }
     buildTypes {
+        getByName("debug") {
+            // A disposable package for on-device rendering tests; never touches the installed app's settings.
+            if(providers.gradleProperty("renderBench").orNull=="true") applicationIdSuffix=".renderbench"
+        }
         release {
             // A persistent, external signing identity permits upgrades without clearing app credentials.
             signingConfig=signingConfigs.getByName("sshRelease")
@@ -104,6 +108,7 @@ val buildRust by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir)
     commandLine("python3", "scripts/build_native.py")
     inputs.files(rootProject.fileTree("../rexling-core") { exclude("**/target/**", "**/.build/**") })
+    inputs.files(rootProject.fileTree("../rexling-network") { include("*.go", "go.mod", "go.sum") })
     inputs.file(rootProject.file("../rexling-core/scripts/build_native.py"))
     inputs.file(rootProject.file("scripts/build_native.py"))
     outputs.dir(project.file("src/main/jniLibs/arm64-v8a"))

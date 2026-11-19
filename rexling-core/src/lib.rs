@@ -11,3 +11,8 @@ pub mod upload;
 pub mod diagnostics;
 mod socket_driver;
 pub mod graphics;
+
+pub mod forward;
+
+#[cfg(target_os = "android")]
+pub mod network;

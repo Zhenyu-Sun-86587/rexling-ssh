@@ -27,7 +27,7 @@ pub struct Shared {
     pub wire: crate::updates::WireBase,
 }
 pub struct Session {
-    latest_navigation:Arc<AtomicU64>,
+    latest_navigation: Arc<AtomicU64>,
     tx: mpsc::Sender<Value>,
     pub shared: Arc<Mutex<Shared>>,
     pub updates: Arc<crate::updates::Updates>,
@@ -62,6 +62,8 @@ impl Session {
         Ok(Self { tx, shared, updates, latest_navigation })
     }
     pub fn command(&self, mut value: Value) -> Result<()> {
+        // Publish intent at admission, even while the actor awaits an older RPC.
+        // A refused command must not supersede work that was actually accepted.
         let permit=self.tx.try_reserve().context("terminal command queue is full or closed")?;
         if matches!(value["type"].as_str(),Some("block"|"session")) {
             if let Some(id)=value["navigationId"].as_u64() {self.latest_navigation.fetch_max(id,Ordering::AcqRel);}
@@ -195,8 +197,15 @@ type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 type SummaryTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
 struct CachedPane {data:Data,replica:Replica,touched:tokio::time::Instant}
 fn unix_millis()->u64 {std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64}
+// One inactive floating terminal stays live while its tiled pane is viewed.
+// It never owns input, publishes pixels, or delivers clipboard side effects.
+struct RetainedFloating {
+    block: String,
+    data: Data,
+    replica: Replica,
+}
 struct Actor {
-    latest_navigation:Arc<AtomicU64>,
+    latest_navigation: Arc<AtomicU64>,
     shared: Arc<Mutex<Shared>>,
     updates: Arc<crate::updates::Updates>,
     visible: bool,
@@ -213,6 +222,7 @@ struct Actor {
     other_owner: bool,
     data: Option<Data>,
     cached_panes:BTreeMap<String,CachedPane>,
+    retained_floating: Option<RetainedFloating>,
     replica: Option<Replica>,
     control_token: Option<String>,
     data_resume: Option<Resume>,
@@ -220,6 +230,9 @@ struct Actor {
     identity: String,
     error: String,
     notice: String,
+    progress_reports: BTreeMap<String,Value>,
+    clipboard_serial: u64,
+    clipboard: Value,
     sessions: Value,
     windows: Value,
     screen: Option<Arc<Frame>>,
@@ -271,13 +284,15 @@ struct Actor {
 impl Actor {
     fn new(shared: Arc<Mutex<Shared>>,updates: Arc<crate::updates::Updates>) -> Self {
         Self {
-            latest_navigation:Arc::new(AtomicU64::new(0)),shared,
+            latest_navigation:Arc::new(AtomicU64::new(0)),
+            shared,
             updates,
             visible: true,
             endpoint: None,
             server: String::new(),
             control: None,commands:Commands::default(),input_acks:VecDeque::new(),input_limit:8,batch_text:true,connect_task:None,network_online:true,connection_epoch:0,other_owner:false,
             data: None,cached_panes:BTreeMap::new(),
+            retained_floating: None,
             replica: None,
             control_token: None,
             data_resume: None,
@@ -285,6 +300,8 @@ impl Actor {
             identity: String::new(),
             error: String::new(),
             notice: String::new(),
+            progress_reports:BTreeMap::new(),
+            clipboard_serial: 0,clipboard: Value::Null,
             sessions: json!([]),
             windows: json!([]),
             screen: None,
@@ -320,14 +337,22 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
-        if self.activity_dirty {self.activity_snapshot=Arc::new(self.activity.clone());self.activity_dirty=false;}
+        if self.activity_dirty {
+            let mut items=crate::progress::activity(&self.activity,&self.activity_panes,&self.progress_reports);
+            for item in items.as_array_mut().into_iter().flatten().filter(|v|v["progressOnly"]==true && v["session"]==self.selected_session) {
+                let id=item["block"].as_str().unwrap_or("").to_owned();
+                if let Some(app)=self.programs[&id].as_array().and_then(|v|v.first()).and_then(Value::as_str) {item["app"]=json!(app);}
+                if let Some(title)=self.titles[&id].as_str().filter(|v|!v.is_empty()) {item["title"]=json!(title);}
+            }
+            self.activity_snapshot=Arc::new(items);self.activity_dirty=false;
+        }
         if let Ok(mut shared) = self.shared.lock() {
             shared.activity=self.activity_snapshot.clone();
             shared.revision += 1;
             shared.frame=self.screen.clone();
             shared.key=format!("{}:{}",self.selected_session,self.selected_block);
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
-                "identity":self.identity,"error":self.error,"notice":self.notice,"sessions":self.sessions,
+                "terminalProgress":crate::progress::selected(&self.progress_reports,&self.selected_session),"identity":self.identity,"error":self.error,"notice":self.notice,"clipboard":self.clipboard,"sessions":self.sessions,
                 "windows":self.windows,"selectedSession":self.selected_session,
                 "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
@@ -375,8 +400,14 @@ impl Actor {
                         else {self.commands.clear();if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
                         continue;
                     }
+                    // Local scrollback does not issue RPCs or mutate input ownership.
+                    // Render a scroll on the next loop pass instead of the next 16 ms slot: the view is
+                    // sliding locally and runs out of overscan rows while it waits for this frame.
+                    if value["type"]=="scroll" {self.execute_command(value).await;if self.dirty {render_at=tokio::time::Instant::now();}continue;}
                     if matches!(value["type"].as_str(),Some("connect"|"retry"|"network"|"resume"|"activity")) {maintenance_at=tokio::time::Instant::now();}
-                    if matches!(value["type"].as_str(),Some("monitor"|"connect"|"disconnect"|"pause"|"network"|"retry")) {
+                    if value["type"]=="network" {
+                        self.execute_command(value).await;
+                    } else if matches!(value["type"].as_str(),Some("monitor"|"connect"|"disconnect"|"pause"|"retry")) {
                         self.commands.clear();self.execute_command(value).await;
                     } else if let Err(error)=self.commands.push(value,&self.input_target()) {self.error=error.to_string();self.publish();}
 
@@ -409,7 +440,11 @@ impl Actor {
                         Ok(chunk)=>{
                             if let Some(pane)=self.cached_panes.get_mut(&id) {
                                 pane.replica.events.clear();
-                                if pane.replica.feed(&chunk).is_err() {self.cached_panes.remove(&id);}
+                                let decoded=pane.replica.feed(&chunk);
+                                // Cached tiled panes, like retained floating panes,
+                                // must never replay inactive clipboard/status effects.
+                                pane.replica.events.clear();pane.replica.clipboard_write=None;
+                                if decoded.is_err() {self.cached_panes.remove(&id);}
                                 else if self.visible && pane.replica.ready() {
                                     if let Ok(frame)=pane.replica.terminal().and_then(|t|t.frame()) {self.preview_updates.insert(id,Arc::new(frame));self.dirty=true;}
                                 }
@@ -432,6 +467,16 @@ impl Actor {
                         }
                         Err(e)=>self.recover(e),
                     }
+                },
+                chunk=async {match &mut self.retained_floating {Some(p)=>p.data.read().await,None=>pending().await}}=>{
+                    let keep=if let (Ok(bytes),Some(pane))=(chunk,self.retained_floating.as_mut()) {
+                        let ok=pane.replica.feed(&bytes).is_ok();
+                        // Inactive terminals must not replay clipboard writes or old
+                        // status events when restored; control events track status.
+                        pane.replica.events.clear();pane.replica.clipboard_write=None;
+                        ok
+                    } else {false};
+                    if !keep {self.close_retained_floating().await;}
                 },
                 result=async {match &mut self.preview_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.preview_task=None;
@@ -511,8 +556,9 @@ impl Actor {
                         self.dirty=false;animation_at=None;
                         if !self.preview_updates.is_empty() {self.publish();}
                         if let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {
-                            match replica.terminal().and_then(|t|t.frame()) {
-                                Ok(frame)=>{animation_at=frame.next_image_delay_ms.map(|ms|now+Duration::from_millis(ms));self.screen=Some(Arc::new(frame));self.publish_frame();}
+                            match replica.terminal().and_then(|t|if t.render_ready()? {t.frame().map(Some)} else {Ok(None)}) {
+                                Ok(Some(frame))=>{animation_at=frame.next_image_delay_ms.map(|ms|now+Duration::from_millis(ms));self.screen=Some(Arc::new(frame));self.publish_frame();}
+                                Ok(None)=>{self.dirty=true;}
                                 Err(e)=>{self.error=e.to_string();self.publish();}
                             }
                         }
@@ -530,7 +576,13 @@ impl Actor {
         }
         self.disconnect().await;
     }
+    async fn close_retained_floating(&mut self) {
+        if let Some(mut pane)=self.retained_floating.take() {
+            let _=tokio::time::timeout(Duration::from_secs(2),pane.data.close()).await;
+        }
+    }
     async fn disconnect(&mut self) {
+        self.close_retained_floating().await;
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
@@ -555,6 +607,8 @@ impl Actor {
     }
     fn lose_connections(&mut self) {
         self.cached_panes.clear();
+        self.retained_floating=None;
+        self.progress_reports.clear();self.activity_dirty=true;
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
@@ -701,6 +755,12 @@ impl Actor {
             self.program_refresh = tokio::time::Instant::now();
         }
         self.windows = next;
+        let live: BTreeSet<_>=self.windows.as_array().into_iter().flatten().flat_map(|w|w["blocks"].as_array().into_iter().flatten()).filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
+        if self.retained_floating.as_ref().is_some_and(|p|!live.contains(&p.block)) {self.retained_floating=None;}
+        self.cached_panes.retain(|id,_|live.contains(id));
+        let before=self.progress_reports.len();
+        self.progress_reports.retain(|_,r|r["session"]!=self.selected_session || r["block"].as_str().is_some_and(|id|live.contains(id)));
+        if self.progress_reports.len()!=before {self.activity_dirty=true;}
         if !self.selected_block.is_empty() && !selected_exists {
             self.data = None;
             self.data_resume = None;
@@ -726,6 +786,7 @@ impl Actor {
         Ok(())
     }
     fn apply_program_details(&mut self, details: Value) {
+        if !self.progress_reports.is_empty() {self.activity_dirty=true;}
         self.programs=details["programs"].clone();self.directories=details["directories"].clone();
         self.titles=details["titles"].clone();self.working=details["working"].clone();
         self.title_owners=details["owners"].clone();
@@ -742,8 +803,10 @@ impl Actor {
         if !self.windows.as_array().into_iter().flatten().any(|w|
             w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==id)) {return;}
         match name {
+            "progress_report" => {if crate::progress::update(&mut self.progress_reports,&self.selected_session,id,payload) {self.activity_dirty=true;}},
             "process_changed" => {
                 let owner=json!({"pid":payload["foreground"]["pid"],"name":payload["foreground"]["name"]});
+                if !same_process(&self.title_owners[id],&owner) && self.progress_reports.remove(&crate::activity::pane_key(&self.selected_session,id)).is_some() {self.activity_dirty=true;}
                 self.title_owners[id]=owner.clone();self.process_events.insert(id.into(),owner);
                 if self.title_events.get(id).is_some_and(|event|!same_process(&self.title_owners[id],&event["owner"])) {
                     self.title_events.remove(id);self.titles[id]=json!("");
@@ -751,12 +814,14 @@ impl Actor {
                 self.program_refresh=tokio::time::Instant::now();
             }
             "title_changed" => {
+                if self.progress_reports.contains_key(&crate::activity::pane_key(&self.selected_session,id)) {self.activity_dirty=true;}
                 if self.title_owners[id]["pid"].is_number() && !same_process(&self.title_owners[id],&payload["owner"]) {return;}
                 self.title_events.insert(id.into(),payload.clone());
                 if same_process(&self.title_owners[id],&payload["owner"]) {self.titles[id]=json!(display_title(payload));}
                 if crate::activity::apply_title(&mut self.activity,&self.selected_session,id,payload) {self.activity_dirty=true;}
             }
-            "program_status_changed" | "program_status_removed" | "child_exited" => self.program_refresh=tokio::time::Instant::now(),
+            "child_exited" => {if self.progress_reports.remove(&crate::activity::pane_key(&self.selected_session,id)).is_some() {self.activity_dirty=true;}self.program_refresh=tokio::time::Instant::now();},
+            "program_status_changed" | "program_status_removed" => self.program_refresh=tokio::time::Instant::now(),
             _=>()
         }
     }
@@ -797,6 +862,11 @@ impl Actor {
             if inner["type"]=="block_event" {
                 let block=&inner["payload"];let sid=event["payload"]["session_id"].as_str().unwrap_or("");
                 if block["creator_name"]=="com.superlogical.terminal" && let (Some(id),Some(name))=(block["block_id"].as_str(),block["name"].as_str()) {
+                    if name=="progress_report" {
+                        if crate::progress::update(&mut self.progress_reports,sid,id,&block["payload"]) {self.activity_dirty=true;self.publish();}
+                        return Ok(());
+                    }
+                    if (name=="child_exited" || (name=="process_changed" && sid!=self.selected_session)) && self.progress_reports.remove(&crate::activity::pane_key(sid,id)).is_some() {self.activity_dirty=true;self.publish();}
                     if matches!(name,"program_status_changed"|"program_status_removed"|"process_changed"|"child_exited") {
                         let key=crate::activity::pane_key(sid,id);
                         if self.activity_panes.as_array().into_iter().flatten().any(|p|
@@ -831,7 +901,12 @@ impl Actor {
             return;
         };
         let events: Vec<_>=replica.events.drain(..).collect();
-        let changed=!events.is_empty();
+        let clipboard=replica.clipboard_write.take();
+        let changed=!events.is_empty() || clipboard.is_some();
+        if let Some(text)=clipboard {
+            self.clipboard_serial+=1;
+            self.clipboard=json!({"serial":self.clipboard_serial,"text":text,"block":self.selected_block,"connection":self.connection_epoch,"navigation":self.navigation_id});
+        }
         for event in events {
             // Data and control streams have independent delivery order. Resize APCs
             // still update the grid in Replica, but cannot override canonical ownership.
@@ -846,16 +921,18 @@ impl Actor {
         Target {session:self.selected_session.clone(),block:self.selected_block.clone(),navigation:self.navigation_id,connection:self.connection_epoch}
     }
     fn command_error(&mut self,error:anyhow::Error,navigation:Option<u64>,input:bool) {
-        if let Some(id)=navigation {if id>=self.navigation_id && id>=self.latest_navigation.load(Ordering::Acquire) {self.navigation_id=id;}}
+        let superseded=navigation.is_some_and(|id|id<self.latest_navigation.load(Ordering::Acquire));
+        if !superseded {if let Some(id)=navigation {self.navigation_id=self.navigation_id.max(id);}}
         self.creating=false;
         let message=error.to_string();
         if message.contains("timed out") || message.contains("WebSocket") {
             self.recover(error);
             if input {self.notice="Request outcome is uncertain; input was not resent".into();self.publish();}
-        } else {self.error=message;self.publish();}
+        } else if !superseded {self.error=message;self.publish();}
     }
     async fn execute_command(&mut self,value:Value) {
         let navigation=value["navigationId"].as_u64();
+        // Only replaceable navigation/control work is skipped, never mutations or input.
         if matches!(value["type"].as_str(),Some("block"|"session"|"take"|"resize")) && navigation.is_some_and(|id|id<self.latest_navigation.load(Ordering::Acquire)) {
             rex_core::diagnostics::record("navigation",format!("skip superseded type={} nav={navigation:?} latest={}",value["type"],self.latest_navigation.load(Ordering::Acquire)));
             return;
@@ -887,7 +964,11 @@ impl Actor {
             if encoded.is_empty() {return Ok(());}
             encoded.as_str()
         } else {value["text"].as_str().context("text required")?};
-        if !click && let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();self.dirty=true;}
+        // Render only if typing actually moved the viewport. An unconditional render here
+        // publishes an unchanged frame and starts the 16 ms render throttle just before
+        // the echo arrives, so every echo waited a full frame interval.
+        let scrolled_back=self.screen.as_ref().is_some_and(|f|f.scroll_offset+f.scroll_visible<f.scroll_total);
+        if !click && let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {replica.terminal()?.scroll_to_bottom();if scrolled_back {self.dirty=true;}}
         // Unlike terminal.write, block.event is serialized by Rex on this connection.
         // An unidentified key with text preserves our already-encoded input bytes;
         // it bypasses Lua bindings, matching the previous raw-write behavior.
@@ -920,11 +1001,11 @@ impl Actor {
                         || server.starts_with("wss://")
                         || server.starts_with("ws://")
                         || server.starts_with("ssh://"),
-                    "Enter a complete http(s) or ws(s) server URL"
+                    "Enter a complete HTTP(S), WS(S), or SSH server URL"
                 );
                 let mut endpoint = Endpoint::new(&server, Duration::from_secs(10))?;
-                if server.starts_with("ssh://") {
-                    endpoint = endpoint.with_ssh(value["sshTransport"].as_u64().context("SSH transport missing")?)?;
+                if let Some(id) = value["ssh_transport"].as_u64().or_else(||value["sshTransport"].as_u64()) {
+                    endpoint = endpoint.with_ssh(id)?;
                 }
                 self.disconnect().await;
                 self.endpoint = Some(endpoint);
@@ -959,8 +1040,8 @@ impl Actor {
                 let network=value["type"]=="network";
                 if network {self.network_online=value["online"].as_bool().unwrap_or(true);}
                 if self.paused || self.endpoint.is_none() {return Ok(());}
-                let force=value["force"].as_bool().unwrap_or(false);
-                if network && self.network_online && self.phase=="connected" && !force {return Ok(());}
+                // Route callbacks alone must not destroy healthy channels or in-flight input.
+                if network && self.phase=="connected" {return Ok(());}
                 // A manual retry wakes SSH cooldown, but must not restart a
                 // handshake that is already making progress. Route changes still cancel it.
                 if !network && self.endpoint.as_ref().is_some_and(Endpoint::retry_ssh)
@@ -1187,6 +1268,7 @@ impl Actor {
                 if let Some(mut data) = self.data.take() {
                     let _ = data.close().await;
                 }
+                self.close_retained_floating().await;
                 self.data_resume = None;
                 self.replica = None;
                 self.screen = None;
@@ -1353,6 +1435,34 @@ impl Actor {
                     self.recover(error);self.notice="Scroll outcome uncertain; wheel input was not resent".into();self.publish();
                 }
             }
+            "copy_semantic" => {
+                if !self.visible || self.paused || !self.input_target().matches(&value) {return Ok(());}
+                let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
+                let terminal=replica.terminal()?;let frame=terminal.frame()?;
+                ensure!(value["columns"].as_u64()==Some(frame.columns as u64) && value["rows"].as_u64()==Some(frame.rows as u64) &&
+                    value["scrollTotal"].as_u64()==Some(frame.scroll_total) && value["scrollOffset"].as_u64()==Some(frame.scroll_offset) &&
+                    value["viewport"].as_str()==Some(frame.text().as_str()),"Terminal changed. Select the text again.");
+                let col=u16::try_from(value["col"].as_u64().context("selection column missing")?)?;
+                let row=u16::try_from(value["row"].as_u64().context("selection row missing")?)?;
+                ensure!(col<frame.columns && row<frame.rows,"Selection is outside the terminal");
+                let text=terminal.command_text(col,row,value["output"]==true)?;
+                if let Some(text)=text.filter(|text|!text.is_empty()) {
+                    self.clipboard_serial+=1;
+                    self.clipboard=json!({"serial":self.clipboard_serial,"text":text,"block":self.selected_block,
+                        "connection":self.connection_epoch,"navigation":self.navigation_id,"local":true});
+                } else {self.notice="Command boundaries are not available for this selection".into();}
+                self.publish();
+            }
+            "scroll_prompt" => {
+                if !self.visible || self.paused || value["block"].as_str()!=Some(self.selected_block.as_str()) ||
+                    value["session"].as_str()!=Some(self.selected_session.as_str()) ||
+                    value["navigationId"].as_u64()!=Some(self.navigation_id) ||
+                    value["connectionEpoch"].as_u64()!=Some(self.connection_epoch) {return Ok(());}
+                if let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) {
+                    replica.terminal()?.scroll_prompts(value["direction"].as_i64().unwrap_or(0).clamp(-1,1) as i32);
+                    self.dirty=true;
+                }
+            }
             "scroll" => {
                 if value["block"].as_str() != Some(self.selected_block.as_str()) {
                     return Ok(());
@@ -1468,8 +1578,18 @@ impl Actor {
         ensure!(self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==block)),"This pane is no longer available");
         if self.selected_block==block && self.data.is_some() {self.publish();return Ok(());}
         self.release_selected().await?;
-        if let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+        let restored=if self.retained_floating.as_ref().is_some_and(|p|p.block==block) {
+            self.retained_floating.take()
+        } else {None};
+        let floating=self.windows.as_array().into_iter().flatten().any(|w|
+            w["layout"].as_array().into_iter().flatten().any(|p|p["id"]==self.selected_block && p["floating"]==true));
+        if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+            self.close_retained_floating().await;
+            self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
+        } else if let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.cached_panes.insert(self.selected_block.clone(),CachedPane {data,replica,touched:tokio::time::Instant::now()});
+        } else if let Some(mut data)=self.data.take() {
+            let _=tokio::time::timeout(Duration::from_secs(2),data.close()).await;
         }
         self.data_resume = None;
         self.selected_block = block;
@@ -1488,17 +1608,20 @@ impl Actor {
         rex_core::diagnostics::record("navigation","opening first pane data channel");
         self.controlled = false;
         self.screen = None;
-        self.apply_theme().await?;
-        let data = Data::open(
-            self.endpoint.as_ref().context("no server")?,
-            self.control.as_mut().context("not connected")?,
-            &self.selected_session,
-            &self.selected_block,
-            Trace::default(),
-        )
-        .await?;
-        self.replica = Some(Replica::new(data.nonce));
-        self.data = Some(data);
+        if let Some(pane)=restored {
+            self.replica=Some(pane.replica);self.data=Some(pane.data);
+            self.dirty=true;
+        } else {
+            let data = Data::open(
+                self.endpoint.as_ref().context("no server")?,
+                self.control.as_mut().context("not connected")?,
+                &self.selected_session,
+                &self.selected_block,
+                Trace::default(),
+            ).await?;
+            self.replica = Some(Replica::new(data.nonce));
+            self.data = Some(data);
+        }
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
         self.refresh_view().await?;
@@ -1514,6 +1637,8 @@ impl Actor {
         match self.refresh_view().await {
             Ok(())=>Ok(true),
             Err(error) if error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|e.code=="session_not_found")=>{
+                self.close_retained_floating().await;
+                self.close_cached().await;
                 self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);self.screen=None;
                 self.data=None;self.data_resume=None;self.replica=None;self.controlled=false;
                 self.preview_task=None;self.program_task=None;self.summary_task=None;self.preview_updates.clear();
@@ -1590,7 +1715,9 @@ fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Previe
                         Data::open(&endpoint, &mut control, &session, &id, Trace::default())
                             .await?;
                     let mut replica = Replica::new(data.nonce);
-                    while !replica.ready() {
+                    // One-shot previews need late Kitty pixels too. Only the
+                    // selected live terminal presents before FINISH.
+                    while !replica.snapshot_complete() {
                         replica.feed(&data.read().await?)?;
                     }
                     let frame = Arc::new(replica.terminal()?.frame()?);
@@ -1834,11 +1961,75 @@ fn frame_value(frame: &Frame) -> Value {
             ])
         })
         .collect();
-    json!({"columns":frame.columns,"rows":frame.rows,"scrollbar":[frame.scroll_total,frame.scroll_offset,frame.scroll_visible],"input_flags":frame.input_flags,"cursor":frame.cursor,"foreground":rgb(frame.foreground),"background":rgb(frame.background),"cells":cells})
+    json!({"columns":frame.columns,"rows":frame.rows,"scrollbar":[frame.scroll_total,frame.scroll_offset,frame.scroll_visible],"input_flags":frame.input_flags,"cursor":frame.cursor,"cursor_position":frame.cursor_position,"foreground":rgb(frame.foreground),"background":rgb(frame.background),"cells":cells})
 }
 
 #[cfg(test)]
 mod tests {
+    fn navigation_actor()->Actor {
+        let shared=Arc::new(Mutex::new(Shared {revision:0,json:String::new(),activity:Arc::default(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        Actor::new(shared,Arc::new(crate::updates::Updates::default()))
+    }
+    #[tokio::test] async fn ssh_urls_and_registered_profiles_select_distinct_transports() {
+        let manager=rex_core::ssh::SshManager::global();
+        let id=manager.register(
+            serde_json::from_value(json!({"host":"127.0.0.1","user":"test"})).unwrap(),
+            serde_json::from_value(json!({"method":"password","password":"test"})).unwrap(),
+        ).unwrap();
+        let mut actor=navigation_actor();
+        actor.command(json!({"type":"connect","server":"ssh://alice@example.invalid"})).await.unwrap();
+        assert!(!actor.endpoint.as_ref().unwrap().retry_ssh(),"URL-only SSH must use Go, not russh credentials");
+        for field in ["ssh_transport","sshTransport"] {
+            let mut request=json!({"type":"connect","server":"ssh://localhost"});
+            request[field]=json!(id);
+            actor.command(request).await.unwrap();
+            assert!(actor.endpoint.as_ref().unwrap().retry_ssh(),"registered SSH must retain the russh profile");
+        }
+        actor.disconnect().await;
+        manager.remove(id);
+    }
+    #[test] fn navigation_intent_is_published_only_for_accepted_navigation() {
+        let (tx,mut rx)=mpsc::channel(1);
+        let actor=navigation_actor();
+        let session=Session {tx,latest_navigation:actor.latest_navigation.clone(),shared:actor.shared.clone(),updates:actor.updates.clone()};
+        session.command(json!({"type":"block","navigationId":2})).unwrap();
+        assert_eq!(session.latest_navigation.load(Ordering::Acquire),2);
+        assert!(session.command(json!({"type":"session","navigationId":9})).is_err());
+        assert_eq!(session.latest_navigation.load(Ordering::Acquire),2,"a full queue must not publish a rejected intent");
+        rx.try_recv().unwrap();
+        session.command(json!({"type":"resize","navigationId":99})).unwrap();rx.try_recv().unwrap();
+        assert_eq!(session.latest_navigation.load(Ordering::Acquire),2,"resize is not a new user selection");
+        session.command(json!({"type":"session","navigationId":1})).unwrap();
+        assert_eq!(session.latest_navigation.load(Ordering::Acquire),2,"out-of-order admission cannot lower the latest selection");
+    }
+    #[tokio::test] async fn superseded_navigation_and_control_work_never_start() {
+        let mut actor=navigation_actor();
+        actor.latest_navigation.store(3,Ordering::Release);
+        actor.selected_session="s".into();actor.selected_block="original".into();
+        // The latest target must exist: stale-pane rejection is independent of
+        // admission-time supersession and must remain in place for live caches.
+        actor.windows=json!([{"id":"w","blocks":[{"id":"original"},{"id":"latest"}]}]);
+        for kind in ["block","session","take","resize"] {
+            for id in [1,2] {
+                actor.execute_command(json!({"type":kind,"id":"obsolete","navigationId":id})).await;
+                assert_eq!(actor.navigation_id,0);assert_eq!(actor.selected_block,"original");assert!(actor.error.is_empty());
+            }
+        }
+        actor.execute_command(json!({"type":"block","id":"latest","navigationId":3})).await;
+        assert_eq!(actor.navigation_id,3);assert_eq!(actor.selected_block,"latest");
+        assert!(!actor.error.is_empty(),"the latest request actually executes, even without a test server");
+        actor.execute_command(json!({"type":"move_tab","requestId":44,"navigationId":1})).await;
+        assert_eq!(actor.tab_move_id,44,"mutations must retain their outcome acknowledgements");
+    }
+    #[test] fn an_old_navigation_failure_cannot_acknowledge_or_erase_new_intent() {
+        let mut actor=navigation_actor();actor.latest_navigation.store(3,Ordering::Release);
+        actor.navigation_id=2;actor.error="current error".into();
+        actor.command_error(anyhow::anyhow!("old pane vanished"),Some(1),false);
+        assert_eq!(actor.navigation_id,2);assert_eq!(actor.error,"current error");
+        actor.command_error(anyhow::anyhow!("latest pane vanished"),Some(3),false);
+        assert_eq!(actor.navigation_id,3);assert_eq!(actor.error,"latest pane vanished");
+    }
+
     use super::*;
     #[test]
     fn queued_obsolete_navigation_and_ownership_work_is_skipped() {
@@ -3016,6 +3207,73 @@ while True:
         }
     }
 
+    #[test] fn server_progress_events_update_background_tabs_and_activity_and_clear_on_recovery() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
+        actor.selected_session="s".into();actor.windows=json!([{"blocks":[{"id":"a"},{"id":"b"}]}]);
+        actor.activity_panes=json!([{"session":{"session_id":"s","label":"Session"},"window":{"window_id":"w","label":"Tab"},"block":{"block_id":"b","label":"cargo"}}]);
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let event=|state:&str,percent:Value|json!({"payload":{"type":"session_event","payload":{"session_id":"s","event":{"type":"block_event","payload":{"creator_name":"com.superlogical.terminal","block_id":"b","name":"progress_report","payload":{"state":state,"progress":percent}}}}}});
+        runtime.block_on(actor.event(event("set",json!(40)))).unwrap();
+        let state:Value=serde_json::from_str(&shared.lock().unwrap().json).unwrap();assert_eq!(state["terminalProgress"]["b"]["progress"],40);
+        assert_eq!(shared.lock().unwrap().activity[0]["progressOnly"],true);
+        runtime.block_on(actor.event(event("remove",Value::Null))).unwrap();assert!(actor.progress_reports.is_empty());assert_eq!(shared.lock().unwrap().activity.as_ref(),&json!([]));
+        runtime.block_on(actor.event(event("indeterminate",Value::Null))).unwrap();actor.lose_connections();actor.publish();
+        assert!(actor.progress_reports.is_empty());assert_eq!(shared.lock().unwrap().activity.as_ref(),&json!([]));
+    }
+
+    #[test] fn semantic_copy_is_local_and_uses_the_frozen_viewport_and_target() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.visible=true;actor.paused=false;actor.phase="reconnecting".into();actor.selected_session="s".into();actor.selected_block="b".into();actor.connection_epoch=2;actor.navigation_id=3;
+        let mut terminal=rex_core::ghostty::Terminal::new(30,4).unwrap();
+        terminal.write(b"\x1b]133;A\x07$ \x1b]133;B\x07echo hello\x1b]133;C\x07\r\nhello\r\n\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07").unwrap();
+        let mut replica=Replica::new(42);replica.feed(&terminal.encode().unwrap()).unwrap();
+        let frame=replica.terminal().unwrap().frame().unwrap();actor.replica=Some(replica);
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut command=json!({"type":"copy_semantic","session":"s","block":"b","connectionEpoch":2,"navigationId":3,
+            "columns":frame.columns,"rows":frame.rows,"scrollTotal":frame.scroll_total,"scrollOffset":frame.scroll_offset,"viewport":frame.text(),"col":0,"row":1,"output":false});
+        runtime.block_on(actor.command(command.clone())).unwrap();assert_eq!(actor.clipboard["text"],"echo hello");assert_eq!(actor.clipboard["local"],true);
+        command["output"]=json!(true);runtime.block_on(actor.command(command.clone())).unwrap();assert_eq!(actor.clipboard["text"],"hello");
+        let clipboard=actor.clipboard.clone();
+        let mut stale=command.clone();stale["block"]=json!("other");runtime.block_on(actor.command(stale)).unwrap();assert_eq!(actor.clipboard,clipboard);
+        command["viewport"]=json!("changed");assert!(runtime.block_on(actor.command(command)).unwrap_err().to_string().contains("Select the text again"));
+        assert_eq!(actor.clipboard,clipboard);assert!(actor.control.is_none());assert!(!actor.controlled);
+    }
+
+    #[test] fn prompt_navigation_is_local_and_rejects_stale_targets_while_disconnected() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.visible=true;actor.paused=false;actor.phase="preview".into();actor.selected_session="s".into();actor.selected_block="b".into();actor.connection_epoch=2;actor.navigation_id=3;
+        let mut terminal=rex_core::ghostty::Terminal::new(30,4).unwrap();
+        for i in 0..8 {terminal.write(format!("\x1b]133;A\x07$ \x1b]133;B\x07command_{i}\x1b]133;C\x07\r\noutput\r\n\x1b]133;D;0\x07").as_bytes()).unwrap();}
+        let bottom=terminal.frame().unwrap().scroll_offset;
+        let mut replica=Replica::new(42);replica.feed(&terminal.encode().unwrap()).unwrap();actor.replica=Some(replica);
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let command=json!({"type":"scroll_prompt","session":"s","block":"b","connectionEpoch":2,"navigationId":3,"direction":-1});
+        for (key,wrong) in [("session",json!("old")),("block",json!("old")),("connectionEpoch",json!(1)),("navigationId",json!(1))] {
+            let mut stale=command.clone();stale[key]=wrong;runtime.block_on(actor.command(stale)).unwrap();
+            assert_eq!(actor.replica.as_mut().unwrap().terminal().unwrap().frame().unwrap().scroll_offset,bottom);
+        }
+        runtime.block_on(actor.command(command)).unwrap();
+        assert!(actor.replica.as_mut().unwrap().terminal().unwrap().frame().unwrap().scroll_offset<bottom);
+        assert!(actor.control.is_none());assert!(!actor.controlled);
+    }
+
+    #[test] fn osc52_updates_publish_once_with_the_source_pane_and_epoch() {
+        let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
+        let mut actor=Actor::new(shared.clone(),Arc::new(crate::updates::Updates::default()));
+        actor.selected_block="pane-a".into();actor.connection_epoch=2;actor.navigation_id=3;
+        let mut terminal=rex_core::ghostty::Terminal::new(30,6).unwrap();let mut replica=Replica::new(42);
+        replica.feed(&terminal.encode().unwrap()).unwrap();replica.feed(b"\x1b]52;c;aGVsbG8=\x07").unwrap();
+        actor.replica=Some(replica);actor.update_apcs();
+        let published:Value=serde_json::from_str(&shared.lock().unwrap().json).unwrap();
+        assert_eq!(published["clipboard"],json!({"serial":1,"text":"hello","block":"pane-a","connection":2,"navigation":3}));
+        let revision=shared.lock().unwrap().revision;actor.update_apcs();assert_eq!(shared.lock().unwrap().revision,revision);
+        actor.replica.as_mut().unwrap().feed(b"\x1b]52;c;dHdv\x07").unwrap();actor.update_apcs();
+        assert_eq!(actor.clipboard["serial"],2);assert_eq!(actor.clipboard["text"],"two");
+    }
+
     #[test] fn delayed_resize_apcs_cannot_revoke_canonical_ownership() {
         let shared=Arc::new(Mutex::new(Shared{revision:0,json:String::new(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default(),activity:Arc::default()}));
         let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
@@ -3039,6 +3297,23 @@ while True:
         }
         let mut uncertain="Request outcome is uncertain; input was not resent".to_owned();
         clear_ownership_error(&mut uncertain);assert!(!uncertain.is_empty());
+    }
+
+    #[test] fn route_handoffs_preserve_live_connections_until_io_fails() {
+        let shared=Arc::new(Mutex::new(Shared {revision:0,json:String::new(),activity:Arc::default(),pending_previews:BTreeMap::new(),frame:None,key:String::new(),wire:crate::updates::WireBase::default()}));
+        let mut actor=Actor::new(shared,Arc::new(crate::updates::Updates::default()));
+        actor.endpoint=Some(Endpoint::new("https://example.invalid",Duration::from_secs(10)).unwrap());
+        actor.selected_session="s".into();actor.selected_block="b".into();actor.phase="connected".into();actor.controlled=true;actor.connection_epoch=7;
+        let runtime=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        for online in [false,true,true] {
+            runtime.block_on(actor.command(json!({"type":"network","online":online,"force":true}))).unwrap();
+            assert_eq!(actor.phase,"connected");assert!(actor.controlled);assert_eq!(actor.connection_epoch,7);assert!(actor.retry.is_none());
+        }
+        runtime.block_on(actor.command(json!({"type":"network","online":false}))).unwrap();
+        actor.recover(anyhow::anyhow!("actual socket failure"));
+        assert_eq!(actor.phase,"reconnecting");assert!(!actor.controlled);assert!(actor.retry.is_none());
+        runtime.block_on(actor.command(json!({"type":"network","online":true}))).unwrap();
+        assert!(actor.retry.is_some());assert_eq!(actor.selected_block,"b");
     }
 
     #[test] fn losing_network_cancels_a_pending_handshake_and_preserves_the_target() {

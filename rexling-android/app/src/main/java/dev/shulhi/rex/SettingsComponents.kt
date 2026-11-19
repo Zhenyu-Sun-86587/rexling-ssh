@@ -40,10 +40,10 @@ internal object SettingsType {
     }
 }
 
-@Composable internal fun SettingsSection(title: String,content: @Composable ColumnScope.()->Unit) {
+@Composable internal fun SettingsSection(title: String,compact: Boolean=true,content: @Composable ColumnScope.()->Unit) {
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text(title,Modifier.padding(start=4.dp),style=SettingsType.section,color=MaterialTheme.colorScheme.primary)
-        Surface(shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f)) {
+        Surface(shape=RoundedCornerShape(if(compact) 12.dp else 20.dp),color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f)) {
             Column(Modifier.fillMaxWidth(),content=content)
         }
     }
@@ -53,7 +53,7 @@ internal object SettingsType {
     HorizontalDivider(Modifier.padding(start=64.dp,end=16.dp),color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.5f))
 }
 
-internal enum class SettingsGlyph { APPEARANCE,FONT,ALERTS,UPLOAD,INFO,SERVER,COMMAND }
+internal enum class SettingsGlyph { APPEARANCE,FONT,ALERTS,UPLOAD,INFO,SERVER,COMMAND,NETWORK,KEY }
 
 @Composable internal fun SettingsRow(title: String,subtitle: String,glyph: SettingsGlyph,onClick: ()->Unit,badge: String?=null) {
     val chevronColor=MaterialTheme.colorScheme.onSurfaceVariant
@@ -74,7 +74,7 @@ internal enum class SettingsGlyph { APPEARANCE,FONT,ALERTS,UPLOAD,INFO,SERVER,CO
     }
 }
 
-@Composable private fun SettingsIcon(glyph: SettingsGlyph) {
+@Composable internal fun SettingsIcon(glyph: SettingsGlyph) {
     val color=MaterialTheme.colorScheme.primary
     Surface(shape=RoundedCornerShape(11.dp),color=color.copy(alpha=.09f)) {
         Box(Modifier.size(36.dp),contentAlignment=Alignment.Center) {
@@ -104,6 +104,14 @@ internal enum class SettingsGlyph { APPEARANCE,FONT,ALERTS,UPLOAD,INFO,SERVER,CO
                             drawCircle(color,.8f*u,Offset(7f*u,(y+3)*u))
                         }
                     }
+                    SettingsGlyph.NETWORK->{
+                        line(12f,8f,12f,12f);line(5f,12f,19f,12f)
+                        line(5f,12f,5f,16f);line(19f,12f,19f,16f)
+                        for((x,y) in listOf(12f to 5f,5f to 19f,19f to 19f)) {
+                            drawCircle(color,3f*u,Offset(x*u,y*u),style=stroke)
+                        }
+                    }
+                    SettingsGlyph.KEY->{drawCircle(color,4f*u,Offset(7f*u,8f*u),style=stroke);line(10f,11f,20f,21f);line(15f,16f,18f,13f);line(18f,19f,21f,16f)}
                     SettingsGlyph.FONT->Unit
                     SettingsGlyph.COMMAND->{line(9f,6f,3f,12f);line(3f,12f,9f,18f);line(15f,6f,21f,12f);line(21f,12f,15f,18f)}
                 }

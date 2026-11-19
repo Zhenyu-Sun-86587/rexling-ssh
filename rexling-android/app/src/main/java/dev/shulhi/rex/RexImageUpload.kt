@@ -20,7 +20,7 @@ internal class RexImageUpload(private val context: android.content.Context): Rex
             request.put("sshTransport",transport)
         }
         val handle=NativeBridge.uploadCreate(request.toString())
-        check(handle!=0L) {"Could not start image upload"}
+        check(handle!=0L) {"Could not start file upload"}
         try {
             while(true) {
                 currentCoroutineContext().ensureActive()
@@ -31,7 +31,7 @@ internal class RexImageUpload(private val context: android.content.Context): Rex
                 delay(40)
             }
         } catch(error: CancellationException) {throw error}
-        catch(error: Exception) {return RexUploadResult("uncertain","Could not confirm the image upload. Check the original pane before trying again.")}
+        catch(error: Exception) {return RexUploadResult("uncertain","Could not confirm the file upload. Check the original pane before trying again.")}
         finally {NativeBridge.uploadDestroy(handle)}
     }
 }

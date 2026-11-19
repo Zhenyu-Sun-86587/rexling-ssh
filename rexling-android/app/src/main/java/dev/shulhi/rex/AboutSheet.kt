@@ -34,22 +34,22 @@ internal data class AppBuildInfo(val version: String,val number: Int,val type: S
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun AboutSheet(onClose: ()->Unit) {
+@Composable internal fun AboutSheet(hazeState: dev.chrisbanes.haze.HazeState?=null,onClose: ()->Unit) {
     val context=LocalContext.current
     val uri=LocalUriHandler.current
-    ModalBottomSheet(onDismissRequest=onClose,containerColor=MaterialTheme.colorScheme.surface) {
+    SettingsDrawer("About","Close about",onClose,hazeState) {
         AboutContent(AppBuildInfo.current,onClose,onCopy={text->
             (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rexling build",text))
         },onOpen={url->
             runCatching {uri.openUri(url)}.onFailure {Toast.makeText(context,"No browser available",Toast.LENGTH_SHORT).show()}
-        })
+        },showHeader=false)
     }
 }
 
-@Composable internal fun AboutContent(info: AppBuildInfo,onClose: ()->Unit,onCopy: (String)->Unit,onOpen: (String)->Unit) {
-    Column(Modifier.fillMaxWidth().heightIn(max=620.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-            Text("About",Modifier.weight(1f),fontSize=20.sp,fontWeight=FontWeight.Bold)
+@Composable internal fun AboutContent(info: AppBuildInfo,onClose: ()->Unit,onCopy: (String)->Unit,onOpen: (String)->Unit,showHeader: Boolean=true) {
+    Column(Modifier.fillMaxWidth().heightIn(max=600.dp).verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        if(showHeader) Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+            Text("About",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
             ChromeButton(ChromeIcon.CLOSE,"Close about",onClick=onClose)
         }
         Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(14.dp)) {
@@ -60,7 +60,7 @@ internal data class AppBuildInfo(val version: String,val number: Int,val type: S
                 Text(stringResource(R.string.app_subtitle),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f)).padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             BuildInfoRow("Version",info.version)
             BuildInfoRow("Build","${info.number} · ${info.type}")
             BuildInfoRow("Commit",info.commit)

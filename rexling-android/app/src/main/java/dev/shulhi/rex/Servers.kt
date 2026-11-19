@@ -12,6 +12,11 @@ enum class ServerIcon(val key: String,val label: String) {
     companion object {fun decode(value: String?)=entries.firstOrNull {it.key==value} ?: GLOBE}
 }
 
+internal enum class ServerNetworkRoute(val key: String,val label: String) {
+    PHONE("phone","Phone network / VPN"),BUILTIN("builtin","Built-in Tailscale");
+    companion object {fun decode(value: String?)=entries.firstOrNull {it.key==value} ?: PHONE}
+}
+
 data class SshJumpHost(val host: String,val port: Int=22,val user: String,val authMethod: String="key") {
     fun json()=JSONObject().put("host",host).put("port",port).put("user",user).put("authMethod",authMethod)
     companion object {
@@ -66,12 +71,12 @@ data class ServerProfile(val id: String,val label: String,val endpoint: String,v
         fun normalizeEndpoint(value: String): String {
             val uri=runCatching {URI(value.trim())}.getOrElse {throw IllegalArgumentException("Enter a complete server URL")}
             val scheme=uri.scheme?.lowercase(Locale.ROOT)
-            require(scheme in listOf("https","http","wss","ws","ssh") && !uri.host.isNullOrBlank()) {"Enter an http(s), ws(s) or ssh server URL"}
-            require((uri.rawUserInfo==null || (scheme=="ssh" && !uri.userInfo.contains(':'))) && uri.rawQuery==null && uri.rawFragment==null) {"Do not put passwords, query or fragment in the URL"}
-            require(uri.path.isNullOrEmpty() || uri.path=="/") {"Use the server's root URL"}
+            require(scheme in listOf("https","http","wss","ws","ssh") && !uri.host.isNullOrBlank()) {"Enter an HTTP(S), WS(S), or ssh://user@host URL"}
+            require((if(scheme=="ssh") !uri.rawUserInfo.isNullOrEmpty() && !uri.rawUserInfo.contains(":") else uri.rawUserInfo==null) && uri.rawQuery==null && uri.rawFragment==null) {"Use the server URL without credentials, query or fragment"}
+            require(scheme=="ssh" || uri.path.isNullOrEmpty() || uri.path=="/") {"Use the server's root URL"}
             val port=if((scheme in listOf("https","wss") && uri.port==443) || (scheme in listOf("http","ws") && uri.port==80) || (scheme=="ssh" && uri.port==22)) -1 else uri.port
             require(port in -1..65535 && port!=0) {"Enter a valid server port"}
-            return URI(scheme,if(scheme=="ssh") uri.userInfo else null,uri.host.lowercase(Locale.ROOT),port,null,null,null).toASCIIString()
+            return URI(scheme,if(scheme=="ssh") uri.userInfo else null,uri.host.lowercase(Locale.ROOT),port,if(scheme=="ssh") uri.path.takeUnless {it=="/"} else null,null,null).toASCIIString()
         }
     }
 }
@@ -124,4 +129,13 @@ internal data class SshAddress(val host: String,val port: Int) {
             return SshAddress(host.lowercase(Locale.ROOT),port)
         }
     }
+}
+
+/** Materialize legacy app-wide routing once; all subsequent choices belong to endpoints. */
+internal fun migratedServerRoutes(routes: JSONObject,endpoints: List<String>,legacyBuiltIn: Boolean): JSONObject {
+    val result=JSONObject(routes.toString())
+    endpoints.forEach {endpoint->
+        if(result.optString(endpoint) !in listOf("phone","builtin")) result.put(endpoint,if(legacyBuiltIn) "builtin" else "phone")
+    }
+    return result
 }

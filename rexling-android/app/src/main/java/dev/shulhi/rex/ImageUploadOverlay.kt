@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
-private val UploadPillText=SettingsType.row.copy(fontSize=12.sp,lineHeight=18.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold)
+internal val UploadPillText=SettingsType.row.copy(fontSize=12.sp,lineHeight=18.sp,letterSpacing=0.sp,fontWeight=FontWeight.SemiBold)
 
 @Composable internal fun ImageUploadOverlay(status: ImageUploadStatus,onRetry: ()->Unit,onCancel: ()->Unit,modifier: Modifier=Modifier,retryable: Boolean=true,hazeState: dev.chrisbanes.haze.HazeState?=null) {
     val localHaze=remember {dev.chrisbanes.haze.HazeState()}
@@ -37,8 +37,7 @@ private val UploadPillText=SettingsType.row.copy(fontSize=12.sp,lineHeight=18.sp
     val container by animateColorAsState(if(success) Color(0xffdef2e5) else Color(0xffe5edff),tween(200),label="Upload success fill")
     val accent by animateColorAsState(if(success) green else scheme.primary,tween(200),label="Upload success ring")
     val titleColor by animateColorAsState(if(success) Color(0xff1e7143) else ink,tween(200),label="Upload success text")
-    Surface(modifier.widthIn(max=280.dp).paneFrost(hazeState ?: localHaze,RoundedCornerShape(20.dp),edge=false,tint=container).semantics {paneTitle="Image upload"},
-        shape=RoundedCornerShape(20.dp),color=Color.Transparent,contentColor=ink) {
+    TransferNoticeSurface(modifier,hazeState ?: localHaze,container,ink,"File upload") {
         Column(Modifier.animateContentSize(spring(dampingRatio=.9f,stiffness=500f),alignment=Alignment.BottomEnd)) {
             Row(Modifier.then(if(failed) Modifier.fillMaxWidth() else Modifier)
                 .padding(start=8.dp,end=if(success) 8.dp else 2.dp).heightIn(min=32.dp),
@@ -46,10 +45,10 @@ private val UploadPillText=SettingsType.row.copy(fontSize=12.sp,lineHeight=18.sp
                 if(failed) ChromeSymbol(ChromeIcon.IMAGE,Modifier.size(14.dp),Color(0xffb3261e))
                 else UploadRing(status.progress,indeterminate=!uploading && !success,color=accent,success=success)
                 AnimatedContent(when(status.phase) {
-                    ImagePhase.PREPARING->"Preparing image"
-                    ImagePhase.UPLOADING->"Uploading image"
+                    ImagePhase.PREPARING->"Preparing file"
+                    ImagePhase.UPLOADING->"Uploading file"
                     ImagePhase.FINISHING->"Finishing upload"
-                    ImagePhase.SUCCESS->"Image uploaded"
+                    ImagePhase.SUCCESS->"File uploaded"
                     ImagePhase.FAILED->"Upload failed"
                 },Modifier.weight(1f,fill=failed),transitionSpec={uploadTextTransition()},label="Upload label") {label->
                     val softness by transition.animateFloat(transitionSpec={tween(200)},label="Upload label softness") {
@@ -60,7 +59,7 @@ private val UploadPillText=SettingsType.row.copy(fontSize=12.sp,lineHeight=18.sp
                 }
                 if(uploading) UploadPercentage(percent)
                 if(!success) IconButton(onClick=onCancel,modifier=Modifier.size(32.dp).semantics {
-                    contentDescription=if(failed) "Dismiss upload error" else "Cancel image upload"
+                    contentDescription=if(failed) "Dismiss upload error" else "Cancel file upload"
                 }) {ChromeSymbol(ChromeIcon.CLOSE,Modifier.size(13.dp),ink.copy(alpha=.6f))}
             }
             if(failed) {
@@ -118,4 +117,13 @@ private fun uploadTextTransition() =
         }
         Text("%",Modifier.alignByBaseline(),style=UploadPillText)
     }
+}
+
+/** Shared compact blue surface used by upload and forwarding notices. */
+@Composable internal fun TransferNoticeSurface(modifier: Modifier,hazeState: dev.chrisbanes.haze.HazeState?,
+    container: Color=Color(0xffe5edff),ink: Color=Color(0xff202a3c),title: String,
+    content: @Composable ()->Unit) {
+    val localHaze=remember {dev.chrisbanes.haze.HazeState()}
+    Surface(modifier.widthIn(max=280.dp).paneFrost(hazeState ?: localHaze,RoundedCornerShape(20.dp),edge=false,tint=container).semantics {paneTitle=title},
+        shape=RoundedCornerShape(20.dp),color=Color.Transparent,contentColor=ink,content=content)
 }

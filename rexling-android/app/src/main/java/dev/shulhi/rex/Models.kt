@@ -15,7 +15,10 @@ data class TerminalCell(val x: Int, val y: Int, val text: String, val foreground
 class TerminalImage(val id: Long,val generation: Long,val width: Int,val height: Int,val rgba: ByteArray)
 data class TerminalImagePlacement(val image: TerminalImage,val layer: Int,val z: Int,val col: Int,val row: Int,
     val offsetX: Int,val offsetY: Int,val width: Int,val height: Int,val sourceX: Int,val sourceY: Int,val sourceWidth: Int,val sourceHeight: Int)
-data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>, val scroll: TerminalScroll = TerminalScroll(), val lines: List<List<TerminalCell>> = cells.groupBy {it.y}.let {groups->List(rows){groups[it].orEmpty()}}, val inputFlags: Int=0,val images: List<TerminalImagePlacement> = emptyList(),val imageCellWidth: Int=8,val imageCellHeight: Int=16) {
+data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>, val scroll: TerminalScroll = TerminalScroll(), val lines: List<List<TerminalCell>> = cells.groupBy {it.y}.let {groups->List(rows){groups[it].orEmpty()}}, val inputFlags: Int=0,val images: List<TerminalImagePlacement> = emptyList(),val imageCellWidth: Int=8,val imageCellHeight: Int=16,val above: List<List<TerminalCell>> = emptyList(),val below: List<List<TerminalCell>> = emptyList(),val cursorStyle: Int=1,val cursorBlinking: Boolean=false,val cursorAnchorX: Int?=null,val cursorAnchorY: Int?=null) {
+    val hasSemanticPrompt: Boolean get()=inputFlags and 32!=0
+    fun isSemanticInputRow(row: Int): Boolean = inputFlags and 16!=0 && scroll.below==0L &&
+        row in lines.indices && lines[row].any {it.attributes and (1 shl 30)!=0}
     val mouseTracking: Boolean get()=inputFlags and 1!=0
     val applicationScroll: Boolean get()=inputFlags and 1!=0 || inputFlags and 6==6
     fun plainText(): String = (0 until rows).joinToString("\n") { y ->
@@ -26,17 +29,21 @@ data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, va
             val columns = value.getInt("columns").coerceIn(1, 65535)
             val rows = value.getInt("rows").coerceIn(1, 65535)
             val cursor = value.optJSONArray("cursor")
+            val position=value.optJSONArray("cursor_position")
             val cells = value.optJSONArray("cells").objects { cell ->
                 val a = cell as JSONArray
                 TerminalCell(a.getInt(0), a.getInt(1), a.getString(2), argb(a.getInt(3)), argb(a.getInt(4)), a.getInt(5), a.getInt(6),if(a.isNull(7)) null else a.optString(7).takeIf {it.isNotEmpty()})
             }
             val scroll=value.optJSONArray("scrollbar")
             return TerminalScreen(columns, rows, cursor?.getInt(0), cursor?.getInt(1), argb(value.getInt("foreground")), argb(value.getInt("background")), cells,
-                TerminalScroll(scroll?.optLong(0) ?: 0,scroll?.optLong(1) ?: 0,scroll?.optLong(2) ?: 0),inputFlags=value.optInt("input_flags"))
+                TerminalScroll(scroll?.optLong(0) ?: 0,scroll?.optLong(1) ?: 0,scroll?.optLong(2) ?: 0),inputFlags=value.optInt("input_flags"),cursorAnchorX=position?.getInt(0),cursorAnchorY=position?.getInt(1))
         }
     }
 }
+data class TerminalClipboardWrite(val serial: Long,val text: String,val block: String,val connection: Long,val navigation: Long,val local: Boolean=false)
+
 data class AppState(
+    val terminalProgress: Map<String,TerminalProgress> = emptyMap(),
     val programs: Map<String, ProgramIdentity> = emptyMap(),
     val workingBlocks: Set<String> = emptySet(),
     internal val activity: List<ActivityRecord> = emptyList(),
@@ -45,6 +52,7 @@ data class AppState(
     val directories: Map<String, String> = emptyMap(),
     val previewFrames: Map<String, TerminalScreen> = emptyMap(), val sessionDetails: Map<String, SessionDetail> = emptyMap(),
     val revision: Long = 0, val phase: String = "disconnected", val endpoint: String = "",
+    internal val clipboardWrite: TerminalClipboardWrite?=null,
     val identity: String = "", val error: String = "", val notice: String = "",
     val sessions: List<SessionItem> = emptyList(), val windows: List<WindowItem> = emptyList(),
     val selectedSession: String = "", val selectedBlock: String = "", val controlled: Boolean = false,
@@ -65,6 +73,7 @@ data class AppState(
                 directories = root.optJSONObject("directories")?.let { directories -> directories.keys().asSequence().associateWith { id ->
                     directories.optString(id).filterNot { it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt() }.take(1024)
                 } } ?: emptyMap(),
+                terminalProgress=root.optJSONObject("terminalProgress")?.let {reports->reports.keys().asSequence().mapNotNull {id->TerminalProgress.parse(reports.optJSONObject(id))?.let {id to it}}.toMap()} ?: emptyMap(),
                 programs = root.optJSONObject("programs")?.let { programs -> programs.keys().asSequence().associateWith { id ->
                     ProgramIdentity.resolve(programs.optJSONArray(id).objects { it as String })
                 } } ?: emptyMap(),
@@ -72,6 +81,7 @@ data class AppState(
                 sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->
                     val d=details.getJSONObject(key);SessionDetail(d.optString("attachment"),d.optInt("tabs"),d.optInt("panes")) } } ?: emptyMap(),
                 revision = root.optLong("revision"), navigationId = root.optLong("navigationId"),tabMoveId=root.optLong("tabMoveId"),paneMoveId=root.optLong("paneMoveId"),connectionEpoch=root.optLong("connectionEpoch"),otherOwner=root.optBoolean("otherOwner"),attentionCount=root.optInt("attentionCount").coerceIn(0,1024), phase = root.optString("phase", "disconnected"),
+                clipboardWrite=root.optJSONObject("clipboard")?.let {TerminalClipboardWrite(it.optLong("serial"),it.optString("text"),it.optString("block"),it.optLong("connection"),it.optLong("navigation"),it.optBoolean("local"))},
                 endpoint = root.optString("endpoint"), identity = root.optString("identity"),
                 error = root.optString("error"), notice = root.optString("notice"),
                 sessions = root.optJSONArray("sessions").objects { value ->
@@ -101,6 +111,13 @@ object TerminalInput {
     // turns this kitty sequence into a real Shift+Enter key event, which Rex
     // then encodes for whatever keyboard mode the program enabled.
     const val SHIFT_ENTER = "\u001b[13;2u"
+    /**
+     * Keys from an on-screen keyboard commit. In a multi-line field Gboard's Enter commits a lone
+     * "\n" (LF, Ctrl+J), which TUIs such as Claude Code read as "insert newline" rather than submit.
+     * With [enterSubmits], a lone newline is the Enter key and becomes CR. Longer commits (pasted
+     * text) keep their LFs so a multi-line paste does not submit every line.
+     */
+    fun imeKeys(keys: String,enterSubmits: Boolean): String = if(enterSubmits && keys=="\n") "\r" else keys
     private val keys=mapOf(
         "esc" to "\u001b", "tab" to "\t", "enter" to "\r", "backspace" to "\u007f",
         "pageup" to "\u001b[5~", "pagedown" to "\u001b[6~",

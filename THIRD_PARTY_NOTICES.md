@@ -5,6 +5,7 @@ replace licenses or grant trademark rights for the following upstream material.
 
 | Material | Retained terms and provenance |
 | --- | --- |
+| Smooth-scrollback implementation | Adapted from michaelcosj/rexling commit `601c3852fe4ff4db6fcb201d059266c1fe37506c`, by michael; Apache 2.0. Local changes preserve Rexling input semantics and replace row-cache shift search with offset-based reuse. |
 | Ghostty/libghostty-vt | MIT; `rexling-core/native/GHOSTTY_LICENSE.txt`, pinned source in `ghostty-source.json`, and Android `assets/licenses/GHOSTTY_LICENSE.txt` |
 | JetBrains Mono / Nerd Font font files | SIL Open Font License and Nerd Fonts notices, sources and checksums in `rexling-android/app/src/main/assets/licenses/` |
 | Noto Sans Symbols 2 fallback font | SIL Open Font License; `NOTO_SYMBOLS_OFL.txt` and pinned source/checksum in `NOTO_SYMBOLS_SOURCE.json` in the Android license assets |
@@ -15,6 +16,7 @@ replace licenses or grant trademark rights for the following upstream material.
 | OkHttp / Okio test fixtures (not shipped in the release app) | Apache 2.0; pinned OkHttp 4.12.0 and its resolved Okio dependency in the Gradle manifests and Maven metadata |
 | Haze backdrop blur | Apache 2.0; Chris Banes and contributors, pinned to 1.5.4; https://github.com/chrisbanes/haze |
 | PNG decoder (`png` Rust crate) | MIT OR Apache 2.0; pinned in `rexling-core/Cargo.lock`; retained `assets/licenses/PNG_LICENSE-MIT.txt` and `PNG_LICENSE-APACHE.txt` |
+| Embedded Tailscale and SSH transport | Tailscale 1.104.1 (BSD-3-Clause), Go SSH crypto and transitive dependencies; pinned in `rexling-network/go.mod` and `go.sum`, full retained licenses in Android `assets/licenses/NETWORK_LICENSES.txt` |
 | Rust / AndroidX / other dependencies | Their respective upstream licenses; pinned dependency versions in Cargo.lock and the Gradle manifests |
 
 The launcher artwork supplied for Rexling is retained with its preparation

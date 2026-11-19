@@ -10,12 +10,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun ServersSheet(model: RexModel,onDismiss: ()->Unit) {
+@Composable internal fun ServersSheet(model: RexModel,hazeState: dev.chrisbanes.haze.HazeState?=null,onDismiss: ()->Unit) {
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.background) {
         HostsPanel(model,onDismiss,Modifier.fillMaxWidth().heightIn(max=720.dp))
     }
@@ -25,17 +31,21 @@ import androidx.compose.ui.unit.dp
     var editing by remember {mutableStateOf<ServerProfile?>(null)}
     var editor by remember {mutableStateOf(false)}
     var initialMode by remember {mutableStateOf("ssh")}
+    var networkEditor by remember {mutableStateOf(false)}
     var tailscale by remember {mutableStateOf(false)}
     var suggestion by remember {mutableStateOf<TailscaleDevice?>(null)}
     var forgetting by remember {mutableStateOf<ServerProfile?>(null)}
-    fun add(mode: String) {editing=null;suggestion=null;initialMode=mode;editor=true}
+    fun add(mode: String) {editing=null;suggestion=null;initialMode=mode;networkEditor=mode=="direct";editor=true}
     HostsContent(model.servers,model.serverStatuses,model.activeServerId,
         onAdd={add("ssh")},onTailscale={tailscale=true},onDirect={add("direct")},
-        onSelect={host->if(host.jumpOnly) {editing=host;suggestion=null;editor=true} else {model.connectServer(host.id);onOpen()}},
-        onEdit={editing=it;suggestion=null;editor=true},onDisconnect={model.disconnectServer(it.id)},onForget={forgetting=it},modifier=modifier)
-    if(editor) ServerEditor(editing,model,initialMode,suggestion?.address.orEmpty(),suggestion?.label.orEmpty()) {editor=false}
+        onSelect={host->if(host.jumpOnly) {editing=host;suggestion=null;networkEditor=false;editor=true} else {model.connectServer(host.id);onOpen()}},
+        onEdit={editing=it;suggestion=null;networkEditor=it.ssh==null;editor=true},onDisconnect={model.disconnectServer(it.id)},onForget={forgetting=it},modifier=modifier)
+    if(editor) {
+        if(networkEditor) ServerEditor(editing,onClose={editor=false},onSave={label,url,icon->model.saveServer(editing?.id,label,url,icon)})
+        else ServerEditor(editing,model,initialMode,suggestion?.address.orEmpty(),suggestion?.label.orEmpty()) {editor=false}
+    }
     if(tailscale) TailscaleSheet(onDismiss={tailscale=false},onChoose={device->
-        tailscale=false;suggestion=device;editing=null;initialMode="ssh";editor=true
+        tailscale=false;suggestion=device;editing=null;initialMode="ssh";networkEditor=false;editor=true
     })
     forgetting?.let {host->AlertDialog(onDismissRequest={forgetting=null},title={Text("Forget ${host.label}?")},
         text={Text("Remove this saved host and its login from this device. Routes that copied its jump settings are kept.")},
@@ -64,7 +74,7 @@ import androidx.compose.ui.unit.dp
             Text("Connect to Rex over SSH, or discover a device on your tailnet. Save a jump host even when it has no Rex server.",style=MaterialTheme.typography.bodyMedium,color=scheme.onSurfaceVariant)
             HostEntryCard("SSH host","A Rex target or an SSH-only jump host. Save first, connect when you are ready.","Add SSH host",onAdd,true)
             HostEntryCard("Tailscale devices","Find machines on your tailnet, then configure their SSH login. Your phone still needs the Tailscale VPN.","Discover devices",onTailscale,false)
-            TextButton(onClick=onDirect,modifier=Modifier.fillMaxWidth()) {Text("Already have a Rex URL? Add it here")}
+            TextButton(onClick=onDirect,modifier=Modifier.fillMaxWidth()) {Text("Built-in Tailscale / SSH URL / Rex URL")}
         } else {
             SshField(search,{search=it},title="Search hosts")
             val matching=servers.filter {search.isBlank() || it.label.contains(search,true) || it.endpoint.contains(search,true)}
@@ -77,10 +87,74 @@ import androidx.compose.ui.unit.dp
             }
             if(matching.isEmpty()) Text("No matching hosts.",style=MaterialTheme.typography.bodyMedium)
             OutlinedButton(onClick=onTailscale,modifier=Modifier.fillMaxWidth()) {Text("Discover Tailscale devices")}
-            TextButton(onClick=onDirect,modifier=Modifier.fillMaxWidth()) {Text("Add an existing Rex URL")}
+            TextButton(onClick=onDirect,modifier=Modifier.fillMaxWidth()) {Text("Built-in Tailscale / SSH URL / Rex URL")}
         }
         Text("Only Rex targets open workspaces. Jump hosts supply an SSH login and forwarding; they never auto-connect to Rex.",style=MaterialTheme.typography.bodySmall,color=scheme.onSurfaceVariant)
     }
+}
+
+/** Upstream URL-based network editor; existing password/ProxyJump profiles use the full SSH editor. */
+@Composable internal fun ServerEditor(server: ServerProfile?,onClose: ()->Unit,onSave: (String,String,ServerIcon)->String?) {
+    val networkStatus by NetworkSettings.status.collectAsState()
+    val tailnetConnected=networkStatus.optJSONObject("tailscale")?.optString("BackendState")=="Running"
+    var name by remember(server?.id) {mutableStateOf(server?.label.orEmpty())}
+    var endpoint by remember(server?.id) {mutableStateOf(server?.endpoint.orEmpty())}
+    var icon by remember(server?.id) {mutableStateOf(server?.icon ?: ServerIcon.GLOBE)}
+    var error by remember {mutableStateOf<String?>(null)}
+    var route by remember(server?.id) {mutableStateOf(NetworkSettings.route(server?.endpoint.orEmpty()))}
+    var selectedKey by remember(server?.id) {mutableStateOf(NetworkSettings.selectedKey(server?.endpoint.orEmpty()))}
+    var routesOpen by remember {mutableStateOf(false)}
+    var networkOpen by remember {mutableStateOf(false)}
+    var busy by remember {mutableStateOf(false)}
+    val scope=rememberCoroutineScope()
+    if(networkOpen) NetworkSheet(onClose={networkOpen=false})
+    AlertDialog(onDismissRequest={if(!busy) onClose()},title={Text(if(server==null) "Add server" else "Edit server",style=SettingsType.title)},text={
+        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                ServerIconPicker(icon,compact=true) {icon=it}
+                OutlinedTextField(name,{name=it;error=null},Modifier.weight(1f),label={Text("Name")},singleLine=true,textStyle=SettingsType.body)
+            }
+            OutlinedTextField(endpoint,{endpoint=it;error=null},Modifier.fillMaxWidth(),label={Text("Server URL")},singleLine=true,textStyle=SettingsType.body,
+                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),placeholder={Text("https://host.tailnet.ts.net",fontSize=11.sp)})
+            Text(if(endpoint.startsWith("ssh://")) "SSH to a host running Rex. This URL mode may start an installed Rex server; use Add SSH host for password, certificates or ProxyJump without autostart." else "Use an HTTPS address, or ssh://user@host.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            if(runCatching {ServerProfile.normalizeEndpoint(endpoint)}.isSuccess) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.5f)).padding(12.dp)) {
+                Text("Connection network",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Box {
+                    TextButton(enabled=!busy,onClick={routesOpen=true},contentPadding=PaddingValues(horizontal=0.dp,vertical=4.dp)) {Text(route.label,style=SettingsType.row);Text(" ▾")}
+                    DropdownMenu(expanded=routesOpen,onDismissRequest={routesOpen=false}) {
+                        ServerNetworkRoute.entries.forEach {choice->DropdownMenuItem(text={Text(choice.label,style=SettingsType.row)},onClick={route=choice;routesOpen=false})}
+                    }
+                }
+                if(route==ServerNetworkRoute.BUILTIN) {
+                    Text("Use a tailnet IP or device name. No Tailscale VPN app required.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick={networkOpen=true},contentPadding=PaddingValues(horizontal=0.dp,vertical=4.dp)) {Text(if(tailnetConnected) "Connected" else "Set up / sign in",style=SettingsType.detail)}
+                } else Text("Use this phone’s network and existing VPN.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if(endpoint.startsWith("ssh://") && runCatching {ServerProfile.normalizeEndpoint(endpoint)}.isSuccess) SshKeyEditor(selectedKey) {selectedKey=it}
+            error?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=12.sp)}
+        }
+    },confirmButton={Button(onClick={
+        val profile=runCatching {ServerProfile.create(name,endpoint,icon=icon)}.getOrElse {error=it.message;return@Button}
+        val requestedRoute=route
+        val requestedKey=selectedKey
+        busy=true
+        scope.launch {
+            val previous=NetworkSettings.route(profile.endpoint)
+            val previousKey=NetworkSettings.selectedKey(profile.endpoint)
+            val ssh=profile.endpoint.startsWith("ssh://")
+            error=runCatching {
+                NetworkSettings.saveRoute(profile.endpoint,requestedRoute) ?:
+                    (if(ssh) NetworkSettings.assignKey(profile.endpoint,requestedKey) else null) ?:
+                    onSave(profile.label,profile.endpoint,profile.icon)
+            }.getOrElse {it.message ?: "Could not save server"}
+            if(error!=null) {
+                if(previous!=requestedRoute) NetworkSettings.saveRoute(profile.endpoint,previous)
+                if(ssh && previousKey!=NetworkSettings.selectedKey(profile.endpoint)) NetworkSettings.assignKey(profile.endpoint,previousKey)
+            }
+            busy=false;if(error==null) onClose()
+        }
+    },enabled=endpoint.isNotBlank() && !busy) {Text(if(busy) "Saving…" else "Save & connect")}},
+        dismissButton={TextButton(enabled=!busy,onClick=onClose) {Text("Cancel")}})
 }
 
 @Composable private fun HostEntryCard(title: String,description: String,action: String,onClick: ()->Unit,primary: Boolean) {

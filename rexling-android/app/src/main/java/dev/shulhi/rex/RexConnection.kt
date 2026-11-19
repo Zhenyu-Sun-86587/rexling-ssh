@@ -23,6 +23,10 @@ internal class RexConnection(application: Application, private val scope: Corout
         private set
     var paneFrames by mutableStateOf<Map<String,TerminalScreen>>(emptyMap())
         private set
+    private val clipboard=application.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    var hasSemanticPrompts by mutableStateOf(false)
+        private set
+    private val clipboardDelivery=TerminalClipboardDelivery {text->clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Terminal",text))}
     private var tabMoveSerial=0L
     private var pendingTabOrder by mutableStateOf<PendingTabOrder?>(null)
     private var paneMoveSerial=0L
@@ -103,6 +107,15 @@ internal class RexConnection(application: Application, private val scope: Corout
         val current=state.value
         val live=current.selectedBlock.ifBlank {if(current.phase=="preview") "preview" else ""}
         if(block!=live) return false
+        view.onSemanticCopy={frame,col,row,output->
+            val active=state.value
+            if(!visible || !foreground || navigationRequest.pending || active.selectedBlock!=block) false
+            else command("copy_semantic","session" to active.selectedSession,"block" to block,
+                "navigationId" to active.navigationId,"connectionEpoch" to active.connectionEpoch,
+                "columns" to frame.columns,"rows" to frame.rows,"scrollTotal" to frame.scroll.total,
+                "scrollOffset" to frame.scroll.offset,"viewport" to frame.plainText(),"col" to col,"row" to row,"output" to output)
+        }
+        view.allowHiddenCursorInput=current.programs[block]?.kind in setOf(ProgramKind.CODEX,ProgramKind.CLAUDE)
         view.onCursorTap={
             val active=state.value
             // Program identity must be live, not the last-known chrome cache.
@@ -282,6 +295,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 navigationRequest = requested.acknowledge(next)
                                 pendingTabOrder=pendingTabOrder?.keepFor(next)
                                 pendingPaneOrder=pendingPaneOrder?.keepFor(next)
+                                clipboardDelivery.deliver(next,visible && foreground && !navigationRequest.pending)
                                 val old=state.value
                                 if(old.phase!=next.phase || old.controlled!=next.controlled || old.navigationId!=next.navigationId || old.connectionEpoch!=next.connectionEpoch || old.error!=next.error)
                                     DevelopLog.event("state","handle=$handle phase=${next.phase} owned=${next.controlled} epoch=${next.connectionEpoch} nav=${next.navigationId} pane=${next.selectedBlock} screen=${next.screen!=null} hasError=${next.error.isNotBlank()}")
@@ -310,6 +324,7 @@ internal class RexConnection(application: Application, private val scope: Corout
                                 if(!next.controlled || old.selectedBlock!=next.selectedBlock) resetModifiers()
                                 publishActivityState(next)
                                 queueDisplay(next)
+                                hasSemanticPrompts=next.screen?.hasSemanticPrompt==true
                                 hasScreen=next.screen!=null
                                 screenDimensions=next.screen?.let {it.columns to it.rows}
 
@@ -551,6 +566,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun keyboardShown() {keyboardRequest=""}
     fun click(col: Int,row: Int,cw: Int,ch: Int) {
+        flushImeComposition()
         val current=state.value
         if(visible && foreground && current.connected && current.controlled && !current.creating && !navigationRequest.pending && current.screen?.mouseTracking==true)
             command("click","session" to current.selectedSession,"block" to current.selectedBlock,"navigationId" to current.navigationId,
@@ -578,20 +594,34 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun toggleShift() {shiftState=ShiftKeyState(latched=!shiftState.active)}
     fun pressShift() {shiftState=shiftState.press()}
     fun releaseShift(cancelled: Boolean) {shiftState=shiftState.release(cancelled)}
-    fun controlShortcut(letter: String) {
-        if(letter !in controlShortcuts) return
-        resetModifiers();type(TerminalInput.modified(letter,control=true,alt=false))
+    fun controlShortcut(keys: String,target: String=keyTarget()) {
+        if(target!=keyTarget() || !visible || !state.value.controlled || state.value.creating || navigationRequest.pending) return
+        val input=runCatching {ControlShortcutConfig.decode(keys)}.getOrNull() ?: return
+        resetModifiers();type(input)
+    }
+    private fun flushImeComposition() {
+        val view=boundView?.get() ?: return
+        val control=controlModifier;val alt=altModifier;val shift=shiftState
+        resetModifiers()
+        try {view.flushComposingText()} finally {controlModifier=control;altModifier=alt;shiftState=shift}
     }
     fun type(text: String) {
         if(text.isEmpty()) return
+        flushImeComposition()
         val input = TerminalInput.modified(text, controlModifier, altModifier, shiftModifier)
         controlModifier = false; altModifier = false;shiftState=shiftState.consume();keyboardRequest=""
         deliverInput("input",input)
     }
+    fun scrollPrompt(direction: Int) {
+        val current=state.value
+        if(visible && foreground && !navigationRequest.pending && current.screen!=null) command("scroll_prompt",
+            "session" to current.selectedSession,"block" to current.selectedBlock,"navigationId" to current.navigationId,
+            "connectionEpoch" to current.connectionEpoch,"direction" to direction.coerceIn(-1,1))
+    }
     fun scroll(lines: Int) {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"lines" to lines)}
     fun scrollToBottom() {if(!navigationRequest.pending && state.value.screen!=null) command("scroll","block" to state.value.selectedBlock,"bottom" to true)}
     fun key(name: String) = type(TerminalInput.key(name))
-    fun paste(text: String) {deliverInput("paste",text)}
+    fun paste(text: String) {flushImeComposition();deliverInput("paste",text)}
     fun resize(columns: Int, rows: Int) {
         val size = columns.coerceIn(1, 512) to rows.coerceIn(1, 256)
         lastSize = size

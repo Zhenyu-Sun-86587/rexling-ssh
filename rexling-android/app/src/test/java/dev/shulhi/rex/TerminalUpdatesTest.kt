@@ -111,4 +111,77 @@ class TerminalUpdatesTest {
             assertEquals(1,decoder.decode(graphicsPacket(1)).screen!!.images.size)
         }
     }
+
+    @Test fun cursorShapeAndBlinkDecodeOnFullAndCursorOnlyDelta() {
+        fun packet(revision: Long,flag: Int,flags: Int): ByteArray {
+            val old=rxt5(revision,flag,2,0,if(flag==3) mapOf(0 to "a",1 to "b") else emptyMap())
+            val at=16+1+4+8+8+24+1
+            return (old.take(at)+listOf(flags.toByte())+old.drop(at)).toByteArray().also {it[3]='6'.code.toByte()}
+        }
+        val decoder=TerminalUpdates()
+        val first=decoder.decode(packet(1,3,4)).screen!!
+        assertEquals(0,first.cursorStyle);assertTrue(first.cursorBlinking)
+        val steady=decoder.decode(packet(2,2,2)).screen!!
+        assertEquals(2,steady.cursorStyle);assertFalse(steady.cursorBlinking)
+        assertEquals(first.lines,steady.lines)
+        assertTrue(runCatching {TerminalUpdates().decode(packet(1,3,8))}.isFailure)
+    }
+    /** RXT5 packet: [shift], changed rows (each one cell of [text]) and overscan rows. */
+    private fun rxt5(revision: Long,flag: Int,rows: Int,shift: Int,changed: Map<Int,String>,above: List<String> = emptyList(),below: List<String> = emptyList(),reuseOverscan: Boolean=false): ByteArray {
+        val out=ByteArrayOutputStream()
+        fun number(value: Long,size: Int) {repeat(size){out.write((value ushr (8*it)).toInt() and 255)}}
+        fun text(value: String) {val bytes=value.toByteArray();number(bytes.size.toLong(),4);out.write(bytes)}
+        fun row(value: String) {number(1,2);number(0,2);number(1,1);number(0,4);number(-1,4);number(0xff000000,4);text(value);number(0,2)}
+        out.write("RXT5".toByteArray());number(revision,8);text("");number(flag.toLong(),1)
+        number(2,2);number(rows.toLong(),2);number(-1,4);number(-1,4);number(-1,4);number(0xff000000,4)
+        number(100,8);number(10,8);number(rows.toLong(),8);number(0,1)
+        number(shift.toLong(),2);number(changed.size.toLong(),2)
+        changed.forEach {(y,value)->number(y.toLong(),2);row(value)}
+        number(if(reuseOverscan) 255 else above.size.toLong(),1);if(!reuseOverscan) above.forEach(::row)
+        number(if(reuseOverscan) 255 else below.size.toLong(),1);if(!reuseOverscan) below.forEach(::row)
+        number(8,4);number(16,4);number(0,2);number(0,2)  // image cell size, no assets, no placements
+        number(0,2)  // no previews
+        return out.toByteArray()
+    }
+    @Test fun unchangedOverscanSidesReuseOnlyTheSameDeltaBase() {
+        val decoder=TerminalUpdates()
+        decoder.decode(rxt5(1,3,2,0,mapOf(0 to "a",1 to "b"),above=listOf("z"),below=listOf("c")))
+        val next=decoder.decode(rxt5(2,2,2,0,mapOf(0 to "x"),reuseOverscan=true)).screen!!
+        assertEquals("z",next.above.single().single().text);assertEquals("c",next.below.single().single().text)
+        assertTrue(runCatching {TerminalUpdates().decode(rxt5(1,3,2,0,mapOf(0 to "a",1 to "b"),reuseOverscan=true))}.isFailure)
+    }
+    @Test fun shiftedRowsMoveWithTheirContentAndOverscanRowsDecode() {
+        val decoder=TerminalUpdates()
+        val first=decoder.decode(rxt5(1,3,4,0,mapOf(0 to "a",1 to "b",2 to "c",3 to "d"),above=listOf("z"),below=listOf("e"))).screen!!
+        assertEquals("z",first.above.single()[0].text);assertEquals("e",first.below.single()[0].text)
+        // Content moved up one row: only the new bottom row is sent.
+        val next=decoder.decode(rxt5(2,2,4,1,mapOf(3 to "e"))).screen!!
+        assertEquals(listOf("b","c","d","e"),next.lines.map {it.single().text})
+        assertEquals(listOf(0,1,2,3),next.lines.map {it.single().y})
+        assertEquals("b",next.cells[0].text)
+        // Scrolling back down by two needs both uncovered top rows.
+        val back=decoder.decode(rxt5(3,2,4,-2,mapOf(0 to "y",1 to "z"))).screen!!
+        assertEquals(listOf("y","z","b","c"),back.lines.map {it.single().text})
+        assertTrue(runCatching {decoder.decode(rxt5(4,2,4,1,emptyMap()))}.isFailure)
+        assertTrue(runCatching {decoder.decode(rxt5(4,3,4,1,mapOf(0 to "a",1 to "b",2 to "c",3 to "d")))}.isFailure)
+    }
+    @Test fun rxt7KeepsHiddenInputAnchorSeparateFromTheVisibleCursor() {
+        fun packet(rev: Long,anchorX: Int,anchorY: Int): ByteArray {
+            val out=ByteArrayOutputStream()
+            fun n(value:Long,size:Int) {repeat(size) {out.write((value ushr (8*it)).toInt() and 255)}}
+            out.write("RXT7".toByteArray());n(rev,8);n(2,4);out.write("{}".toByteArray());n(3,1)
+            n(2,2);n(2,2);n(-1,4);n(-1,4);n(-1,4);n(0,4)
+            n(2,8);n(0,8);n(2,8);n(7,1);n(1,1);n(0,2);n(2,2)
+            repeat(2) {row->n(row.toLong(),2);n(0,2);n(0,2)}
+            n(0,1);n(0,1);n(8,4);n(16,4);n(0,2);n(0,2)
+            n(anchorX.toLong(),4);n(anchorY.toLong(),4);n(0,2)
+            return out.toByteArray()
+        }
+        val decoder=TerminalUpdates();val frame=decoder.decode(packet(1,1,1)).screen!!
+        assertNull(frame.cursorX);assertNull(frame.cursorY);assertEquals(1,frame.cursorAnchorX);assertEquals(1,frame.cursorAnchorY)
+        val absent=decoder.decode(packet(2,-1,-1)).screen!!;assertNull(absent.cursorAnchorX);assertNull(absent.cursorAnchorY)
+        assertTrue(runCatching {decoder.decode(packet(3,2,1))}.isFailure)
+        assertEquals(2L,decoder.revision)
+    }
+
 }

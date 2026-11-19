@@ -5,6 +5,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelsTest {
+    @Test fun semanticInputRequiresLiveInputMetadataAndTheBottomViewport() {
+        val cells=listOf(TerminalCell(0,1,"",-1,0,1 shl 30,1))
+        val screen=TerminalScreen(20,4,0,1,-1,0,cells,TerminalScroll(4,0,4),inputFlags=48)
+        assertTrue(screen.hasSemanticPrompt)
+        assertTrue(screen.isSemanticInputRow(1))
+        assertFalse(screen.isSemanticInputRow(0))
+        assertFalse(screen.isSemanticInputRow(-1))
+        assertFalse(screen.copy(inputFlags=32).isSemanticInputRow(1))
+        assertFalse(screen.copy(scroll=TerminalScroll(20,0,4)).isSemanticInputRow(1))
+        assertFalse(screen.copy(inputFlags=0).hasSemanticPrompt)
+    }
+
     @Test fun parsesWideCellsAndColorWithoutDuplicatingTheSpacer() {
         val screen = TerminalScreen.parse(JSONObject("""{"columns":4,"rows":1,"cursor":[3,0],"foreground":16777215,"background":0,"cells":[[0,0,"A",16777215,0,0,1],[1,0,"🦀",16777215,0,1,2],[2,0,"",16777215,0,0,0],[3,0,"",16777215,0,0,1]]}"""))
         assertEquals("A🦀", screen.plainText())
@@ -67,4 +79,25 @@ class ModelsTest {
         assertEquals(expected,controlShortcuts.map {TerminalInput.modified(it,true,false).single().code})
     }
 
+
+    @Test fun keyboardEnterSubmitsOnlyWhenEnabledAndPastedNewlinesStayLineFeeds() {
+        assertEquals("\n",TerminalInput.imeKeys("\n",false))
+        assertEquals("\r",TerminalInput.imeKeys("\n",true))
+        assertEquals("a\nb",TerminalInput.imeKeys("a\nb",true))
+        assertEquals("\n\n",TerminalInput.imeKeys("\n\n",true))
+        assertEquals("x",TerminalInput.imeKeys("x",true))
+        // Toolbar Shift with the keyboard's Enter is a real Shift+Enter.
+        assertEquals(TerminalInput.SHIFT_ENTER,TerminalInput.modified(TerminalInput.imeKeys("\n",true),false,false,true))
+    }
+
+    @Test fun uploadsKeepTheFileNameAndFallBackWhenItIsMissing() {
+        val png=byteArrayOf(0x89.toByte(),80,78,71,13,10,26,10,0,0,0,0)
+        assertEquals("report.pdf",uploadName("report.pdf",ByteArray(0)))
+        assertEquals("notes.txt",uploadName("dir/sub/notes.txt",ByteArray(0)))
+        assertEquals("ab.zip",uploadName("a\u0000b\n.zip",ByteArray(0)))
+        assertEquals("image.png",uploadName(null,png))
+        assertEquals("image.png",uploadName("  ",png))
+        assertEquals("file",uploadName("..",ByteArray(0)))
+        assertEquals("file",uploadName(null,byteArrayOf(1,2,3)))
+    }
 }

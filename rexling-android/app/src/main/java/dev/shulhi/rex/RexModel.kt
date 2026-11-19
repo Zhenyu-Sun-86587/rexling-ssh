@@ -10,6 +10,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -77,7 +78,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         return ImageTarget(activeServerId,activeServer.endpoint,state.selectedSession,state.selectedBlock,client.selectionVersion,serverSwitchSerial,program.kind,"${program.title} · ${activeServer.label}",activeServer)
     }
     internal fun attachImage(uri: android.net.Uri,target: ImageTarget?,onCopied: ()->Unit={}): Boolean {
-        if(target==null) {onCopied();images.notice="Take control of a pane before attaching an image.";return false}
+        if(target==null) {onCopied();images.notice="Take control of a pane before attaching a file.";return false}
         val profile=servers.firstOrNull {it.id==target.server && it.endpoint==target.endpoint && (target.profile==null || it.connectionKey==target.profile.connectionKey)}
         if(profile==null) {onCopied();images.notice="The original Rex server is no longer available.";return false}
         return images.start(uri,target,onCopied)
@@ -117,6 +118,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal val themes by lazy {ThemeCatalog.load(application)}
     private var darkTheme by mutableStateOf(preferences.getString("dark_theme","rexlink-default-dark").orEmpty())
     private var lightTheme by mutableStateOf(preferences.getString("light_theme","rexlink-default-light").orEmpty())
+    internal var keepScreenAwake by mutableStateOf(runCatching {KeepScreenAwake.valueOf(preferences.getString("keep_screen_awake","SYSTEM")!!)}.getOrDefault(KeepScreenAwake.SYSTEM))
+        private set
+    internal fun changeKeepScreenAwake(value: KeepScreenAwake) {keepScreenAwake=value;preferences.edit {putString("keep_screen_awake",value.name)}}
     var fontSize by mutableIntStateOf(preferences.getInt("font_size",10).coerceIn(8,20))
         private set
     internal fun theme(dark: Boolean): AppTheme {
@@ -137,9 +141,24 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         minimizeFloatingPanes=value
         preferences.edit {putBoolean("minimize_floating_panes",value)}
     }
+    internal var controlItems by mutableStateOf(ControlShortcutConfig.restore(preferences.getString("control_shortcut_items",null)))
+        private set
+    internal fun saveControlShortcuts(text: String): String? = runCatching {
+        val items=ControlShortcutConfig.parse(text)
+        controlItems=items;preferences.edit {putString("control_shortcut_items",ControlShortcutConfig.editorText(items))}
+    }.exceptionOrNull()?.message
+    internal var toolbarKeys by mutableStateOf(ToolbarLayout.decode(preferences.getString("keyboard_toolbar",null)))
+        private set
+    internal fun changeToolbar(keys: List<ToolbarKey>) {
+        toolbarKeys=ToolbarLayout.normalize(keys)
+        preferences.edit {putString("keyboard_toolbar",ToolbarLayout.encode(toolbarKeys))}
+    }
     internal var arrowJoystickEnabled by mutableStateOf(preferences.getBoolean("arrow_joystick_enabled",true))
         private set
     internal fun changeArrowJoystick(value: Boolean) {arrowJoystickEnabled=value;preferences.edit {putBoolean("arrow_joystick_enabled",value)}}
+    internal var enterSubmits by mutableStateOf(preferences.getBoolean("keyboard_enter_submits",false))
+        private set
+    internal fun changeEnterSubmits(value: Boolean) {enterSubmits=value;preferences.edit {putBoolean("keyboard_enter_submits",value)}}
     internal var shortcutGesture by mutableStateOf(runCatching {ControlShortcutGesture.valueOf(preferences.getString("ctrl_shortcut_gesture","HOLD")!!)}.getOrDefault(ControlShortcutGesture.HOLD))
         private set
     internal fun changeShortcutGesture(value: ControlShortcutGesture) {shortcutGesture=value;preferences.edit {putString("ctrl_shortcut_gesture",value.name)}}
@@ -222,7 +241,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         developMode=value;preferences.edit {putBoolean("develop_mode",value)}
         DevelopLog.configure(getApplication(),value)
     }
-    init {DevelopLog.configure(getApplication(),developMode);preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
+    init {DevelopLog.configure(getApplication(),developMode);viewModelScope.launch {NetworkSettings.revision.drop(1).collect {connections.filterKeys {it in desired}.values.forEach {it.retryNow()}}};preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
 
     private fun connection(profile: ServerProfile): RexConnection = connections.getOrPut(profile.id) {
         RexConnection(getApplication(),viewModelScope,profile.endpoint,preferences,profile.storageKey,profile).also {client->
@@ -327,8 +346,14 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         else saveServer(null,"",normalized)?.let {throw IllegalArgumentException(it)}
     }.exceptionOrNull()?.message
 
+    internal fun forwardServers(): List<ForwardServer> {
+        val knownSessions=sessionTargets
+        return servers.filterNot {it.jumpOnly}.map {server->
+        val state=connections[server.id]?.state?.value
+        ForwardServer(server,state?.selectedSession?.takeIf {it.isNotBlank()} ?: knownSessions.firstOrNull {it.server.id==server.id}?.session?.id.orEmpty(),serverStatuses[server.id]?.connected==true)
+        }
+    }
     fun saveServer(id: String?,label: String,endpoint: String,icon: ServerIcon?=null,connect: Boolean=true): String? = runCatching {
-        require(!endpoint.trim().startsWith("ssh://")) {"Use Servers → Add server → SSH to configure authentication"}
         val profile=ServerProfile.create(label,endpoint,id ?: java.util.UUID.randomUUID().toString(),icon ?: servers.firstOrNull {it.id==id}?.icon ?: ServerIcon.GLOBE)
         saveProfile(profile,connect)?.let {error(it)}
     }.exceptionOrNull()?.message
@@ -380,6 +405,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         servers=updated
         if(old!=null && (old.connectionKey!=profile.connectionKey || old.jumpOnly!=profile.jumpOnly)) {
             if(!connect) desired=desired-profile.id
+            PortForwards.forgetServer(getApplication(),old.id)
             images.forget(old.id)
             connections.remove(old.id)?.let {it.releaseControl();it.disconnect();it.close()}
             observers.remove(old.id)?.cancel();serverStatuses=serverStatuses-old.id
@@ -411,6 +437,8 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         connections[id]?.let {it.releaseControl();it.disconnect()}
     }
     fun forgetServer(id: String) {
+        PortForwards.forgetServer(getApplication(),id)
+        servers.firstOrNull {it.id==id}?.let {profile->NetworkSettings.forget(profile.endpoint,servers.filter {it.id!=id}.map {it.endpoint})}
         images.forget(id)
         if(activeServerId==id) serverSwitchSerial++
         disconnectServer(id)

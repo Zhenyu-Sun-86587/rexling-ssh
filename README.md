@@ -33,7 +33,7 @@ and native-library name are unchanged, preserving installed app data and updates
 ## SSH fork
 
 This fork installs as **Rexling SSH** (`dev.shulhi.rex.ssh`) alongside the original app.
-Open **Servers → Add server → SSH**, enter the host and SSH username, then choose
+Open **Your hosts → Add host**, enter the host and SSH username, then choose
 private key or password authentication. Generate an Ed25519 key in the editor and copy
 its public key, paste/import an existing key, and optionally import a matching OpenSSH
 user certificate. Compare the first connection's SHA256 host fingerprint before trusting it.
@@ -44,7 +44,16 @@ connection is shared by terminal panes, status monitoring and uploads. There is 
 TCP listener and no Tailscale requirement for SSH. An explicit socket path avoids discovery;
 otherwise the client discovers the remote UID/runtime directory once and tries the socket first.
 The remote Rex server or its `rex.socket` must already be configured. The app does not change
-server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Select **Jump** in the editor and enter separate host, port, username and authentication for that hop. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address.
+server configuration or enable lingering. Direct SSH and one ProxyJump hop are supported. Enable **Connect through a jump host** to select a saved direct SSH host or enter separate credentials manually. Both host fingerprints must be trusted. The jump host must allow TCP forwarding to the target and resolves the target address. **Jump host only** saves an SSH login without requiring Rex; **Save only** does not connect.
+
+The separate **Built-in Tailscale / SSH URL / Rex URL** entry uses upstream's network
+transport. It supports a reusable SSH key library, keyless Tailscale SSH, built-in
+Tailscale and Headscale. URL SSH may start an already installed Rex server unless
+disabled by the remote `REX_AUTOSTART` environment setting. Existing password,
+certificate and ProxyJump profiles keep the Rust transport and phone network/VPN;
+they are not migrated to the URL transport. See [connection setup](docs/connections.md)
+for URL-mode details. API-key device discovery remains separate from signing into
+built-in Tailscale.
 
 **Advanced options** starts collapsed and contains the port (default 22), key passphrase,
 OpenSSH certificate, jump-host details, socket override and trust reset. Hidden saved values
@@ -104,7 +113,8 @@ navigation and RPC waits, so server Ping replies do not depend on rendering or i
 Rexling currently supports **64-bit ARM phones running Android 9 or newer**,
 including the Galaxy S22+. You need access to an existing Rex server. Install
 and connect Tailscale on your phone when the server is on a private tailnet.
-Rexling uses that existing VPN connection; it does not embed another VPN.
+Existing SSH profiles use that VPN. URL-mode connections can instead select
+built-in Tailscale, configured in **Preferences → Network**, without a separate VPN app.
 
 Download the ARM64 APK from [GitHub Releases](https://github.com/Zhenyu-Sun-86587/rexling-ssh/releases), or build it below. Open the
 APK on your phone and allow installation from that file/browser app when Android
@@ -155,7 +165,8 @@ adb -s <your-device-serial> install -r \
 ```
 
 The build downloads checksum-verified Ghostty and Zig, compiles the Rust JNI
-library for Android arm64, and builds the APK. The first build needs network
+and Go network libraries for Android arm64, and builds the APK. The Go module
+requires toolchain 1.27.1, which Go can download automatically. The first build needs network
 access; later builds reuse ignored local caches. No old sibling checkout is needed.
 
 ```text

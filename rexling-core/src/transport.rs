@@ -55,6 +55,10 @@ impl Endpoint {
                 url.host_str().is_none() && !url.path().is_empty(),
                 "use unix:///absolute/socket/path"
             );
+        } else if url.scheme() == "ssh" {
+            // Legacy russh profiles carry the username in their registered config;
+            // URL-only SSH validates its username in the Go networking bridge.
+            ensure!(url.host_str().is_some(), "SSH requires a host");
         } else {
             ensure!(
                 url.host_str().is_some() && matches!(url.path(), "" | "/"),
@@ -81,8 +85,7 @@ impl Endpoint {
     }
 
     pub async fn open(&self, path: &str, protocol: &str) -> Result<Ws> {
-        if self.url.scheme() == "ssh" {
-            let profile = self.ssh.clone().context("SSH credentials have not been configured")?;
+        if let Some(profile) = self.ssh.clone() {
             // The shared handshake has its own 20s deadline, independent of WS/Rex deadlines.
             let stream = crate::ssh::SshManager::global().open(profile).await?;
             let mut request = format!("ws://localhost{path}").into_client_request()?;
@@ -95,12 +98,13 @@ impl Endpoint {
             return Ok(crate::socket_driver::drive(Box::new(ws)));
         }
         let unix = self.url.scheme() == "unix";
-        let mut url = if unix {
+        let ssh = self.url.scheme() == "ssh";
+        let mut url = if unix || ssh {
             Url::parse("ws://localhost")?
         } else {
             self.url.clone()
         };
-        if !unix {
+        if !unix && !ssh {
             let scheme = match url.scheme() {
                 "https" => "wss",
                 "http" => "ws",
@@ -138,6 +142,14 @@ impl Endpoint {
                     bail!("Unix sockets are unsupported on this platform");
                 }
             } else {
+                #[cfg(target_os = "android")]
+                if ssh || crate::network::enabled() {
+                    let stream = crate::network::connect(self.url.to_string(), self.timeout).await?;
+                    let (ws, response) = tokio_tungstenite::client_async_tls_with_config(request, stream, Some(config), None).await?;
+                    ensure!(response.headers().get("Sec-WebSocket-Protocol").and_then(|h|h.to_str().ok()) == Some(protocol), "server did not negotiate {protocol}");
+                    return Ok(crate::socket_driver::drive(Box::new(ws)));
+                }
+                ensure!(!ssh, "SSH transport is available in the Android app");
                 let (ws, response) = connect_async_with_config(request, Some(config), true)
                     .await
                     .context(

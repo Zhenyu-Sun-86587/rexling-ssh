@@ -166,21 +166,9 @@ import kotlin.math.roundToInt
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable internal fun NeovimShortcutsSheet(items: List<NeovimShortcut>,onSave: (String)->String?,onClose: ()->Unit,
-    enabled: Boolean=true,onEnabled: (Boolean)->Unit={},
-    layout: NeovimShortcutLayout=NeovimShortcutLayout.GRID,onLayout: (NeovimShortcutLayout)->Unit={},
-    effect: NeovimShortcutEffect=NeovimShortcutEffect.FAN_OUT,onEffect: (NeovimShortcutEffect)->Unit={},
-    hapticsEnabled: Boolean=true,onHaptics: (Boolean)->Unit={}) {
-    var draft by rememberSaveable {mutableStateOf(NeovimShortcuts.editorText(items))}
-    var error by remember {mutableStateOf<String?>(null)}
-    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=MaterialTheme.colorScheme.surface) {
-        Column(Modifier.fillMaxWidth().heightIn(max=680.dp).verticalScroll(rememberScrollState()).padding(horizontal=20.dp).padding(bottom=24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-            SettingsHeader("Neovim shortcuts","Close Neovim shortcuts",onClose)
-            Row(Modifier.fillMaxWidth().toggleable(enabled,role=Role.Switch,onValueChange=onEnabled).padding(vertical=8.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("Enable Neovim shortcuts",Modifier.weight(1f),style=SettingsType.row)
-                Switch(checked=enabled,onCheckedChange=null)
-            }
+@Composable internal fun NeovimMenuOptions(layout: NeovimShortcutLayout,onLayout: (NeovimShortcutLayout)->Unit,
+    effect: NeovimShortcutEffect,onEffect: (NeovimShortcutEffect)->Unit,hapticsEnabled: Boolean,onHaptics: (Boolean)->Unit) {
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("Menu layout",style=SettingsType.section,color=MaterialTheme.colorScheme.primary)
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 NeovimShortcutLayout.entries.forEach {choice->
@@ -207,16 +195,5 @@ import kotlin.math.roundToInt
                 }
                 Text("Hold and slide to a segment; release to run. Swipe up/down on the outer ring for more pages.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("One shortcut per line. Use a name followed by = for a custom label.",style=SettingsType.body)
-            Text("Examples: :w or LazyGit = <Space>lg. Optional [Git] headers group following shortcuts; [] returns to ungrouped shortcuts. One group level only.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(draft,{draft=it;error=null},Modifier.fillMaxWidth(),label={Text("Shortcuts")},minLines=5,maxLines=8,
-                textStyle=SettingsType.body.copy(fontFamily=MonoUi),isError=error!=null,shape=RoundedCornerShape(14.dp))
-            error?.let {Text(it,style=SettingsType.detail,color=MaterialTheme.colorScheme.error)}
-            Text("Shortcuts start in Normal mode. : commands run immediately. Other key sequences are sent as configured; use <CR> for Enter. Also supports <Esc>, <Tab>, arrow keys and <C-x>. Use <Space> for a Space leader. Drag the floating button to move it.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                TextButton(onClick={draft=NeovimShortcuts.editorText(NeovimShortcuts.defaults);error=null}) {Text("Reset defaults")}
-                Button(onClick={error=onSave(draft);if(error==null) onClose()}) {Text("Save")}
-            }
-        }
     }
 }

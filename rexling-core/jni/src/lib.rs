@@ -1,8 +1,10 @@
 mod activity;
+mod progress;
 mod engine;
 mod updates;
 mod uploads;
 mod ssh;
+mod forwards;
 use engine::Session;
 use jni::{
     JNIEnv,
@@ -146,7 +148,7 @@ pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadCreate(mut env:JNI
     let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(||->anyhow::Result<u64>{
         let request:String=env.get_string(&request)?.into();uploads::create(serde_json::from_str(&request)?)
     }));
-    match result {Ok(Ok(id))=>id as jlong,_=>{let _=env.throw_new("java/lang/IllegalStateException","Could not start image upload");0}}
+    match result {Ok(Ok(id))=>id as jlong,_=>{let _=env.throw_new("java/lang/IllegalStateException","Could not start file upload");0}}
 }
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_uploadPoll(mut env:JNIEnv,_class:JClass,handle:jlong)->jstring {
@@ -167,3 +169,40 @@ pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_setDevelop(
 pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_readDevelopLog(
     mut env:JNIEnv,_class:JClass,
 )->jstring {string(&mut env,rex_core::diagnostics::snapshot())}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_forwardCreate(mut env: JNIEnv, _class: JClass, request: JString) -> jlong {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<u64> {
+        let request: String = env.get_string(&request)?.into();
+        forwards::create(serde_json::from_str(&request)?)
+    }));
+    match result {
+        Ok(Ok(id)) => id as jlong,
+        error => {
+            let message = match error {Ok(Err(e))=>e.to_string(),_=>"Could not start forward".into()};
+            let _=env.throw_new("java/lang/IllegalStateException",message);
+            0
+        }
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_forwardPoll(mut env: JNIEnv, _class: JClass, id: jlong) -> jstring {
+    let value = std::panic::catch_unwind(||forwards::poll(id as u64)).unwrap_or_else(|_|serde_json::json!({"phase":"failed"}));
+    string(&mut env,value.to_string())
+}
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_forwardDestroy(_env: JNIEnv, _class: JClass, id: jlong) {
+    let _=std::panic::catch_unwind(||forwards::destroy(id as u64));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_shulhi_rex_NativeBridge_networkCommand(mut env: JNIEnv, _class: JClass, request: JString) -> jstring {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<String> {
+        let request: String = env.get_string(&request)?.into();
+        #[cfg(target_os = "android")]
+        return rex_core::network::command(&request);
+        #[cfg(not(target_os = "android"))]
+        { let _ = request; anyhow::bail!("Android networking bridge is unavailable on this platform") }
+    }));
+    let response = match result {Ok(Ok(v))=>v,Ok(Err(e))=>serde_json::json!({"error":e.to_string()}).to_string(),Err(_)=>"{\"error\":\"Network command failed\"}".into()};
+    string(&mut env,response)
+}
