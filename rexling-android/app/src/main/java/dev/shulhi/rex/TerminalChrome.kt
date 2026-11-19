@@ -537,8 +537,12 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 }
 
 @Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,
-    onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0,keyboardLabel: String="",onKeyboard: (()->Unit)?=null) {
-    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+    onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0,keyboardLabel: String="",onKeyboard: (()->Unit)?=null,vertical: Boolean=false) {
+    // Stacked at the foot of a side tab rail, in a row beside the bottom tab bar.
+    @Composable fun Group(content: @Composable ()->Unit)=
+        if(vertical) Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {content()}
+        else Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {content()}
+    Group {
         // Stands in for the key toolbar's keyboard button while the toolbar is hidden.
         if(onKeyboard!=null) ChromeButton(ChromeIcon.KEYBOARD,keyboardLabel,enabled,onClick=onKeyboard)
         ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)

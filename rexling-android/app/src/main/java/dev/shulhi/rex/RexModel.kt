@@ -154,6 +154,21 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var arrowJoystickEnabled by mutableStateOf(preferences.getBoolean("arrow_joystick_enabled",true))
         private set
     internal fun changeArrowJoystick(value: Boolean) {arrowJoystickEnabled=value;preferences.edit {putBoolean("arrow_joystick_enabled",value)}}
+    // Earlier builds on this branch saved layouts by fold posture; their choices seed the width classes
+    // they correspond to (folded is medium, unfolded landscape is wide).
+    internal val tabLayouts=androidx.compose.runtime.mutableStateMapOf<TabWidthClass,TabBarLayout>().apply {
+        val earlier=mapOf(TabWidthClass.MEDIUM to "tab_layout_folded",TabWidthClass.WIDE to "tab_layout_unfolded_landscape")
+        TabWidthClass.entries.forEach {width->
+            val fallback=TabBarLayout.decode(earlier[width]?.let {preferences.getString(it,null)},
+                if(width==TabWidthClass.WIDE) TabBarLayout(style=TabRailStyle.TITLES) else TabBarLayout())
+            put(width,TabBarLayout.decode(preferences.getString(width.key,null),fallback))
+        }
+    }
+    internal fun tabLayout(width: TabWidthClass)=tabLayouts[width] ?: TabBarLayout()
+    internal fun changeTabLayout(width: TabWidthClass,layout: TabBarLayout) {
+        tabLayouts[width]=layout
+        preferences.edit {putString(width.key,layout.encode())}
+    }
     internal var toolbarWithKeyboardOnly by mutableStateOf(preferences.getBoolean("keyboard_toolbar_auto_hide",false))
         private set
     internal fun changeToolbarWithKeyboardOnly(value: Boolean) {toolbarWithKeyboardOnly=value;preferences.edit {putBoolean("keyboard_toolbar_auto_hide",value)}}

@@ -112,4 +112,25 @@ class ModelsTest {
         assertEquals(null,TailscaleHostname.normalize("my phone"))
         assertEquals(null,TailscaleHostname.normalize("phone.local"))
     }
+
+    @Test fun tabBarLayoutRoundTripsAndFallsBackPerScreen() {
+        val left=TabBarLayout(TabBarPosition.LEFT,TabRailStyle.TITLES)
+        assertEquals(left,TabBarLayout.decode(left.encode(),TabBarLayout()))
+        val unfoldedDefault=TabBarLayout(style=TabRailStyle.TITLES)
+        assertEquals(unfoldedDefault,TabBarLayout.decode(null,unfoldedDefault))
+        assertEquals(TabBarLayout(),TabBarLayout.decode("SIDEWAYS,ICONS",TabBarLayout()))
+        assertEquals(TabBarLayout(TabBarPosition.RIGHT,TabRailStyle.ICONS),TabBarLayout.decode("RIGHT,BOGUS",TabBarLayout()))
+        assertEquals(false,TabBarLayout().side);assertEquals(true,left.side)
+    }
+
+    @Test fun tabWidthClassesFollowTheAppWindow() {
+        // Galaxy Z Fold at 420 dpi, and a phone.
+        assertEquals(TabWidthClass.NARROW,TabWidthClass.of(350))   // upright inner screen, split half
+        assertEquals(TabWidthClass.NARROW,TabWidthClass.of(384))   // phone
+        assertEquals(TabWidthClass.MEDIUM,TabWidthClass.of(475))   // cover screen
+        assertEquals(TabWidthClass.MEDIUM,TabWidthClass.of(465))   // inner screen sideways, split half
+        assertEquals(TabWidthClass.MEDIUM,TabWidthClass.of(704))   // upright inner screen
+        assertEquals(TabWidthClass.WIDE,TabWidthClass.of(933))     // inner screen sideways
+        assertEquals(TabWidthClass.MEDIUM,TabWidthClass.of(440));assertEquals(TabWidthClass.WIDE,TabWidthClass.of(760))
+    }
 }

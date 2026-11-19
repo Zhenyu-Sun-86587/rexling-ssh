@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
     shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={},
-    arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
+    arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},tabLayouts: Map<TabWidthClass,TabBarLayout> = emptyMap(),tabWidth: Pair<TabWidthClass,Int> = TabWidthClass.NARROW to 0,onTabLayout: (TabWidthClass,TabBarLayout)->Unit={_,_->},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
     minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},onNetwork: ()->Unit={},
     keepScreenAwake: KeepScreenAwake=KeepScreenAwake.SYSTEM,onKeepScreenAwake: (KeepScreenAwake)->Unit={},onToolbar: ()->Unit={},onControlItems: ()->Unit={},onSshKeys: ()->Unit={},hazeState: dev.chrisbanes.haze.HazeState?=null) {
     // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
@@ -47,6 +47,14 @@ import androidx.compose.ui.unit.dp
                             }
                         }
                     }
+                }
+            }
+            SettingsSection("Tabs",compact=true) {
+                Text("By how wide this window is, so folding, rotating and split-screen each pick their own",
+                    Modifier.padding(horizontal=16.dp).padding(top=10.dp),style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                TabWidthClass.entries.forEachIndexed {i,each->
+                    if(i>0) SettingsDivider()
+                    TabLayoutChoice(each,tabLayouts[each] ?: TabBarLayout(),current=if(each==tabWidth.first) tabWidth.second else null) {onTabLayout(each,it)}
                 }
             }
             SettingsSection("Panes",compact=true) {
@@ -140,3 +148,25 @@ import androidx.compose.ui.unit.dp
         }
     }
 }
+
+/** Tab bar position, and the side rail's style, for one screen posture. */
+@Composable private fun TabLayoutChoice(width: TabWidthClass,layout: TabBarLayout,current: Int?,onChange: (TabBarLayout)->Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text(width.title,style=SettingsType.row)
+            if(current!=null) Text("this window · ${current}dp",style=SettingsType.detail,color=MaterialTheme.colorScheme.primary)
+        }
+        Text(width.detail,style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            TabBarPosition.entries.forEach {position->
+                FilterChip(selected=layout.position==position,onClick={onChange(layout.copy(position=position))},label={Text(position.label,style=SettingsType.row)})
+            }
+        }
+        if(layout.side) Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            TabRailStyle.entries.forEach {style->
+                FilterChip(selected=layout.style==style,onClick={onChange(layout.copy(style=style))},label={Text(style.label,style=SettingsType.row)})
+            }
+        }
+    }
+}
+
