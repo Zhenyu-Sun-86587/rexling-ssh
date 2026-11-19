@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -37,7 +38,8 @@ import dev.chrisbanes.haze.hazeSource
     liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
-    onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""},onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imageTarget: ()->String=mouseTarget,bottomControlsInset: androidx.compose.ui.unit.Dp=0.dp,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false) {
+    onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""},onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imageTarget: ()->String=mouseTarget,bottomControlsInset: androidx.compose.ui.unit.Dp=0.dp,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
     val switchLayout=remember(paneLayout,blocks) {paneLayout.filter {p->blocks.any {it.id==p.id}}.sortedBy {it.layer}}
     val hasMinimap=blocks.all {b->switchLayout.any {it.id==b.id}}
     val localHaze=remember {HazeState()}
@@ -127,7 +129,7 @@ import dev.chrisbanes.haze.hazeSource
                     .then(if(center || retiring) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
                     Box(Modifier.fillMaxSize()) {
                         if(frame!=null) AndroidView(
-                            factory={TerminalView(it)},modifier=Modifier.fillMaxSize().terminalImeViewport(imeInsets,navigationInsets,keyboardChrome) {keyboardFocus}.clipToBounds(),
+                            factory={TerminalView(it)},modifier=Modifier.fillMaxSize().terminalImeViewport(imeInsets,navigationInsets,keyboardChrome,extendsUnderNavigation) {keyboardFocus}.clipToBounds(),
                             update={view ->
                                 view.keepAwakeMode=if(center) keepAwake else KeepScreenAwake.SYSTEM
                                 imeHandoff.mount(block,view)
@@ -135,7 +137,8 @@ import dev.chrisbanes.haze.hazeSource
                                 view.onKeyboardFocus={keyboardFocus=it}
                                 keyboardFocus=view.keyboardFocus
                                 view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
-                                view.setTerminalPaddingDp(12,8,if(bottomControlsInset>0.dp || blocks.size>1) 28 else 6)
+                                val bottomPadding=if(bottomControlsInset>0.dp || blocks.size>1) 28 else 6
+                                view.setTerminalPaddingDp(12,8,bottomPadding+navigationClearance.value.roundToInt())
                                 view.palette=palette;view.textSp=fontSize
                                 if(retiring || block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
                                 view.interactive=center
@@ -168,7 +171,7 @@ import dev.chrisbanes.haze.hazeSource
                         }
                     }
                     if(center && (frame?.scroll?.below ?: 0)>0) {
-                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=(if(blocks.size>1) if(hasMinimap) 128.dp else 88.dp else 10.dp)+bottomControlsInset)
+                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=(if(blocks.size>1) if(hasMinimap) 128.dp else 88.dp else 10.dp)+bottomControlsInset+bottomOverlayInset)
                             .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
                             .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
                             fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
@@ -179,14 +182,14 @@ import dev.chrisbanes.haze.hazeSource
         }
         }
         if(blocks.size>1) {
-            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
+            Box(Modifier.align(Alignment.BottomCenter).padding(bottom=bottomOverlayInset).fillMaxWidth().height(28.dp)
                 .clickable(role=Role.Button,onClick=onPanes)
                 .semantics {contentDescription="Pane position indicator";stateDescription="Pane ${candidate+1} of ${blocks.size}"},contentAlignment=Alignment.Center) {
                 PanePositionIndicator(index,blocks.size,offset={-drag/stride})
             }
         }
         if(showSwitch) {
-            Column(Modifier.align(Alignment.BottomCenter).padding(bottom=34.dp)
+            Column(Modifier.align(Alignment.BottomCenter).padding(bottom=34.dp+bottomOverlayInset)
                 .widthIn(max=(maxWidth-32.dp).coerceIn(80.dp,240.dp))
                 .semantics {contentDescription="Pane switch indicator";stateDescription=blocks[candidate].id},
                 horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {

@@ -44,6 +44,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -218,8 +219,15 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val tabLayout=model.tabLayout(tabWidth.first)
     // From the setting, not the keyboard, so the layout keeps one mode while the keyboard animates.
     val extendUnderNav=panelShown && tabLayout.side && model.toolbarWithKeyboardOnly
-    val navBottom=WindowInsets.navigationBars.getBottom(keyboardDensity)
-    val paneClearance=with(keyboardDensity) {navBottom.toDp().let {if(it<40.dp) 14.dp else it+3.dp}}
+    // Keep text and controls clear of the navigation area when the workspace extends under it.
+    val navigationClearance=with(keyboardDensity) {
+        val inset=WindowInsets.navigationBars.getBottom(this).toDp()
+        when {
+            !extendUnderNav || inset==0.dp -> 0.dp
+            inset<40.dp -> 14.dp
+            else -> inset+3.dp
+        }
+    }
     // The auto-hidden toolbar's unclipped height (divider + key row until measured). Written during its
     // measurement and read by the terminal's, so it is a plain holder rather than snapshot state.
     val toolbarHeight=remember(keyboardDensity) {intArrayOf(with(keyboardDensity) {1.dp.roundToPx()+45.dp.roundToPx()})}
@@ -229,6 +237,14 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val carouselBlocks=window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
     val floatingActive=floating.any {it.id==chosen}
     val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
+    val flushSinglePane=tabLayout.side && tiles==null
+    val terminalBottomMargin=when {
+        flushSinglePane -> 0.dp
+        extendUnderNav -> navigationClearance
+        else -> 3.dp
+    }
+    val singlePaneNavigationClearance=if(flushSinglePane) navigationClearance else 0.dp
+    val bottomOverlayInset=if(keyboardShown) 0.dp else singlePaneNavigationClearance
     var hiddenFloating by rememberSaveable(displayedSession,window?.id) {mutableStateOf("")}
     val controlled=state.controlled && ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen)
     SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
@@ -346,11 +362,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
                             onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
-                            island=tiles!=null && !floatingActive,islandBottom=if(extendUnderNav) paneClearance else 3.dp+8.dp) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            island=tiles!=null && !floatingActive,islandBottom=terminalBottomMargin+(if(extendUnderNav) 0.dp else 8.dp)) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
-                        Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=if(extendUnderNav) paneClearance else 3.dp)) {
+                        Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=terminalBottomMargin)) {
                         if(!floatingActive || hiddenFloating!=chosen) {
                         val onView: (TerminalView)->Unit={view->
                             terminalView=view
@@ -378,8 +394,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},onView,
                             Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,
                             hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,tapOpensKeyboard=model.toolbarWithKeyboardOnly,
-                            keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0]+(if(extendUnderNav) navBottom else 0) else 0},
-                            squareCorners=tabLayout.side)
+                            keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
+                            squareCorners=tabLayout.side,extendsUnderNavigation=extendUnderNav,
+                            navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
                         }
                         if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                             Text("Floating panes minimized",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -391,10 +408,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         if((!floatingActive || hiddenFloating!=chosen) && model.neovimShortcutsEnabled && ready && chosen==liveBlock && chosen !in state.cachedPrograms && state.programs[chosen]?.kind==ProgramKind.NEOVIM && model.neovimShortcuts.isNotEmpty()) {
                             NeovimShortcutButton(model.neovimShortcuts,keyTarget,controlled,
                                 onChoose={item,target->client.neovimShortcut(item,target)},onCustomize={neovimSettings=true},layout=model.neovimShortcutLayout,effect=model.neovimShortcutEffect,hapticsEnabled=model.neovimShortcutHaptics,hazeState=terminalHaze,onExpandedChange={wheelBackdrop=it},
-                                modifier=Modifier.fillMaxSize(),position=model.neovimShortcutPosition,onPosition=model::moveNeovimShortcut,bottomInset=if(floating.isNotEmpty() || carouselBlocks.size>1) 64.dp else 10.dp)
+                                modifier=Modifier.fillMaxSize(),position=model.neovimShortcutPosition,onPosition=model::moveNeovimShortcut,bottomInset=bottomOverlayInset+(if(floating.isNotEmpty() || carouselBlocks.size>1) 64.dp else 10.dp))
                         }
                         if(floating.isNotEmpty()) FloatingPaneDock(floating,chosen.takeIf {floatingActive && hiddenFloating!=chosen},state.programs,state.titles,ready,
-                            ::openPane,::minimizeFloating,Modifier.align(Alignment.BottomEnd).padding(end=6.dp),directories=state.directories,hazeState=terminalHaze,onExpandedChange={floatingBackdrop=it})
+                            ::openPane,::minimizeFloating,Modifier.align(Alignment.BottomEnd).padding(end=6.dp,bottom=bottomOverlayInset),directories=state.directories,hazeState=terminalHaze,onExpandedChange={floatingBackdrop=it})
                         }
                         if(tabLayout.position==TabBarPosition.RIGHT) tabRail()
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
@@ -557,11 +574,13 @@ internal fun sessionsPageHeight(targets: List<SessionTarget>)=
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
-    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false) {
+    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
-        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners)
+        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
+        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,hazeState: HazeState?=null,onClose: ()->Unit) {
