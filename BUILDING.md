@@ -11,14 +11,14 @@ arm64-v8a Android 9/API 28 or newer; other Android ABIs are not built yet.
 - Go with automatic toolchain downloads enabled (the embedded network module pins Go 1.27.1).
 - Python 3.9+ and curl for the native build helper.
 - Android Studio, or an Android SDK plus JDK 25.
-- SDK platform `platforms;android-37`, Build Tools `build-tools;36.0.0`, NDK
+- SDK platform `platforms;android-37.0`, Build Tools `build-tools;36.0.0`, NDK
   `ndk;30.0.16248370`, and `platform-tools` for ADB.
 
 Install SDK components through Android Studio's SDK Manager or its command-line
 tools, accepting licenses interactively:
 
 ```sh
-sdkmanager 'platforms;android-37' 'build-tools;36.0.0' \
+sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0' \
   'ndk;30.0.16248370' 'platform-tools'
 sdkmanager --licenses
 rustup target add aarch64-linux-android
@@ -100,7 +100,18 @@ workspace commands. Protocol-probe usage and evidence are in
 
 ## Checks without a phone
 
+The [Build and test workflow](.github/workflows/ci.yml) runs on pull requests,
+pushes to `main`, and manual dispatch. It runs Go tests, Rust tests and the host
+JNI smoke test, Android unit tests and debug lint, then verifies the debug APK. It
+compiles the Android instrumentation tests but does not run them on a device.
+Download `rexling-debug-arm64` from the successful run's **Artifacts** section.
+The debug APK cannot update a release-signed installation in place. CI does not
+use the release signing key or publish a GitHub Release.
+
 ```sh
+# Go network and SSH tests:
+(cd rexling-network && go test -mod=readonly ./...)
+
 # Host Ghostty, all Rust workspace tests/features, and actual JNI/JVM smoke test:
 python3 rexling-android/scripts/test_jni.py
 
