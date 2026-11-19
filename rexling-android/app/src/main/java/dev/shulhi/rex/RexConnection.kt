@@ -287,14 +287,13 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     /** A pane shown beside the focused one in the multi-pane layout, and the grid that fits it. */
     internal data class MirrorPane(val block: String,val columns: Int,val rows: Int)
-    private var mirrorRequest: List<MirrorPane> = emptyList()
-    /**
-     * Mirrors [panes] live beside the selected pane, each sized to its grid; empty stops mirroring.
-     * The engine gives the panes back when the app is hidden, so they are asked for again when visible.
-     */
-    internal fun mirror(panes: List<MirrorPane>) {
-        if(panes==mirrorRequest) return
-        mirrorRequest=panes;sendMirror()
+    private data class MirrorRequest(val session: String,val window: String,val panes: List<MirrorPane>)
+    private var mirrorRequest=MirrorRequest("","",emptyList())
+    internal fun mirror(session: String,window: String,panes: List<MirrorPane>) {
+        val next=MirrorRequest(session,window,panes)
+        if(next==mirrorRequest) return
+        mirrorRequest=next
+        sendMirror()
     }
     /** Zooms a pane to fill its window, or restores the layout, as the desktop does; Rex tells every client. */
     internal fun zoom(block: String,zoom: Boolean) {
@@ -310,8 +309,11 @@ internal class RexConnection(application: Application, private val scope: Corout
             "before" to split.before,"after" to split.after,"ratio" to ratio.coerceIn(.1f,.9f).toDouble())
     }
     private fun sendMirror() {
-        if(mirrorRequest.isEmpty() && !visible) return
-        command("mirror","session" to state.value.selectedSession,"panes" to org.json.JSONArray(mirrorRequest.map {
+        if(!visible) return
+        val request=mirrorRequest
+        val session=state.value.selectedSession
+        if(request.session!=session) return
+        command("mirror","session" to session,"window" to request.window,"panes" to org.json.JSONArray(request.panes.map {
             JSONObject().put("block",it.block).put("columns",it.columns).put("rows",it.rows)}))
     }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
@@ -348,7 +350,8 @@ internal class RexConnection(application: Application, private val scope: Corout
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         command("session", "id" to id, "navigationId" to navigationRequest.id)
     }
-    fun selectBlock(id: String) {
+    fun selectBlock(id: String) = selectBlock(id,null)
+    internal fun selectBlock(id: String,grid: Pair<Int,Int>?) {
         val current = state.value
         if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
@@ -358,6 +361,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         restoreWorkspace=false
         workspace.remember(current.selectedSession,current.windows,id)
+        if(grid!=null) lastSize=grid
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun openActivity(session: String,block: String) {

@@ -15,6 +15,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import dev.chrisbanes.haze.HazeState
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -36,6 +39,60 @@ class TerminalImeViewportTest {
                 (0 until rows).map {y->TerminalCell(0,y,"line $y",-1,0,0,1)})
         }
     }
+    @Test fun stackedPaneViewsKeepTheirHeightAndIdentityAcrossImeAndFocusChanges() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val scope=kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+        lateinit var client: RexConnection
+        ui.runOnUiThread {client=RexConnection(context.applicationContext as android.app.Application,scope,"")}
+        val views=mutableMapOf<String,TerminalView>()
+        var covered by mutableIntStateOf(0)
+        var focused by mutableStateOf("a")
+        var expectedBottom=0
+        try {
+            ui.setContent {MaterialTheme {
+                val density=LocalDensity.current
+                Box(Modifier.width(400.dp).height(520.dp-with(density) {covered.toDp()}).onGloballyPositioned {
+                    val paneMargins=with(density) {2*4.dp.roundToPx()+1.5.dp.roundToPx()}
+                    expectedBottom=it.positionInWindow().y.toInt()+it.size.height-paneMargins
+                }) {
+                    MultiPaneLayout(client,"session","tab",
+                        listOf(PanePlacement("a",0f,0f,1f,.37f),PanePlacement("b",0f,.37f,1f,.63f)),
+                        focused,focused,true,emptyMap(),emptySet(),11f,
+                        onFocus={id,_->focused=id},onView={views[focused]=it},onImage={_,_->false},
+                        onPaste={false},imeEnterSubmits=false,tapOpensKeyboard=false,
+                        keyboardChrome={0},extendsUnderNavigation=false,hazeState=remember {HazeState()},captureBackdrop=false,
+                        ime=WindowInsets(bottom=covered),navigation=WindowInsets(0,0,0,0))
+                }
+            }}
+            ui.waitForIdle()
+            ui.onNodeWithContentDescription("Focus pane").performClick()
+            ui.waitForIdle()
+            val original=ui.runOnIdle {
+                val bottom=views.getValue("b")
+                val position=IntArray(2)
+                bottom.getLocationInWindow(position)
+                assertTrue("The bottom pane keeps its workspace margin",
+                    kotlin.math.abs(expectedBottom-position[1]-bottom.height)<=1)
+                views.mapValues {(_,view)->view to view.height}
+            }
+            assertEquals(setOf("a","b"),original.keys)
+            for(inset in listOf(0,19,53,99,151,223,267,101,0)) {
+                ui.runOnIdle {covered=inset}
+                ui.waitForIdle()
+                ui.onNodeWithContentDescription("Focus pane").performClick()
+                ui.waitForIdle()
+                ui.runOnIdle {
+                    for((id,pair) in original) {
+                        assertSame("Focus must keep pane $id mounted",pair.first,views[id])
+                        assertEquals("Keyboard must preserve the grid height of pane $id",pair.second,views[id]!!.height)
+                    }
+                }
+            }
+        } finally {
+            ui.runOnIdle {client.close()}
+        }
+    }
+
     @Test fun paneControlHandoffDoesNotChangeTheKeyboardHeight() {
         lateinit var outgoing: TerminalView;lateinit var incoming: TerminalView
         ui.setContent {Row(Modifier.fillMaxSize()) {

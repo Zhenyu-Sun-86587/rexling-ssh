@@ -218,12 +218,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val tabLayout=model.tabLayout(tabWidth.first)
     // From the setting, not the keyboard, so the layout keeps one mode while the keyboard animates.
     val extendUnderNav=panelShown && tabLayout.side && model.toolbarWithKeyboardOnly
-    // Beside an edge-to-edge rail, the terminal stops just clear of the gesture handle rather than
-    // above the whole navigation inset. A gesture bar is well under 40dp (Samsung reports it as
-    // tappable, so that inset cannot tell); three-button navigation (~48dp) keeps its full height.
     val navBottom=WindowInsets.navigationBars.getBottom(keyboardDensity)
     val paneClearance=with(keyboardDensity) {navBottom.toDp().let {if(it<40.dp) 14.dp else it+3.dp}}
-    val bottomPanel=panelShown && !extendUnderNav
     // The auto-hidden toolbar's unclipped height (divider + key row until measured). Written during its
     // measurement and read by the terminal's, so it is a plain holder rather than snapshot state.
     val toolbarHeight=remember(keyboardDensity) {intArrayOf(with(keyboardDensity) {1.dp.roundToPx()+45.dp.roundToPx()})}
@@ -232,6 +228,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val floating=if(model.minimizeFloatingPanes) window?.floatingPanes().orEmpty() else emptyList()
     val carouselBlocks=window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
     val floatingActive=floating.any {it.id==chosen}
+    val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
     var hiddenFloating by rememberSaveable(displayedSession,window?.id) {mutableStateOf("")}
     val controlled=state.controlled && ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen)
     SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
@@ -258,7 +255,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
         client.openPreferredTerminal();client.rememberCurrentTerminal()
     }
-    LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock,carouselBlocks) {
+    LaunchedEffect(state.connected,state.selectedSession,window?.id,state.selectedBlock,carouselBlocks,tiles!=null) {
+        if(tiles!=null) return@LaunchedEffect
         val blocks=carouselBlocks
         val index=blocks.indexOfFirst {it.id==state.selectedBlock}
         if(index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
@@ -341,9 +339,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             keyboardLabel=if(!controlled) "Take control and show keyboard" else "Show keyboard",
                             onKeyboard=if(toolbarHidden) ({if(!controlled) client.takeControl() else terminalView?.keyboard()}) else null,vertical=vertical)
                     }
-                    // Multi-pane only when chosen, unfolded full screen, and the tab has 2-4 tiled panes;
-                    // otherwise the single-pane carousel, unchanged.
-                    val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
                     val tabRail: @Composable ()->Unit={
                         TerminalTabRail(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,client::tabPrograms,client::tabPaneIndex,
                             tabLayout.position,tabLayout.style,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},
@@ -351,16 +346,15 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
                             onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
-                            // Beside the multi-pane layout: a floating card ending level with the panes.
                             island=tiles!=null && !floatingActive,islandBottom=if(extendUnderNav) paneClearance else 3.dp+8.dp) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
-                        // Only the rail reaches under the gesture handle; the terminal stops just above it.
                         Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=if(extendUnderNav) paneClearance else 3.dp)) {
                         if(!floatingActive || hiddenFloating!=chosen) {
-                        val terminal: @Composable (List<BlockItem>)->Unit={shown->LiveTerminal(client,shown,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
-                            client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},{view->terminalView=view;view.onOpenLink={url->
+                        val onView: (TerminalView)->Unit={view->
+                            terminalView=view
+                            view.onOpenLink={url->
                                 val loopback=LoopbackLink.parse(url)
                                 if(loopback==null) PortForwards.openBrowser(context,url)
                                 else if(ready && chosen==liveBlock && displayedSession.isNotBlank()) {
@@ -368,22 +362,24 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                     withUploadNetwork({if(model.servers.any {it.id==sourceServer.id && it.endpoint==sourceServer.endpoint}) PortForwards.openLink(context,sourceServer,sourceSession,loopback)})
                                 }
                                 else PortForwards.notice="Wait for this pane to connect before forwarding its link."
-                            }},
-                            Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,hazeState=terminalHaze,captureBackdrop=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,tapOpensKeyboard=model.toolbarWithKeyboardOnly,
-                                // The IME viewport assumes the navigation inset is consumed below the terminal. Beside
-                                // an edge-to-edge rail nothing below consumes it, so it counts as covered too, keeping
-                                // the single-pane grid fixed while the keyboard opens.
-                                keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0]+(if(extendUnderNav) navBottom else 0) else 0},
-                                squareCorners=tabLayout.side || tiles!=null,
-                                // In the multi-pane layout the focused pane resizes with its card on keyboard
-                                // open, like the panes beside it; the single-pane IME viewport assumes its card
-                                // loses the whole keyboard height, which a share of a split area does not.
-                                imeViewport=tiles==null)}
-                        val focusedBlock=blocks.firstOrNull {it.id==chosen}
-                        if(tiles!=null && focusedBlock!=null) MultiPaneLayout(tiles,chosen,client.paneFrames,fontSize.toFloat(),::openPane,client::mirror,
+                            }
+                        }
+                        val captureTerminal=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null
+                        if(tiles!=null && window!=null) MultiPaneLayout(
+                            client,displayedSession,window.id,tiles,chosen,liveBlock,controlled,state.programs,state.mirrorWaiting,
+                            fontSize.toFloat(),onFocus={id,grid->hiddenFloating="";client.selectBlock(id,grid)},
+                            onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
+                            tapOpensKeyboard=model.toolbarWithKeyboardOnly,keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
+                            extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
                             bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,
-                            splits=window?.splits.orEmpty(),onResize=client::resizeSplit,zoomed=window?.zoomed.orEmpty(),onZoom=client::zoom) {terminal(listOf(focusedBlock))}
-                        else terminal(carouselBlocks)
+                            splits=window.splits,zoomed=window.zoomed,
+                        )
+                        else LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
+                            client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},onView,
+                            Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,
+                            hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,tapOpensKeyboard=model.toolbarWithKeyboardOnly,
+                            keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0]+(if(extendUnderNav) navBottom else 0) else 0},
+                            squareCorners=tabLayout.side)
                         }
                         if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                             Text("Floating panes minimized",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -561,11 +557,11 @@ internal fun sessionsPageHeight(targets: List<SessionTarget>)=
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
-    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,imeViewport: Boolean=true) {
+    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
-        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners,imeViewport=imeViewport)
+        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,hazeState: HazeState?=null,onClose: ()->Unit) {

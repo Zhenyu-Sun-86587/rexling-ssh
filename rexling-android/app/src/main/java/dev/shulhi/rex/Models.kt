@@ -51,6 +51,7 @@ data class AppState(
     val activityLoading: Boolean=false,val activityError: String="",val activityPartial: Boolean=false,
     val titles: Map<String, String> = emptyMap(),
     val directories: Map<String, String> = emptyMap(),
+    val mirrorWaiting: Set<String> = emptySet(),
     val previewFrames: Map<String, TerminalScreen> = emptyMap(), val sessionDetails: Map<String, SessionDetail> = emptyMap(),
     val revision: Long = 0, val phase: String = "disconnected", val endpoint: String = "",
     internal val clipboardWrite: TerminalClipboardWrite?=null,
@@ -78,6 +79,7 @@ data class AppState(
                 programs = root.optJSONObject("programs")?.let { programs -> programs.keys().asSequence().associateWith { id ->
                     ProgramIdentity.resolve(programs.optJSONArray(id).objects { it as String })
                 } } ?: emptyMap(),
+                mirrorWaiting=root.optJSONArray("mirrorWaiting").objects {it as String}.toSet(),
                 previewFrames = root.optJSONObject("previews")?.let { frames -> frames.keys().asSequence().associateWith { TerminalScreen.parse(frames.getJSONObject(it)) } } ?: emptyMap(),
                 sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->
                     val d=details.getJSONObject(key);SessionDetail(d.optString("attachment"),d.optInt("tabs"),d.optInt("panes")) } } ?: emptyMap(),

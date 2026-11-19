@@ -108,7 +108,7 @@ class TerminalView(context: Context) : View(context) {
     internal var allowHiddenCursorInput: Boolean=false
         set(value) {if(field!=value) {field=value;reportCursorViewport()}}
     private fun inputCursorRow(frame: TerminalScreen)=frame.cursorY ?: frame.cursorAnchorY.takeIf {allowHiddenCursorInput && frame.cursorAnchorX!=null}
-    internal var onKeyboardFocus: (TerminalKeyboardFocus?)->Unit={}
+    internal var onKeyboardFocus: ((TerminalKeyboardFocus?)->Unit)?=null
     internal val keyboardFocus: TerminalKeyboardFocus? get() {
         val frame=screen ?: return null
         if(frame.scroll.below>0) return null
@@ -118,7 +118,7 @@ class TerminalView(context: Context) : View(context) {
         return TerminalKeyboardFocus(insetTop+row*cellHeight,bottom,
             max(bottom,insetTop+(lastText+1)*cellHeight+insetBottom))
     }
-    private fun reportCursorViewport() {onKeyboardFocus(keyboardFocus)}
+    private fun reportCursorViewport() {onKeyboardFocus?.invoke(keyboardFocus)}
     private var frameTraceToken: String?=null
     internal fun presentFrame(value: TerminalScreen?,token: String?=null) {setScreen(value,true);frameTraceToken=token}
     private fun setScreen(value: TerminalScreen?,onDisplayFrame: Boolean) {

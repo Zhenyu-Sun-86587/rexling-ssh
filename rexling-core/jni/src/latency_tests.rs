@@ -17,6 +17,8 @@ struct Peer {
     endpoint: Endpoint,
     gate: Arc<Semaphore>,
     snapshot_gate: Arc<Semaphore>,
+    mirror_gate: Arc<Semaphore>,
+    mirror_disconnect: Arc<Semaphore>,
     writes: Arc<Mutex<Vec<String>>>,
     acknowledged: Arc<AtomicUsize>,
     methods: Arc<Mutex<Vec<String>>>,
@@ -36,6 +38,9 @@ impl Peer {
         Self::with_snapshot(delay,reject,drop_first,floating,false).await
     }
     async fn with_snapshot(delay:Duration,reject:bool,drop_first:bool,floating:bool,slow_snapshot:bool)->Self {
+        Self::with_options(delay, reject, drop_first, floating, slow_snapshot, false).await
+    }
+    async fn with_options(delay: Duration,reject: bool,drop_first: bool,floating: bool,slow_snapshot: bool,tiled: bool) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = Endpoint::new(
             &format!("http://{}", listener.local_addr().unwrap()),
@@ -45,6 +50,10 @@ impl Peer {
         let gate = Arc::new(Semaphore::new(0));
         let snapshot_gate=Arc::new(Semaphore::new(if slow_snapshot {0} else {128}));
         let history_gate=snapshot_gate.clone();
+        let mirror_gate=Arc::new(Semaphore::new(0));
+        let mirror_disconnect=Arc::new(Semaphore::new(0));
+        let ticket_gate=mirror_gate.clone();
+        let close_mirror=mirror_disconnect.clone();
         let writes = Arc::new(Mutex::new(Vec::new()));
         let acknowledged = Arc::new(AtomicUsize::new(0));
         let methods = Arc::new(Mutex::new(Vec::new()));
@@ -73,12 +82,15 @@ impl Peer {
                     output_rx.clone(),
                 );
                 let history_gate=history_gate.clone();
+                let ticket_gate=ticket_gate.clone();
+                let close_mirror=close_mirror.clone();
                 peers.spawn(async move {
                     let mut ws=accept_hdr_async(socket,|request:&Request,mut response:Response|{
                         response.headers_mut().insert("Sec-WebSocket-Protocol",request.headers()["Sec-WebSocket-Protocol"].clone());Ok(response)
                     }).await.unwrap();
                     let Some(Ok(hello))=ws.next().await else{return;};
                     if hello.is_binary() {
+                        let mirror=tiled && hello.into_data().get(1)==Some(&1);
                         let mut welcome=vec![0;32];welcome[0]=0x81;welcome[1..17].fill(1);
                         welcome[20..24].copy_from_slice(&60000u32.to_le_bytes());welcome[24..32].copy_from_slice(&NONCE.to_le_bytes());
                         ws.send(Message::Binary(welcome.into())).await.unwrap();
@@ -93,6 +105,13 @@ impl Peer {
                             let permit=history_gate.acquire().await.unwrap();permit.forget();
                             ws.send(Message::Binary(SNAPSHOT[end..].to_vec().into())).await.unwrap();
                         } else {ws.send(Message::Binary(SNAPSHOT.to_vec().into())).await.unwrap();}
+                        if mirror {
+                            tokio::select! {
+                                permit=close_mirror.acquire() => {permit.unwrap().forget();let _=ws.close(None).await;},
+                                _=ws.next()=>{},
+                            }
+                            return;
+                        }
                         let mut rx=rx.lock().await;
                         loop {tokio::select! {
                             data=rx.recv()=>{let Some(data)=data else{break;};if ws.send(Message::Binary(data.into())).await.is_err(){break;}},
@@ -108,7 +127,9 @@ impl Peer {
                                 if !msg.is_text(){continue;}
                                 let request:Value=serde_json::from_str(msg.to_text().unwrap()).unwrap();
                                 let method=request["method"].as_str().unwrap().to_owned();methods.lock().unwrap().push(method.clone());
-                                let input=method=="com.superlogical.terminal.write" || method=="block.event";
+                                let input=method=="com.superlogical.terminal.write" ||
+                                    (method=="block.event" && request["payload"]["event"]["type"]!="focus");
+                                let mirror_ticket=tiled && method=="data.connect" && request["payload"]["block_id"]=="block:mirror";
                                 let mut response=json!({"type":"response","id":request["id"],"payload":{}});
                                 if input {
                                     let text=if method=="block.event" {request["payload"]["event"]["payload"]["text"].as_str().unwrap()} else {request["payload"]["args"]["data"].as_str().unwrap()};
@@ -116,7 +137,7 @@ impl Peer {
                                     let _=output.send(b"\r\nVT_BEFORE_ACK\r\n".to_vec()).await;
                                     if drop_first && first {break;}
                                     if reject {response["error"]=json!({"code":"not_owner","message":"Control changed","status":403});}
-                                } else if method=="data.connect" {response["payload"]=json!({"ticket":"AAAAAAAAAAAAAAAAAAAAAA"});}
+                                } else if method=="data.connect" {response["payload"]=json!({"ticket":if mirror_ticket {"AQAAAAAAAAAAAAAAAAAAAA"} else {"AAAAAAAAAAAAAAAAAAAAAA"}});}
                                 else if method=="session.list" || method=="session.attach_all" {response["payload"]=json!({"sessions":[]});}
                                 else if method=="session.view" || method=="session.attach" {
                                     let mut view=json!({"windows":[{"window_id":"window:test","layers":[{"blocks":[{"block_id":"block:test","creator_name":"com.superlogical.terminal","owner":if reject {"client:other"} else {"client:test"}}]}]}]});
@@ -125,9 +146,19 @@ impl Peer {
                                         view["windows"][0]["layers"][0]["layout"]=json!({"block_id":"block:test","rect":[0,0,1,1]});
                                         view["windows"][0]["layers"].as_array_mut().unwrap().push(json!({"kind":"tiled","blocks":[{"block_id":"block:tiled","creator_name":"com.superlogical.terminal"}],"layout":{"block_id":"block:tiled","rect":[0,0,1,1]}}));
                                     }
+                                    if tiled {
+                                        let layer=&mut view["windows"][0]["layers"][0];
+                                        layer["kind"]=json!("tiled");
+                                        layer["blocks"].as_array_mut().unwrap().push(json!({"block_id":"block:mirror","creator_name":"com.superlogical.terminal","owner":"client:test"}));
+                                        layer["layout"]=json!({"rect":[0,0,1,1],"split":{"split_id":"split:test","direction":"horizontal","ratio":0.5,
+                                            "before":{"rect":[0,0,0.5,1],"block_id":"block:test"},"after":{"rect":[0.5,0,0.5,1],"block_id":"block:mirror"}}});
+                                    }
                                     response["payload"]=if method=="session.attach" {json!({"view":view})} else {view};
                                 }
-                                let gate=gate.clone();replies.push(Box::pin(async move {
+                                let gate=gate.clone();
+                                let ticket_gate=ticket_gate.clone();
+                                replies.push(Box::pin(async move {
+                                    if mirror_ticket {ticket_gate.acquire().await.unwrap().forget();}
                                     if input {let permit=gate.acquire().await.unwrap();permit.forget();tokio::time::sleep(delay).await;}
                                     (response,input)
                                 }));
@@ -145,6 +176,8 @@ impl Peer {
             endpoint,
             gate,
             snapshot_gate,
+            mirror_gate,
+            mirror_disconnect,
             writes,
             acknowledged,
             methods,
@@ -449,6 +482,48 @@ async fn renders_the_screen_while_initial_history_is_still_blocked_on_the_networ
         peer.snapshot_gate.add_permits(1);
         peer.output.send(b"\r\nLIVE_AFTER_HISTORY\r\n".to_vec()).await.unwrap();
         until(||shared.lock().unwrap().frame.as_ref().is_some_and(|f|f.text().contains("LIVE_AFTER_HISTORY"))).await;
+        shutdown(&tx).await;
+    });
+}
+
+#[tokio::test]
+async fn slow_mirror_ticket_does_not_block_input_and_two_pane_focus_reuses_both_streams() {
+    let peer = Peer::with_options(Duration::ZERO, false, false, false, false, true).await;
+    let (mut actor, shared) = peer.actor(1, false).await;
+    actor.refresh_view().await.unwrap();
+    actor.dirty = true;
+    let (tx, rx) = mpsc::channel(128);
+    let ticket_count = || peer.methods.lock().unwrap().iter().filter(|m| *m == "data.connect").count();
+    let mirror = |block| json!({"type":"mirror","session":"session:test","window":"window:test",
+        "panes":[{"block":block,"columns":40,"rows":20}]});
+    tokio::join!(actor.run(rx), async {
+        tx.send(mirror("block:mirror")).await.unwrap();
+        until(|| ticket_count() == 2).await;
+        input(&tx, "while-the-ticket-is-held").await;
+        tokio::time::timeout(Duration::from_secs(1), until(|| {
+            shared.lock().unwrap().frame.as_ref().is_some_and(|frame| frame.text().contains("VT_BEFORE_ACK"))
+        })).await.expect("focused input must echo before the held mirror ticket times out");
+        peer.gate.add_permits(1);
+        peer.mirror_gate.add_permits(1);
+        until(|| shared.lock().unwrap().pending_previews.contains_key("block:mirror")).await;
+
+        // A failed mirror retries independently and advertises stale content until it has a frame.
+        peer.mirror_disconnect.add_permits(1);
+        until(|| shared.lock().unwrap().json.contains(r#""mirrorWaiting":["block:mirror"]"#)).await;
+        until(|| ticket_count() == 3).await;
+        peer.mirror_gate.add_permits(1);
+        until(|| shared.lock().unwrap().json.contains(r#""mirrorWaiting":[]"#)).await;
+
+        for (next, previous) in [("block:mirror", "block:test"), ("block:test", "block:mirror")] {
+            tx.send(json!({"type":"block","id":next})).await.unwrap();
+            until(|| {
+                let state = shared.lock().unwrap();
+                state.key.ends_with(next) && state.frame.is_some()
+            }).await;
+            tx.send(mirror(previous)).await.unwrap();
+            until(|| shared.lock().unwrap().pending_previews.contains_key(previous)).await;
+            assert_eq!(ticket_count(), 3, "focus handoff must preserve both data streams");
+        }
         shutdown(&tx).await;
     });
 }

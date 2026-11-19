@@ -244,6 +244,7 @@ struct Actor {
     retained_floating: Option<RetainedFloating>,
     /// The multi-pane layout's other panes; empty, and inert, in the single-pane layout.
     mirror: crate::mirror::Mirror,
+    mirror_waiting: Vec<String>,
     replica: Option<Replica>,
     control_token: Option<String>,
     data_resume: Option<Resume>,
@@ -313,6 +314,7 @@ impl Actor {
             data: None,
             retained_floating: None,
             mirror: Default::default(),
+            mirror_waiting: Vec::new(),
             replica: None,
             control_token: None,
             data_resume: None,
@@ -355,6 +357,7 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
+        self.mirror_waiting = self.mirror.waiting().into_iter().map(str::to_owned).collect();
         if self.activity_dirty {
             let mut items=crate::progress::activity(&self.activity,&self.activity_panes,&self.progress_reports);
             for item in items.as_array_mut().into_iter().flatten().filter(|v|v["progressOnly"]==true && v["session"]==self.selected_session) {
@@ -371,7 +374,7 @@ impl Actor {
             shared.key=format!("{}:{}",self.selected_session,self.selected_block);
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "terminalProgress":crate::progress::selected(&self.progress_reports,&self.selected_session),"identity":self.identity,"error":self.error,"notice":self.notice,"clipboard":self.clipboard,"sessions":self.sessions,
-                "windows":self.windows,"selectedSession":self.selected_session,
+                "mirrorWaiting":self.mirror_waiting,"windows":self.windows,"selectedSession":self.selected_session,
                 "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
@@ -385,6 +388,11 @@ impl Actor {
             shared.revision+=1;
             shared.pending_previews.extend(std::mem::take(&mut self.preview_updates));
             self.updates.publish(shared.revision);
+        }
+    }
+    fn publish_mirror_status(&mut self) {
+        if self.mirror.waiting() != self.mirror_waiting {
+            self.publish();
         }
     }
     fn publish_frame(&mut self) {
@@ -416,7 +424,11 @@ impl Actor {
                 continue;
             }
             let active = !self.paused;
-            let mirror_due=self.mirror.due().filter(|_|self.visible);
+            if self.visible && active && let Some(control) = self.control.as_mut() {
+                self.mirror.start(control).await;
+            }
+            let mirror_due = self.mirror.due().filter(|_| self.visible);
+            let mirror_retry = self.mirror.retry_due().filter(|_| self.visible && active && self.control.is_some());
             tokio::select! {
                 value=rx.recv()=>{
                     let Some(value)=value else{break;};
@@ -427,8 +439,9 @@ impl Actor {
                         else {
                             self.commands.clear();
                             // Backgrounded: give the mirrored panes back too. Android asks again when visible.
-                            if let (Some(endpoint),Some(control))=(self.endpoint.clone(),self.control.as_mut()) {
-                                let _=self.mirror.sync(&endpoint,control,"",&self.selected_block,Vec::new()).await;
+                            self.mirror.request("", Vec::new());
+                            if let Some(control) = self.control.as_mut() {
+                                self.mirror.start(control).await;
                             }
                             if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();
                         }
@@ -483,7 +496,26 @@ impl Actor {
                         Err(e)=>self.recover(e),
                     }
                 },
-                (index,chunk)=self.mirror.read()=>{self.mirror.feed(index,chunk);},
+                event = self.mirror.next(), if self.visible && active && self.control.is_some() => {
+                    if let Some(endpoint) = self.endpoint.as_ref() {
+                        self.mirror.handle(event, endpoint);
+                        self.publish_mirror_status();
+                    }
+                },
+                _ = async { if let Some(at) = mirror_retry { tokio::time::sleep_until(at).await; } else { pending::<()>().await; }} => {},
+                _ = async { if let Some(at) = mirror_due { tokio::time::sleep_until(at).await; } else { pending::<()>().await; }} => {
+                    let frames = self.mirror.frames();
+                    if !frames.is_empty() {
+                        self.preview_updates.extend(frames);
+                        if self.mirror.waiting() == self.mirror_waiting {
+                            self.publish_mirror_frames();
+                        } else {
+                            self.publish();
+                        }
+                    } else {
+                        self.publish_mirror_status();
+                    }
+                },
                 chunk=async {match &mut self.retained_floating {Some(p)=>p.data.read().await,None=>pending().await}}=>{
                     let keep=if let (Ok(bytes),Some(pane))=(chunk,self.retained_floating.as_mut()) {
                         let ok=pane.replica.feed(&bytes).is_ok();
@@ -534,13 +566,8 @@ impl Actor {
                     if let Ok(details)=result {self.apply_program_details(details);self.publish();}
                 },
                 _=async {if active {let deadline=if self.dirty && self.visible {render_at}else{maintenance_at};
-                    let deadline=mirror_due.map_or(deadline,|at|at.min(deadline));
                     tokio::time::sleep_until(animation_at.filter(|_|self.visible).map_or(deadline,|image|image.min(deadline))).await;}else{pending::<()>().await;}}=>{
                     let now=tokio::time::Instant::now();
-                    if self.visible {
-                        let frames=self.mirror.frames();
-                        if !frames.is_empty() {self.preview_updates.extend(frames);self.publish_mirror_frames();}
-                    }
                     render_at=now+Duration::from_millis(16);
                     maintenance_at=now+Duration::from_secs(1);
                     if self.network_online && self.connect_task.is_none() && self.retry.is_some_and(|at|at<=now) && !self.paused {
@@ -704,11 +731,7 @@ impl Actor {
                 }
                 .into();
             }
-            // Streams died with the connection; reopen the panes Android was mirroring.
-            let (mirrored,wanted)=self.mirror.wanted();
-            if mirrored==session && !wanted.is_empty() {
-                let _=self.mirror.sync(&endpoint,self.control.as_mut().unwrap(),&session,&self.selected_block,wanted).await;
-            }
+
         }
         self.publish();
         Ok(())
@@ -776,6 +799,7 @@ impl Actor {
         self.windows = next;
         let live: BTreeSet<_>=self.windows.as_array().into_iter().flatten().flat_map(|w|w["blocks"].as_array().into_iter().flatten()).filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
         if self.retained_floating.as_ref().is_some_and(|p|!live.contains(&p.block)) {self.retained_floating=None;}
+        self.mirror.retain(|block| live.contains(block));
         let before=self.progress_reports.len();
         self.progress_reports.retain(|_,r|r["session"]!=self.selected_session || r["block"].as_str().is_some_and(|id|live.contains(id)));
         if self.progress_reports.len()!=before {self.activity_dirty=true;}
@@ -848,6 +872,7 @@ impl Actor {
         if event["type"] == "session_destroyed"
             && event["payload"]["session_id"].as_str() == Some(self.selected_session.as_str())
         {
+            self.mirror.request("", Vec::new());
             self.selected_session.clear();
             self.selected_block.clear();
             self.data = None;
@@ -1187,6 +1212,10 @@ impl Actor {
                     .as_str()
                     .context("No shell block")?
                     .to_owned();
+                self.mirror.request("", Vec::new());
+                if let Some(control) = self.control.as_mut() {
+                    self.mirror.start(control).await;
+                }
                 self.release_selected().await?;
                 if let Some(mut data) = self.data.take() {
                     let _ = data.close().await;
@@ -1272,6 +1301,10 @@ impl Actor {
                     .as_str()
                     .context("session ID required")?
                     .to_owned();
+                self.mirror.request("", Vec::new());
+                if let Some(control) = self.control.as_mut() {
+                    self.mirror.start(control).await;
+                }
                 self.release_selected().await?;
                 if let Some(mut data) = self.data.take() {
                     let _ = data.close().await;
@@ -1426,11 +1459,22 @@ impl Actor {
             }
             "mirror" => {
                 let (session,wanted)=crate::mirror::parse(&value);
-                // Only the selected session's panes; anything else clears the mirror.
-                let session=if session==self.selected_session {session} else {String::new()};
-                let endpoint=self.endpoint.clone().context("no server")?;
-                let control=self.control.as_mut().context("not connected")?;
-                self.mirror.sync(&endpoint,control,&session,&self.selected_block,wanted).await?;
+                if !self.visible || session != self.selected_session {
+                    return Ok(());
+                }
+                let window = self.windows.as_array().into_iter().flatten()
+                    .find(|w| w["blocks"].as_array().into_iter().flatten().any(|b| b["id"] == self.selected_block));
+                if window.is_none_or(|w| w["id"] != value["window"]) {
+                    return Ok(());
+                }
+                let wanted = wanted.into_iter().filter(|want| {
+                    want.block != self.selected_block && window.is_some_and(|w| {
+                        w["layout"].as_array().into_iter().flatten()
+                            .any(|p| p["id"] == want.block && p["floating"] == false)
+                    })
+                }).collect();
+                self.mirror.request(&session, wanted);
+                self.publish_mirror_status();
             }
             "release" => {
                 if let Some(c) = &mut self.control {
@@ -1607,21 +1651,45 @@ impl Actor {
     }
     async fn open_block(&mut self, block: String) -> Result<()> {
         ensure!(!self.selected_session.is_empty(), "Choose a session first");
-        self.release_selected().await?;
-        let restored=if self.retained_floating.as_ref().is_some_and(|p|p.block==block) {
-            self.retained_floating.take()
-        } else {
-            // Focusing a mirrored pane takes over its stream instead of opening a second one.
-            self.mirror.take(&block).map(|(data,replica)|RetainedFloating {block:block.clone(),data,replica})
-        };
+        if self.selected_block == block && self.data.is_some() && self.replica.is_some() {
+            self.publish();
+            return Ok(());
+        }
         let floating=self.windows.as_array().into_iter().flatten().any(|w|
             w["layout"].as_array().into_iter().flatten().any(|p|p["id"]==self.selected_block && p["floating"]==true));
+        let handoff = self.mirror.wants(&self.selected_session, &block);
+        let retain_as_mirror = handoff && !floating && self.data.is_some() && self.replica.is_some();
+        let was_controlled = self.controlled;
+        if retain_as_mirror {
+            if was_controlled && let Some(control) = self.control.as_mut() {
+                // The phone keeps sizing the departing pane, but it no longer has keyboard focus.
+                let _ = control.start_call("block.event", json!({
+                    "session_id": self.selected_session, "block_id": self.selected_block,
+                    "event": {"type":"focus","payload":{"action":"out"}}
+                })).await;
+            }
+        } else {
+            self.release_selected().await?;
+        }
+        let restored = if self.retained_floating.as_ref().is_some_and(|p| p.block == block) {
+            self.retained_floating.take()
+        } else if handoff {
+            self.mirror.take(&block).await.map(|(data, replica)| RetainedFloating {
+                block: block.clone(), data, replica,
+            })
+        } else {
+            self.mirror.request("", Vec::new());
+            if let Some(control) = self.control.as_mut() {
+                self.mirror.start(control).await;
+            }
+            None
+        };
         if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.close_retained_floating().await;
             self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
-        } else if self.mirror.is_active() && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
-            // In the multi-pane layout the pane being left stays on screen: the mirror keeps its stream.
-            self.mirror.adopt(self.selected_block.clone(),data,replica);
+        } else if retain_as_mirror && let (Some(data), Some(replica)) = (self.data.take(), self.replica.take()) {
+            // The departing pane stays visible even when the incoming pane was the only mirror.
+            self.mirror.adopt(self.selected_block.clone(), data, replica, was_controlled);
         } else if let Some(mut data)=self.data.take() {
             let _=tokio::time::timeout(Duration::from_secs(2),data.close()).await;
         }
@@ -1646,6 +1714,11 @@ impl Actor {
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
         self.refresh_view().await?;
+        if handoff && self.controlled {
+            // A mirror may already own the PTY for sizing, so Android need not claim it again.
+            // Still apply the active theme and deliver a focus-in event to the application.
+            self.focus_selected().await?;
+        }
         Ok(())
     }
     async fn refresh_close_view(&mut self) -> Result<bool> {
@@ -1654,6 +1727,7 @@ impl Actor {
             Ok(())=>Ok(true),
             Err(error) if error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|e.code=="session_not_found")=>{
                 self.close_retained_floating().await;
+                self.mirror.request("", Vec::new());
                 self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);self.screen=None;
                 self.data=None;self.data_resume=None;self.replica=None;self.controlled=false;
                 self.preview_task=None;self.program_task=None;self.summary_task=None;self.preview_updates.clear();
@@ -1668,7 +1742,11 @@ impl Actor {
     async fn take_selected(&mut self) -> Result<()> {
         ensure!(!self.selected_block.is_empty(),"Choose a terminal first");
         self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
-        self.refresh_view().await?;self.apply_theme().await?;
+        self.refresh_view().await?;
+        self.focus_selected().await
+    }
+    async fn focus_selected(&mut self) -> Result<()> {
+        self.apply_theme().await?;
         // A focus notification makes programs re-query even if set_theme was
         // deduplicated because the canonical terminal already had these colors.
         self.control.as_mut().context("not connected")?.call("block.event",json!({"session_id":self.selected_session,"block_id":self.selected_block,

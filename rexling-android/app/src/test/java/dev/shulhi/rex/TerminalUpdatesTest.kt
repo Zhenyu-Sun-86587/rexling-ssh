@@ -184,4 +184,27 @@ class TerminalUpdatesTest {
         assertEquals(2L,decoder.revision)
     }
 
+    @Test fun rxt8KeepsEachPanesDeltaBaseBetweenUnrelatedUpdates() {
+        fun update(revision: Long,id: String,flag: Int,rows: Map<Int,String>): ByteArray {
+            val out=ByteArrayOutputStream()
+            fun n(value: Long,size: Int) {repeat(size) {out.write((value ushr (8*it)).toInt() and 255)}}
+            fun text(value: String) {val bytes=value.toByteArray();n(bytes.size.toLong(),4);out.write(bytes)}
+            out.write("RXT8".toByteArray());n(revision,8);text("");n(0,1);n(1,2);text(id)
+            n(flag.toLong(),1);n(2,2);n(2,2);n(-1,4);n(-1,4);n(-1,4);n(0,4)
+            n(2,8);n(0,8);n(2,8);n(0,1);n(1,1);n(0,2);n(rows.size.toLong(),2)
+            for((row,value) in rows) {
+                n(row.toLong(),2);n(1,2);n(0,2);n(1,1);n(0,4);n(-1,4);n(0,4);text(value);n(0,2)
+            }
+            n(0,1);n(0,1);n(8,4);n(16,4);n(0,2);n(0,2);n(-1,4);n(-1,4)
+            return out.toByteArray()
+        }
+        val decoder=TerminalUpdates()
+        val a=decoder.decode(update(1,"a",3,mapOf(0 to "A",1 to "old"))).previewFrames.getValue("a")
+        decoder.decode(update(2,"b",3,mapOf(0 to "B",1 to "old")))
+        assertTrue(runCatching {decoder.decode(update(3,"missing",2,mapOf(1 to "new")))}.isFailure)
+        val next=decoder.decode(update(4,"a",2,mapOf(1 to "new"))).previewFrames.getValue("a")
+        assertSame(a.lines[0],next.lines[0])
+        assertEquals("new",next.lines[1].single().text)
+    }
+
 }

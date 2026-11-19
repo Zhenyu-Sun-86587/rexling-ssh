@@ -1,27 +1,24 @@
-//! Live mirrors of a tab's other panes, for the multi-pane layout.
-//!
-//! The selected pane keeps the actor's own stream, input, theme and size logic untouched. This module
-//! only adds streams for the remaining tiled panes Android asks to see beside it, owns them so each
-//! can be sized to its share of the screen, and turns their output into frames on the existing
-//! per-pane frame channel. With no panes requested it holds nothing, and the engine is exactly the
-//! single-pane engine.
-use anyhow::{Context, Result};
-use futures_util::future::select_all;
+//! Live data streams for the other visible panes, sharing the focused pane's control connection.
+use anyhow::Result;
 use rex_core::{
     control::{Control, Trace},
     data::Data,
     ghostty::{Frame, Replica},
-    transport::Endpoint,
+    transport::{Endpoint, TERMINAL},
 };
 use serde_json::{Value, json};
-use std::{sync::Arc, time::Duration};
+use std::{
+    future::{Future, poll_fn},
+    pin::Pin,
+    sync::Arc,
+    task::Poll,
+    time::Duration,
+};
+use tokio::time::Instant;
 
-/// More panes than this are left to the single-pane carousel.
 pub const MAX_PANES: usize = 3;
-/// Mirrors redraw at most this often, below the selected pane's frame rate.
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
 
-/// One requested pane: its block and the grid that fits its share of the screen.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Wanted {
     pub block: String,
@@ -29,20 +26,76 @@ pub struct Wanted {
     pub rows: u16,
 }
 
-struct Pane {
-    block: String,
+pub enum Step {
+    Owned,
+    Ticket(Value),
+    Open(Data),
+    Sized((u16, u16)),
+}
+
+type Job = Pin<Box<dyn Future<Output = Result<Step>>>>;
+
+struct Live {
     data: Data,
     replica: Replica,
-    size: Option<(u16, u16)>,
     dirty: bool,
+    animation: Option<Instant>,
+}
+
+struct Slot {
+    want: Wanted,
+    live: Option<Live>,
+    // Set as soon as an ownership request is sent so cancellation also releases it.
+    claimed: bool,
+    presented: bool,
+    owned: bool,
+    size: Option<(u16, u16)>,
+    opening: bool,
+    job: Option<Job>,
+    retry_at: Instant,
+    backoff: u64,
+}
+
+impl Slot {
+    fn new(want: Wanted) -> Self {
+        Self {
+            want,
+            live: None,
+            claimed: false,
+            presented: false,
+            owned: false,
+            size: None,
+            opening: false,
+            job: None,
+            retry_at: Instant::now(),
+            backoff: 1,
+        }
+    }
+
+    fn failed(&mut self) {
+        if let Some(live) = self.live.take() {
+            close(live.data);
+        }
+        self.presented = false;
+        self.owned = false;
+        self.size = None;
+        self.retry_at = Instant::now() + Duration::from_secs(self.backoff);
+        self.backoff = (self.backoff * 2).min(15);
+    }
 }
 
 #[derive(Default)]
 pub struct Mirror {
     session: String,
-    wanted: Vec<Wanted>,
-    panes: Vec<Pane>,
-    drawn_at: Option<tokio::time::Instant>,
+    slots: Vec<Slot>,
+    release: Vec<(String, String)>,
+    drawn_at: Option<Instant>,
+    next_slot: usize,
+}
+
+pub enum Event {
+    Job(usize, Result<Step>),
+    Data(usize, Result<Vec<u8>>),
 }
 
 /// Parses Android's `mirror` command: `{session, panes: [{block, columns, rows}]}`.
@@ -50,12 +103,18 @@ pub fn parse(value: &Value) -> (String, Vec<Wanted>) {
     let session = value["session"].as_str().unwrap_or("").to_owned();
     let mut wanted: Vec<Wanted> = Vec::new();
     for pane in value["panes"].as_array().into_iter().flatten() {
-        let Some(block) = pane["block"].as_str().filter(|b| !b.is_empty()) else { continue };
+        let Some(block) = pane["block"].as_str().filter(|b| !b.is_empty()) else {
+            continue;
+        };
         if wanted.iter().any(|w| w.block == block) {
             continue;
         }
         let size = |key: &str| pane[key].as_u64().unwrap_or(0).clamp(1, 512) as u16;
-        wanted.push(Wanted { block: block.to_owned(), columns: size("columns"), rows: size("rows").min(256) });
+        wanted.push(Wanted {
+            block: block.to_owned(),
+            columns: size("columns"),
+            rows: size("rows").min(256),
+        });
         if wanted.len() == MAX_PANES {
             break;
         }
@@ -64,156 +123,301 @@ pub fn parse(value: &Value) -> (String, Vec<Wanted>) {
 }
 
 impl Mirror {
-    pub fn is_active(&self) -> bool {
-        !self.panes.is_empty()
+    pub fn wants(&self, session: &str, block: &str) -> bool {
+        self.session == session && self.slots.iter().any(|slot| slot.want.block == block)
     }
-    /// Hands a mirrored pane's stream and state to the actor when it becomes the selected pane.
-    /// Rex allows one data connection per pane per client, so the stream moves rather than reopens.
-    pub fn take(&mut self, block: &str) -> Option<(Data, Replica)> {
-        let index = self.panes.iter().position(|p| p.block == block)?;
-        let pane = self.panes.remove(index);
-        Some((pane.data, pane.replica))
-    }
-    /// Takes over the stream of the pane the actor is leaving. The next [Mirror::sync] closes it if
-    /// Android does not ask for it; its size is set again there.
-    pub fn adopt(&mut self, block: String, data: Data, replica: Replica) {
-        if self.panes.iter().any(|p| p.block == block) {
-            return;
+
+    /// A pending ticket can be dropped. Once the data handshake starts, finish it so
+    /// the focused pane does not race another HELLO for the same client and pane.
+    pub async fn take(&mut self, block: &str) -> Option<(Data, Replica)> {
+        let index = self
+            .slots
+            .iter()
+            .position(|slot| slot.want.block == block)?;
+        let slot = self.slots.remove(index);
+        if let Some(live) = slot.live {
+            return Some((live.data, live.replica));
         }
-        self.panes.push(Pane { block, data, replica, size: None, dirty: true });
-    }
-    /// The next chunk from any mirrored pane. Pending forever with none, so it can sit in a select.
-    pub async fn read(&mut self) -> (usize, Result<Vec<u8>>) {
-        if self.panes.is_empty() {
-            return std::future::pending().await;
+        if slot.opening
+            && let Ok(Step::Open(data)) = slot.job?.await
+        {
+            let replica = Replica::new(data.nonce);
+            return Some((data, replica));
         }
-        let reads = self.panes.iter_mut().map(|p| Box::pin(p.data.read()));
-        let (result, index, _) = select_all(reads).await;
-        (index, result)
+        None
     }
-    /// Feeds a chunk; a pane whose stream or state fails is dropped rather than shown stale.
-    pub fn feed(&mut self, index: usize, chunk: Result<Vec<u8>>) {
-        let Some(pane) = self.panes.get_mut(index) else { return };
-        let ok = chunk.and_then(|bytes| pane.replica.feed(&bytes)).is_ok();
-        // Mirrors never replay clipboard writes or status events; the control stream reports status.
-        pane.replica.events.clear();
-        pane.replica.clipboard_write = None;
-        if ok {
-            pane.dirty = true;
-        } else {
-            self.panes.remove(index);
+
+    pub fn adopt(&mut self, block: String, data: Data, replica: Replica, owned: bool) {
+        let mut slot = Slot::new(Wanted {
+            block,
+            columns: 0,
+            rows: 0,
+        });
+        slot.owned = owned;
+        slot.claimed = owned;
+        slot.presented = replica.ready();
+        slot.live = Some(Live {
+            data,
+            replica,
+            dirty: true,
+            animation: None,
+        });
+        self.slots.push(slot);
+    }
+
+    fn remove(&mut self, index: usize) {
+        let slot = self.slots.remove(index);
+        if slot.claimed {
+            self.release.push((self.session.clone(), slot.want.block));
+        }
+        if let Some(live) = slot.live {
+            close(live.data);
+        }
+        // Dropping an unfinished handshake also closes its socket. A later open
+        // can retry if the server is still tearing that socket down.
+    }
+
+    pub fn request(&mut self, session: &str, wanted: Vec<Wanted>) {
+        for index in (0..self.slots.len()).rev() {
+            if self.session != session
+                || !wanted
+                    .iter()
+                    .any(|want| want.block == self.slots[index].want.block)
+            {
+                self.remove(index);
+            }
+        }
+        self.session = session.to_owned();
+        for want in wanted {
+            if let Some(slot) = self
+                .slots
+                .iter_mut()
+                .find(|slot| slot.want.block == want.block)
+            {
+                slot.want = want;
+            } else {
+                self.slots.push(Slot::new(want));
+            }
         }
     }
-    /// Whether a frame is waiting, and the earliest moment it may be drawn.
-    pub fn due(&self) -> Option<tokio::time::Instant> {
-        self.panes.iter().any(|p| p.dirty).then(|| {
-            self.drawn_at.map_or_else(tokio::time::Instant::now, |at| at + FRAME_INTERVAL)
+
+    pub fn retain(&mut self, allowed: impl Fn(&str) -> bool) {
+        for index in (0..self.slots.len()).rev() {
+            if !allowed(&self.slots[index].want.block) {
+                self.remove(index);
+            }
+        }
+    }
+
+    /// Send requests and return immediately to the actor loop. The control reader
+    /// resolves their replies while input, rendering and other panes keep running.
+    pub async fn start(&mut self, control: &mut Control) {
+        for (session, block) in std::mem::take(&mut self.release) {
+            let _ = control
+                .start_call(
+                    "session.disown_block",
+                    json!({"session_id":session,"block_ids":[block]}),
+                )
+                .await;
+        }
+        for slot in &mut self.slots {
+            if slot.job.is_some() || slot.want.columns == 0 || slot.retry_at > Instant::now() {
+                continue;
+            }
+            let block = &slot.want.block;
+            let session = &self.session;
+            let size = (slot.want.columns, slot.want.rows);
+            let job: Result<Job> = if !slot.owned {
+                control
+                    .start_call(
+                        "session.own_block",
+                        json!({"session_id":session,"block_ids":[block],"mode":"take"}),
+                    )
+                    .await
+                    .map(|reply| {
+                        slot.claimed = true;
+                        Box::pin(async move { reply.receive().await.map(|_| Step::Owned) }) as Job
+                    })
+            } else if slot.live.is_none() {
+                control.start_call("data.connect",
+                    json!({"session_id":session,"block_id":block,"data_ref_id":"terminal","subprotocol":TERMINAL})).await.map(|reply| {
+                        Box::pin(async move { reply.receive().await.map(Step::Ticket) }) as Job
+                    })
+            } else if slot.size != Some(size) {
+                control.start_call("com.superlogical.terminal.resize",
+                    json!({"session_id":session,"block_id":block,"args":{"columns":size.0,"rows":size.1}})).await.map(|reply| {
+                        Box::pin(async move { reply.receive().await.map(|_| Step::Sized(size)) }) as Job
+                    })
+            } else {
+                continue;
+            };
+            match job {
+                Ok(job) => slot.job = Some(job),
+                Err(_) => slot.failed(),
+            }
+        }
+    }
+
+    pub async fn next(&mut self) -> Event {
+        poll_fn(|context| {
+            let count = self.slots.len();
+            for offset in 0..count {
+                let index = (offset + self.next_slot) % count;
+                let slot = &mut self.slots[index];
+                if let Some(job) = slot.job.as_mut()
+                    && let Poll::Ready(result) = job.as_mut().poll(context)
+                {
+                    self.next_slot = (index + 1) % count;
+                    return Poll::Ready(Event::Job(index, result));
+                }
+                if let Some(live) = slot.live.as_mut()
+                    && let Poll::Ready(result) = std::pin::pin!(live.data.read()).poll(context)
+                {
+                    self.next_slot = (index + 1) % count;
+                    return Poll::Ready(Event::Data(index, result));
+                }
+            }
+            Poll::Pending
         })
+        .await
     }
-    /// Frames for panes that changed since the last call, once the frame interval allows it.
+
+    pub fn handle(&mut self, event: Event, endpoint: &Endpoint) {
+        match event {
+            Event::Job(index, result) => {
+                let slot = &mut self.slots[index];
+                slot.job = None;
+                slot.opening = false;
+                match result {
+                    Ok(Step::Owned) => slot.owned = true,
+                    Ok(Step::Ticket(ticket)) => {
+                        let endpoint = endpoint.clone();
+                        slot.opening = true;
+                        slot.job = Some(Box::pin(async move {
+                            Data::open_ticket(&endpoint, ticket, Trace::default())
+                                .await
+                                .map(Step::Open)
+                        }));
+                    }
+                    Ok(Step::Open(data)) => {
+                        let replica = Replica::new(data.nonce);
+                        slot.live = Some(Live {
+                            data,
+                            replica,
+                            dirty: false,
+                            animation: None,
+                        });
+                    }
+                    Ok(Step::Sized(size)) => slot.size = Some(size),
+                    Err(_) => slot.failed(),
+                }
+            }
+            Event::Data(index, result) => {
+                let slot = &mut self.slots[index];
+                let live = slot
+                    .live
+                    .as_mut()
+                    .expect("mirror read without a live stream");
+                if result.and_then(|bytes| live.replica.feed(&bytes)).is_err() {
+                    slot.job = None;
+                    slot.failed();
+                } else {
+                    live.replica.events.clear();
+                    live.replica.clipboard_write = None;
+                    live.dirty = true;
+                }
+            }
+        }
+    }
+
+    pub fn waiting(&self) -> Vec<&str> {
+        self.slots
+            .iter()
+            .filter(|slot| !slot.presented)
+            .map(|slot| slot.want.block.as_str())
+            .collect()
+    }
+
+    pub fn retry_due(&self) -> Option<Instant> {
+        let now = Instant::now();
+        self.slots
+            .iter()
+            .map(|slot| slot.retry_at)
+            .filter(|at| *at > now)
+            .min()
+    }
+
+    pub fn due(&self) -> Option<Instant> {
+        let now = Instant::now();
+        let next_frame = self.drawn_at.map_or(now, |at| at + FRAME_INTERVAL);
+        self.slots
+            .iter()
+            .filter_map(|slot| {
+                let live = slot.live.as_ref().filter(|live| live.replica.ready())?;
+                if live.dirty {
+                    Some(next_frame)
+                } else {
+                    live.animation.map(|at| at.max(next_frame))
+                }
+            })
+            .min()
+    }
+
     pub fn frames(&mut self) -> Vec<(String, Arc<Frame>)> {
-        let now = tokio::time::Instant::now();
+        let now = Instant::now();
         if self.due().is_none_or(|at| at > now) {
             return Vec::new();
         }
         self.drawn_at = Some(now);
         let mut frames = Vec::new();
-        for pane in self.panes.iter_mut().filter(|p| p.dirty && p.replica.ready()) {
-            pane.dirty = false;
-            if let Ok(terminal) = pane.replica.terminal()
-                && terminal.render_ready().unwrap_or(false)
-                && let Ok(frame) = terminal.frame()
-            {
-                frames.push((pane.block.clone(), Arc::new(frame)));
+        for slot in &mut self.slots {
+            let Some(live) = slot.live.as_mut().filter(|live| {
+                live.replica.ready() && (live.dirty || live.animation.is_some_and(|at| at <= now))
+            }) else {
+                continue;
+            };
+            live.dirty = false;
+            live.animation = None;
+            let frame = live.replica.terminal().and_then(|terminal| {
+                if terminal.render_ready()? {
+                    terminal.frame().map(Some)
+                } else {
+                    Ok(None)
+                }
+            });
+            match frame {
+                Ok(Some(frame)) => {
+                    live.animation = frame
+                        .next_image_delay_ms
+                        .map(|ms| now + Duration::from_millis(ms));
+                    slot.presented = true;
+                    slot.backoff = 1;
+                    frames.push((slot.want.block.clone(), Arc::new(frame)));
+                }
+                Ok(None) => live.dirty = true,
+                Err(_) => {
+                    slot.job = None;
+                    slot.failed();
+                }
             }
         }
         frames
     }
-    /// Brings the open streams, ownership and sizes in line with what Android asked for. The
-    /// selected pane is never mirrored: it already has the actor's own stream.
-    pub async fn sync(
-        &mut self,
-        endpoint: &Endpoint,
-        control: &mut Control,
-        session: &str,
-        selected: &str,
-        wanted: Vec<Wanted>,
-    ) -> Result<()> {
-        // Panes from another session are dropped below: block IDs are unique across sessions.
-        let wanted: Vec<Wanted> = if session.is_empty() {
-            Vec::new()
-        } else {
-            wanted.into_iter().filter(|w| w.block != selected).collect()
-        };
-        // Give back panes no longer shown, unless the actor now selects them.
-        let dropped: Vec<String> = self
-            .panes
-            .iter()
-            .filter(|p| !wanted.iter().any(|w| w.block == p.block))
-            .map(|p| p.block.clone())
-            .collect();
-        for block in &dropped {
-            if let Some(index) = self.panes.iter().position(|p| &p.block == block) {
-                let mut pane = self.panes.remove(index);
-                let _ = pane.data.close().await;
-            }
-        }
-        let release: Vec<&String> = dropped.iter().filter(|b| b.as_str() != selected).collect();
-        if !release.is_empty() && !self.session.is_empty() {
-            let _ = control
-                .call("session.disown_block", json!({"session_id": self.session, "block_ids": release}))
-                .await;
-        }
-        self.session = if wanted.is_empty() { String::new() } else { session.to_owned() };
-        self.wanted = wanted.clone();
-        if wanted.is_empty() {
-            return Ok(());
-        }
-        let ids: Vec<&str> = wanted.iter().map(|w| w.block.as_str()).collect();
-        control
-            .call("session.own_block", json!({"session_id": session, "block_ids": ids, "mode": "take"}))
-            .await?;
-        for want in &wanted {
-            if !self.panes.iter().any(|p| p.block == want.block) {
-                let data = open(endpoint, control, session, &want.block)
-                    .await
-                    .with_context(|| format!("could not mirror {}", want.block))?;
-                let replica = Replica::new(data.nonce);
-                self.panes.push(Pane { block: want.block.clone(), data, replica, size: None, dirty: false });
-            }
-            let pane = self.panes.iter_mut().find(|p| p.block == want.block).context("mirror pane missing")?;
-            if pane.size != Some((want.columns, want.rows)) {
-                control
-                    .terminal(session, &want.block, "resize", json!({"columns": want.columns, "rows": want.rows}))
-                    .await?;
-                pane.size = Some((want.columns, want.rows));
-            }
-        }
-        // Keep Android's order, so frames and layout agree on which pane is which.
-        self.panes.sort_by_key(|p| wanted.iter().position(|w| w.block == p.block));
-        Ok(())
-    }
-    /// What Android last asked for in [session], to restore after a reconnect.
-    pub fn wanted(&self) -> (String, Vec<Wanted>) {
-        (self.session.clone(), self.wanted.clone())
-    }
-    /// Drops every stream without RPCs: for a lost connection, whose ownership the server already ended.
+
+    /// Drop broken connections while preserving the requested layout for reconnect.
     pub fn clear(&mut self) {
-        self.panes.clear();
+        for slot in &mut self.slots {
+            *slot = Slot::new(slot.want.clone());
+        }
+        self.release.clear();
         self.drawn_at = None;
     }
 }
 
-/// Opens a pane's stream, retrying once if a just-closed stream for it is still being torn down
-/// (REJECT 0x02: one data connection per pane per client).
-async fn open(endpoint: &Endpoint, control: &mut Control, session: &str, block: &str) -> Result<Data> {
-    match Data::open(endpoint, control, session, block, Trace::default()).await {
-        Err(error) if error.to_string().contains("reason 0x02") => {
-            tokio::time::sleep(Duration::from_millis(300)).await;
-            Data::open(endpoint, control, session, block, Trace::default()).await
-        }
-        result => result,
-    }
+fn close(mut data: Data) {
+    tokio::spawn(async move {
+        let _ = tokio::time::timeout(Duration::from_secs(2), data.close()).await;
+    });
 }
 
 #[cfg(test)]
@@ -234,9 +438,21 @@ mod tests {
         assert_eq!(
             wanted,
             vec![
-                Wanted { block: "b1".into(), columns: 80, rows: 24 },
-                Wanted { block: "b2".into(), columns: 512, rows: 256 },
-                Wanted { block: "b3".into(), columns: 1, rows: 1 },
+                Wanted {
+                    block: "b1".into(),
+                    columns: 80,
+                    rows: 24
+                },
+                Wanted {
+                    block: "b2".into(),
+                    columns: 512,
+                    rows: 256
+                },
+                Wanted {
+                    block: "b3".into(),
+                    columns: 1,
+                    rows: 1
+                },
             ]
         );
     }
@@ -246,6 +462,6 @@ mod tests {
         let mut mirror = Mirror::default();
         assert!(mirror.due().is_none());
         assert!(mirror.frames().is_empty());
-        assert_eq!(mirror.wanted(), (String::new(), Vec::new()));
+        assert!(mirror.slots.is_empty());
     }
 }

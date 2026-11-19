@@ -8,45 +8,58 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
 
-/**
- * The multi-pane layout: a tab's tiled panes side by side, as the desktop arranges them.
- *
- * It sits beside the single-pane carousel rather than inside it. The focused pane is the caller's
- * ordinary live terminal ([focusedContent]), so input, keyboard, scrolling and sizing go through the
- * same code as in the single-pane layout. The other panes show the engine's mirrored frames
- * ([frames]); tapping one focuses it. Each mirrored pane reports the grid that fits its area, and
- * [onMirror] asks the engine to stream and size them; leaving the layout stops the mirrors.
- */
-@Composable internal fun MultiPaneLayout(placements: List<PanePlacement>,focused: String,frames: Map<String,TerminalScreen>,
-    fontSize: Float,onFocus: (String)->Unit,onMirror: (List<RexConnection.MirrorPane>)->Unit,bottomPaddingDp: Int=6,bottomMargin: Boolean=true,splits: List<PaneSplitLine> = emptyList(),onResize: (PaneSplitLine,Float)->Unit={_,_->},
-    zoomed: String="",onZoom: (String,Boolean)->Unit={_,_->},focusedContent: @Composable ()->Unit) {
+/** Server layout with one mounted terminal view per visible pane. */
+@Composable
+internal fun MultiPaneLayout(
+    client: RexConnection, session: String, window: String, placements: List<PanePlacement>,
+    focused: String, liveBlock: String, controlled: Boolean, programs: Map<String, ProgramIdentity>,
+    waiting: Set<String>, fontSize: Float, onFocus: (String, Pair<Int,Int>?) -> Unit,
+    onView: (TerminalView) -> Unit, onImage: (android.net.Uri, () -> Unit) -> Boolean,
+    onPaste: () -> Boolean, imeEnterSubmits: Boolean, tapOpensKeyboard: Boolean,
+    keyboardChrome: () -> Int, extendsUnderNavigation: Boolean, hazeState: HazeState, captureBackdrop: Boolean,
+    bottomPaddingDp: Int = 6, bottomMargin: Boolean = true,
+    splits: List<PaneSplitLine> = emptyList(), zoomed: String = "",
+    ime: WindowInsets = WindowInsets.ime, navigation: WindowInsets = WindowInsets.navigationBars,
+) {
     val palette=LocalTerminalPalette.current
     val scheme=MaterialTheme.colorScheme
     // Rects are fractions of the tab; normalize to the tiled panes' own bounds.
     val left=placements.minOf {it.x};val top=placements.minOf {it.y}
     val spanX=(placements.maxOf {it.x+it.width}-left).coerceAtLeast(.01f)
     val spanY=(placements.maxOf {it.y+it.height}-top).coerceAtLeast(.01f)
-    val sizes=remember {mutableStateMapOf<String,Pair<Int,Int>>()}
+    val sizes=remember(session,window) { mutableStateMapOf<String,Pair<Int,Int>>() }
+    val density=LocalDensity.current
+    val keepAwake=LocalKeepScreenAwake.current
     // A pane zoomed in Rex covers the whole area; the rest stay in the layout but are not shown or mirrored.
     val zoomedPane=placements.firstOrNull {it.id==zoomed}
-    val mirrors=(zoomedPane?.let {listOf(it)} ?: placements).map {it.id}.filter {it!=focused}
+    val mirrors=(zoomedPane?.let {listOf(it)} ?: placements).map {it.id}.filter {it!=liveBlock}
     val request=mirrors.mapNotNull {id->sizes[id]?.let {(columns,rows)->RexConnection.MirrorPane(id,columns,rows)}}
     // Debounced: while a border is dragged the panes resize on every frame, but their PTYs only once
     // the finger pauses or lifts (the focused pane's resize is debounced the same way).
-    LaunchedEffect(request) {kotlinx.coroutines.delay(100);onMirror(request)}
+    LaunchedEffect(client,session,window,request) {
+        kotlinx.coroutines.delay(100)
+        client.mirror(session,window,request)
+    }
     // A border being dragged, and its ratio. The panes reflow live from it; it stays after release until
     // Rex reports the new layout (new [splits]), so nothing snaps back in between.
     var drag by remember(splits) {mutableStateOf<Pair<String,Float>?>(null)}
@@ -57,43 +70,109 @@ import androidx.compose.ui.viewinterop.AndroidView
     // The pane whose corner menu is open; it closes by itself after a few seconds.
     var menuFor by remember {mutableStateOf<String?>(null)}
     LaunchedEffect(menuFor) {if(menuFor!=null) {kotlinx.coroutines.delay(4000);menuFor=null}}
-    DisposableEffect(Unit) {onDispose {onMirror(emptyList())}}
+    DisposableEffect(client,session,window) {onDispose {client.mirror(session,window,emptyList())}}
     // Like the desktop: each pane a rounded card on the window background, with room between them and
     // a thin accent outline on the focused one.
     val shape=androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
-    // Without [bottomMargin] the bottom row ends at the area's edge, which the caller already keeps clear.
-    BoxWithConstraints(Modifier.fillMaxSize().background(scheme.background).padding(start=4.dp,top=4.dp,end=4.dp,bottom=if(bottomMargin) 4.dp else 0.dp)) {
+    // The workspace reserves the navigation clearance when the bottom row has no extra margin.
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().then(if(captureBackdrop) Modifier.hazeSource(hazeState) else Modifier).background(scheme.background).padding(start=4.dp,top=4.dp,end=4.dp,bottom=if(bottomMargin) 4.dp else 0.dp)) {
         val gap=8.dp
+        val visibleHeight=maxHeight
         for(pane in shownPanes) key(pane.id) {
-            val x=maxWidth*((pane.x-left)/spanX);val y=maxHeight*((pane.y-top)/spanY)
-            val width=maxWidth*(pane.width/spanX);val height=maxHeight*(pane.height/spanY)
+            val x=maxWidth*((pane.x-left)/spanX)
+            val y=visibleHeight*((pane.y-top)/spanY)
+            val width=maxWidth*(pane.width/spanX)
+            val heightFraction=pane.height/spanY
+            val height=visibleHeight*heightFraction
             val active=pane.id==focused
             val lastRow=!bottomMargin && pane.y+pane.height>=top+spanY-.001f
-            Box(Modifier.offset(x+gap/2,y+gap/2).size((width-gap).coerceAtLeast(0.dp),(height-if(lastRow) gap/2 else gap).coerceAtLeast(0.dp))
+            val trim=if(lastRow) gap/2 else gap
+            Box(Modifier.offset(x+gap/2,y+gap/2).size((width-gap).coerceAtLeast(0.dp),(height-trim).coerceAtLeast(0.dp))
                 .clip(shape).background(Color(palette.background))
                 // Same border width and padding focused or not, so focusing never changes a pane's grid.
                 .border(1.5.dp,if(active) scheme.primary else scheme.outline.copy(alpha=.25f),shape)
                 .padding(1.5.dp)) {
-                if(active) focusedContent()
-                else {
-                    AndroidView(factory={TerminalView(it)},modifier=Modifier.fillMaxSize().background(Color(palette.background)),update={view->
-                        view.palette=palette;view.textSp=fontSize
-                        // Matches the live terminal's padding, which the pane gets when focused.
+                val live=active && pane.id==liveBlock
+                val paneFrame by remember(client,pane.id) {
+                    derivedStateOf(referentialEqualityPolicy()) { client.paneFrames[pane.id] }
+                }
+                var keyboardFocus by remember { mutableStateOf<TerminalKeyboardFocus?>(null) }
+                val reportSize by rememberUpdatedState<(Int,Int)->Unit> { columns,rows->
+                    sizes[pane.id]=columns to rows
+                    if(live) client.resize(columns,rows)
+                }
+                val dimensions=remember { {columns: Int,rows: Int->reportSize(columns,rows)} }
+                LaunchedEffect(live) {
+                    if(live) sizes[pane.id]?.let {(columns,rows)->client.resize(columns,rows)}
+                }
+                // Restore the portion of keyboard coverage this pane lost when the parent shrank.
+                // Round against both container heights so the PTY grid stays fixed at row boundaries.
+                AndroidView(
+                    factory={TerminalView(it)},
+                    modifier=Modifier.fillMaxSize().clipToBounds().stableTerminalViewport(panToCursor=live,coverage={
+                        val cover=keyboardCoverage(ime,navigation,keyboardChrome,extendsUnderNavigation)
+                        val fullHeight=visibleHeight+cover.toDp()
+                        (fullHeight*heightFraction-trim).coerceAtLeast(0.dp).roundToPx() -
+                            (height-trim).coerceAtLeast(0.dp).roundToPx()
+                    }) {keyboardFocus.takeIf {live}},
+                    update={view->
+                        view.palette=palette
+                        view.textSp=fontSize
                         view.setTerminalPaddingDp(12,8,bottomPaddingDp)
-                        view.interactive=false;view.controlled=false
-                        view.onDimensions={columns,rows->sizes[pane.id]=columns to rows}
-                        frames[pane.id]?.let {view.screen=it}
-                    })
-                    // Taps focus the pane; it then becomes the live terminal.
+                        view.interactive=live
+                        view.keepAwakeMode=if(live) keepAwake else KeepScreenAwake.SYSTEM
+                        view.keyboardSuggestions=programs[pane.id]?.kind!=ProgramKind.NEOVIM
+                        view.imeEnterSubmits=imeEnterSubmits
+                        view.tapOpensKeyboard=tapOpensKeyboard
+                        view.controlled=live && controlled
+                        view.onDimensions=dimensions
+                        view.onKeyboardFocus=if(live) ({keyboardFocus=it}) else null
+                        keyboardFocus=if(live) view.keyboardFocus else null
+                        view.onInput=client::type
+                        view.onActivate=client::takeControl
+                        view.onMouseClick=client::click
+                        view.onWheel=client::wheel
+                        view.onScroll=client::scroll
+                        view.mouseTarget=client::keyTarget
+                        view.imageInputTarget=client::imageInputTarget
+                        view.onImage=onImage
+                        view.onPaste=onPaste
+                        if(!live || !client.bindTerminalView(pane.id,view)) {
+                            if(!live || view.screen==null) paneFrame?.let {view.screen=it}
+                        }
+                        if(live) onView(view)
+                    },
+                )
+                if(!active) {
                     Box(Modifier.matchParentSize().semantics {contentDescription="Focus pane"}
-                        .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {onFocus(pane.id)})
+                        .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {
+                            onFocus(pane.id,sizes[pane.id])
+                        })
+                    if(pane.id in waiting || paneFrame==null) Text(
+                        if(paneFrame==null) "Opening terminal…" else "Reconnecting…",
+                        Modifier.align(Alignment.Center).background(scheme.surface).padding(6.dp),
+                        color=scheme.onSurfaceVariant,fontSize=11.sp,
+                    )
+                } else {
+                    val display by client.displayLayout.collectAsState()
+                    if(live && display.below) {
+                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(10.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).background(scheme.surface)
+                            .clickable(role=Role.Button,onClick=client::scrollToBottom).padding(horizontal=12.dp,vertical=7.dp),
+                            fontSize=11.sp,color=scheme.primary)
+                    } else if(paneFrame==null && (!live || !display.hasScreen)) {
+                        Text("Opening terminal…",Modifier.align(Alignment.Center),
+                            fontFamily=MonoUi,fontSize=12.sp,color=scheme.onSurfaceVariant)
+                    }
                 }
                 // Pane actions, like the desktop's: tap the top-right corner to show them. A zoomed
                 // pane always shows its way back.
                 val isZoomed=pane.id==zoomed
                 if(isZoomed || menuFor==pane.id) PaneActions(isZoomed,Modifier.align(androidx.compose.ui.Alignment.TopEnd).padding(6.dp)) {
                     // Zooming a pane also focuses it, so typing goes to the pane on screen.
-                    menuFor=null;if(!isZoomed && !active) onFocus(pane.id);onZoom(pane.id,!isZoomed)
+                    menuFor=null
+                    if(!isZoomed && !active) onFocus(pane.id,sizes[pane.id])
+                    client.zoom(pane.id,!isZoomed)
                 }
                 else Box(Modifier.align(androidx.compose.ui.Alignment.TopEnd).size(44.dp).semantics {contentDescription="Pane actions"}
                     .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {menuFor=pane.id})
@@ -101,7 +180,6 @@ import androidx.compose.ui.viewinterop.AndroidView
         }
         // Pane borders: drag the grip in the gap and the panes reflow with it; on release Rex moves the
         // border for every client.
-        val density=androidx.compose.ui.platform.LocalDensity.current
         for(split in shownSplits) key(split.id) {
             val original=splits.firstOrNull {it.id==split.id} ?: split
             val dragging=drag?.first==split.id
@@ -119,7 +197,7 @@ import androidx.compose.ui.viewinterop.AndroidView
                 .pointerInput(split.id,horizontal,alongPx) {
                     var ratio=original.ratio
                     val start: (androidx.compose.ui.geometry.Offset)->Unit={ratio=drag?.takeIf {it.first==original.id}?.second ?: original.ratio;drag=original.id to ratio}
-                    val end: ()->Unit={drag?.takeIf {it.first==original.id}?.let {onResize(original,it.second)}}
+                    val end: ()->Unit={drag?.takeIf {it.first==original.id}?.let {client.resizeSplit(original,it.second)}}
                     val cancel: ()->Unit={drag=null}
                     if(horizontal) detectHorizontalDragGestures(start,end,cancel) {change,amount->
                         change.consume();ratio=(ratio+amount/alongPx).coerceIn(.1f,.9f);drag=original.id to ratio}

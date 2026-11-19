@@ -7,11 +7,12 @@ import java.nio.ByteOrder
 internal class TerminalUpdates {
     var revision: Long=0;private set
     private var state=AppState()
+    private val paneFrames=LinkedHashMap<String,TerminalScreen>()
     fun decode(bytes: ByteArray): AppState {
         require(bytes.size in 17..134217728) {"Invalid terminal packet size"}
         val data=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val version=data.int
-        require(version==0x31545852 || version==0x32545852 || version==0x33545852 || version==0x34545852 || version==0x35545852 || version==0x36545852 || version==0x37545852) {"Unsupported terminal packet"}
+        require(version==0x31545852 || version==0x32545852 || version==0x33545852 || version==0x34545852 || version==0x35545852 || version==0x36545852 || version==0x37545852 || version==0x38545852) {"Unsupported terminal packet"}
         val nextRevision=data.long;require(nextRevision>revision)
         fun text(): String {val n=data.int;require(n>=0 && n<=data.remaining());val raw=ByteArray(n);data.get(raw);return raw.toString(Charsets.UTF_8)}
         val metadata=text()
@@ -120,10 +121,20 @@ internal class TerminalUpdates {
         if(version>=0x34545852) {
             val count=data.short.toInt() and 0xffff;require(count<=32)
             val previews=mutableMapOf<String,TerminalScreen>()
-            repeat(count) {val id=text();require(id.isNotEmpty() && !previews.containsKey(id));previews[id]=readFrame(null) ?: error("Missing preview frame")}
+            repeat(count) {
+                val id=text()
+                require(id.isNotEmpty() && !previews.containsKey(id))
+                val previous=if(version>=0x38545852) paneFrames[id] else null
+                previews[id]=readFrame(previous) ?: error("Missing preview frame")
+            }
             next=next.copy(previewFrames=previews)
         }
         require(!data.hasRemaining()) {"Trailing terminal packet data"}
+        if(version>=0x38545852) for((id,screen) in next.previewFrames) {
+            paneFrames.remove(id)
+            paneFrames[id]=screen
+            if(paneFrames.size>16) paneFrames.remove(paneFrames.keys.first())
+        }
         next=next.copy(revision=nextRevision,screen=frame)
         state=next;revision=nextRevision
         return next
