@@ -101,7 +101,12 @@ jobs:
           "$tools/sdkmanager" --licenses < <(yes) > /dev/null
           "$tools/sdkmanager" 'platforms;android-37.0' 'build-tools;36.0.0' 'ndk;30.0.16248370' \
             'platform-tools' 'emulator' "$SYSTEM_IMAGE"
+          # avdmanager and emulator can choose different Android home defaults on hosted runners.
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/rexling-avd"
+          mkdir -p "$ANDROID_AVD_HOME"
+          printf 'ANDROID_AVD_HOME=%s\n' "$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           "$tools/avdmanager" create avd --name rexling-ui --package "$SYSTEM_IMAGE" --device pixel_6 <<< no
+          "$ANDROID_HOME/emulator/emulator" -list-avds | grep -Fx rexling-ui
 
       - name: Build x86_64 debug and instrumentation APKs
         shell: bash
