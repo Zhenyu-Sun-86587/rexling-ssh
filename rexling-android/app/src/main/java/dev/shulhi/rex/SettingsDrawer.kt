@@ -54,6 +54,6 @@ import dev.chrisbanes.haze.HazeState
     } else {
         ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
             containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,
-            dragHandle=null,contentWindowInsets={WindowInsets(0,0,0,0)}) {Body()}
+            dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {Body()}
     }
 }

@@ -97,7 +97,7 @@ class TerminalUpdatesTest {
         n(0,2);return out.toByteArray()
     }
     @Test fun imageDeltasReusePixelsAndMetadataOnlyUpdatesKeepTheImage() {
-        val decoder=TerminalUpdates();val first=decoder.decode(graphicsPacket(1)).screen!!
+        val decoder=TerminalUpdates {_,_,_->null};val first=decoder.decode(graphicsPacket(1)).screen!!
         assertEquals(1,first.images.size)
         assertEquals(8,first.imageCellWidth);assertEquals(16,first.imageCellHeight)
         val next=decoder.decode(graphicsPacket(2,2,asset=false)).screen!!
@@ -107,7 +107,7 @@ class TerminalUpdatesTest {
     }
     @Test fun malformedImagesCannotCommitADecoderRevisionOrReuseAnUnknownBase() {
         for(bytes in listOf(graphicsPacket(1,badLength=true),graphicsPacket(1,badCrop=true),graphicsPacket(1,asset=false))) {
-            val decoder=TerminalUpdates();assertTrue(runCatching {decoder.decode(bytes)}.isFailure);assertEquals(0L,decoder.revision)
+            val decoder=TerminalUpdates {_,_,_->null};assertTrue(runCatching {decoder.decode(bytes)}.isFailure);assertEquals(0L,decoder.revision)
             assertEquals(1,decoder.decode(graphicsPacket(1)).screen!!.images.size)
         }
     }

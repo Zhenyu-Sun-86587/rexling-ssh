@@ -259,6 +259,7 @@ struct Actor {
     windows: Value,
     screen: Option<Arc<Frame>>,
     selected_session: String,
+    stale_session: String,
     selected_block: String,
     navigation_id: u64,
     tab_move_id: u64,
@@ -328,6 +329,7 @@ impl Actor {
             windows: json!([]),
             screen: None,
             selected_session: String::new(),
+            stale_session: String::new(),
             selected_block: String::new(),
             navigation_id: 0,
             tab_move_id: 0,
@@ -374,7 +376,7 @@ impl Actor {
             shared.key=format!("{}:{}",self.selected_session,self.selected_block);
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "terminalProgress":crate::progress::selected(&self.progress_reports,&self.selected_session),"identity":self.identity,"error":self.error,"notice":self.notice,"clipboard":self.clipboard,"sessions":self.sessions,
-                "mirrorWaiting":self.mirror_waiting,"windows":self.windows,"selectedSession":self.selected_session,
+                "mirrorWaiting":self.mirror_waiting,"windows":self.windows,"selectedSession":self.selected_session,"staleSession":self.stale_session,
                 "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
@@ -628,6 +630,7 @@ impl Actor {
     async fn disconnect(&mut self) {
         self.close_retained_floating().await;
         self.mirror=Default::default();
+        self.stale_session.clear();
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
@@ -680,6 +683,52 @@ impl Actor {
         }
         self.publish();
     }
+    fn clear_ended_session(&mut self, session: String) {
+        self.stale_session = session;
+        self.selected_session.clear();
+        self.selected_block.clear();
+        self.windows = json!([]);
+        self.mirror = Default::default();
+        self.retained_floating = None;
+        self.data = None;
+        self.data_resume = None;
+        self.replica = None;
+        self.screen = None;
+        self.dirty = false;
+        self.controlled = false;
+        self.other_owner = false;
+        self.clipboard = Value::Null;
+        self.commands.discard_input();
+        self.preview_task = None;
+        self.program_task = None;
+        self.summary_task = None;
+        self.preview_updates.clear();
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.pending_previews.clear();
+        }
+        self.programs = json!({});
+        self.directories = json!({});
+        self.titles = json!({});
+        self.working = json!([]);
+        self.title_owners = json!({});
+        self.title_events.clear();
+        self.process_events.clear();
+        if let Some(sessions) = self.sessions.as_array_mut() {
+            sessions.retain(|item| item["session_id"] != self.stale_session);
+        }
+        self.progress_reports.retain(|_, report| report["session"] != self.stale_session);
+        self.activity_full = true;
+        self.activity_dirty = true;
+        self.error.clear();
+        self.notice = "Session ended. Start or choose another session.".into();
+    }
+
+    async fn refresh_session_catalog(&mut self) -> Result<()> {
+        self.sessions = self.control.as_mut().context("not connected")?
+            .call("session.list", json!({})).await?["sessions"].clone();
+        Ok(())
+    }
+
     async fn connected(&mut self,mut control: Control) -> Result<()> {
         let endpoint=self.endpoint.clone().context("server missing")?;
         let resumed = control.welcome()["client"]["resumed"] == true;
@@ -700,7 +749,15 @@ impl Actor {
         self.backoff = 1;
         if !self.selected_session.is_empty() {
             let session = self.selected_session.clone();
-            let attached = self.control.as_mut().unwrap().attach(&session).await?;
+            let attached = match self.control.as_mut().unwrap().attach(&session).await {
+                Ok(attached) => attached,
+                Err(error) if missing_terminal(&error) => {
+                    self.clear_ended_session(session);
+                    self.publish();
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            };
             self.set_view(&attached["view"]);
             if !self.selected_block.is_empty() {
                 let block = self.selected_block.clone();
@@ -737,6 +794,7 @@ impl Actor {
         Ok(())
     }
     fn set_view(&mut self, view: &Value) {
+        self.stale_session.clear();
         self.other_owner=false;
         let client = self
             .control
@@ -872,29 +930,14 @@ impl Actor {
         if event["type"] == "session_destroyed"
             && event["payload"]["session_id"].as_str() == Some(self.selected_session.as_str())
         {
-            self.mirror.request("", Vec::new());
-            self.selected_session.clear();
-            self.selected_block.clear();
-            self.data = None;
-            self.data_resume = None;
-            self.replica = None;
-            self.screen = None;
-            self.windows = json!([]);
-            self.controlled = false;
-            self.notice = "That session has closed".into();
+            self.clear_ended_session(self.selected_session.clone());
         }
         if matches!(
             event["type"].as_str(),
             Some("session_created" | "session_destroyed" | "session_changed")
         ) {
             self.activity_full=true;
-            self.sessions = self
-                .control
-                .as_mut()
-                .unwrap()
-                .call("session.list", json!({}))
-                .await?["sessions"]
-                .clone();
+            self.refresh_session_catalog().await?;
         }
         if event["type"] == "session_event" {
             let inner = &event["payload"]["event"];
@@ -933,7 +976,7 @@ impl Actor {
                 inner["type"].as_str(),
                 Some("session_view_changed" | "block_owner_changed" | "block_closed")
             ) {
-                self.refresh_view().await?;
+                self.refresh_close_view().await?;
             }
         }
         self.publish();
@@ -1182,13 +1225,10 @@ impl Actor {
                 let _=closer.close().await;
                 if let Err(error)=result
                     && error.downcast_ref::<rex_core::control::RpcError>().is_none_or(|e| e.code!="session_not_found") {return Err(error);}
-                if self.selected_session==id {
-                    self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);
-                    self.data=None;self.data_resume=None;self.replica=None;self.screen=None;self.controlled=false;
-                    self.preview_task=None;self.program_task=None;self.summary_task=None;
-                    self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();self.preview_updates.clear();
+                if self.selected_session == id {
+                    self.clear_ended_session(id);
                 }
-                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+                self.refresh_session_catalog().await?;
                 self.creating=false;self.notice="Session closed".into();self.publish();
             }
             "new_session" => {
@@ -1325,14 +1365,18 @@ impl Actor {
                         )
                         .await?;
                 }
-                let attached = self
-                    .control
-                    .as_mut()
-                    .context("not connected")?
-                    .attach(&session)
-                    .await?;
-                self.selected_session = session;
                 self.navigation_id = value["navigationId"].as_u64().unwrap_or(0);
+                let attached = match self.control.as_mut().context("not connected")?.attach(&session).await {
+                    Ok(attached) => attached,
+                    Err(error) if missing_terminal(&error) => {
+                        self.clear_ended_session(session);
+                        self.refresh_session_catalog().await?;
+                        self.publish();
+                        return Ok(());
+                    }
+                    Err(error) => return Err(error),
+                };
+                self.selected_session = session;
                 self.set_view(&attached["view"]);
                 self.error.clear();
                 if let Some(block)=value["block"].as_str() {
@@ -1725,15 +1769,9 @@ impl Actor {
         if self.selected_session.is_empty() {return Ok(false);}
         match self.refresh_view().await {
             Ok(())=>Ok(true),
-            Err(error) if error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|e.code=="session_not_found")=>{
-                self.close_retained_floating().await;
-                self.mirror.request("", Vec::new());
-                self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);self.screen=None;
-                self.data=None;self.data_resume=None;self.replica=None;self.controlled=false;
-                self.preview_task=None;self.program_task=None;self.summary_task=None;self.preview_updates.clear();
-                self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);
-                self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
-                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+            Err(error) if missing_terminal(&error) => {
+                self.clear_ended_session(self.selected_session.clone());
+                self.refresh_session_catalog().await?;
                 Ok(false)
             }
             Err(error)=>Err(error)
@@ -3464,3 +3502,7 @@ mod latency_tests;
 #[cfg(test)]
 #[path="pane_reorder_tests.rs"]
 mod pane_reorder_tests;
+
+#[cfg(test)]
+#[path="reconnect_tests.rs"]
+mod reconnect_tests;

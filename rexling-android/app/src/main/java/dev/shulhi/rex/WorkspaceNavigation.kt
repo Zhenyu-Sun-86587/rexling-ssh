@@ -57,6 +57,13 @@ class WorkspaceNavigation {
         return if(block!=state.selectedBlock) WorkspaceTarget(session.id,block) else null
     }
 
+    fun forget(session: String): Boolean {
+        val hadWindow=windows.remove(session)!=null
+        val hadBlock=blocks.remove(session)!=null
+        val hadPanes=panes.keys.removeAll {it.first==session}
+        return hadWindow || hadBlock || hadPanes
+    }
+
     fun encode(): String = JSONObject().apply {
         for(session in windows.keys+blocks.keys) put(session,JSONObject().apply {
             put("window",windows[session].orEmpty());put("block",blocks[session].orEmpty())

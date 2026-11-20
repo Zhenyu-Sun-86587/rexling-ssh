@@ -13,7 +13,7 @@ data class TerminalScroll(val total: Long=0,val offset: Long=0,val visible: Long
     val below: Long get()=(available-offset).coerceAtLeast(0)
 }
 data class TerminalCell(val x: Int, val y: Int, val text: String, val foreground: Int, val background: Int, val attributes: Int, val width: Int, val hyperlink: String?=null)
-class TerminalImage(val id: Long,val generation: Long,val width: Int,val height: Int,val rgba: ByteArray)
+class TerminalImage(val id: Long,val generation: Long,val width: Int,val height: Int,internal val bitmap: android.graphics.Bitmap?)
 data class TerminalImagePlacement(val image: TerminalImage,val layer: Int,val z: Int,val col: Int,val row: Int,
     val offsetX: Int,val offsetY: Int,val width: Int,val height: Int,val sourceX: Int,val sourceY: Int,val sourceWidth: Int,val sourceHeight: Int)
 data class TerminalScreen(val columns: Int, val rows: Int, val cursorX: Int?, val cursorY: Int?, val foreground: Int, val background: Int, val cells: List<TerminalCell>, val scroll: TerminalScroll = TerminalScroll(), val lines: List<List<TerminalCell>> = cells.groupBy {it.y}.let {groups->List(rows){groups[it].orEmpty()}}, val inputFlags: Int=0,val images: List<TerminalImagePlacement> = emptyList(),val imageCellWidth: Int=8,val imageCellHeight: Int=16,val above: List<List<TerminalCell>> = emptyList(),val below: List<List<TerminalCell>> = emptyList(),val cursorStyle: Int=1,val cursorBlinking: Boolean=false,val cursorAnchorX: Int?=null,val cursorAnchorY: Int?=null) {
@@ -59,6 +59,7 @@ data class AppState(
     val sessions: List<SessionItem> = emptyList(), val windows: List<WindowItem> = emptyList(),
     val selectedSession: String = "", val selectedBlock: String = "", val controlled: Boolean = false,
     val screen: TerminalScreen? = null, val creating: Boolean = false, val navigationId: Long = 0,val tabMoveId: Long=0,val paneMoveId: Long=0,val connectionEpoch: Long=0,val otherOwner: Boolean=false,val attentionCount: Int=0,
+    internal val staleSession: String = "",
     internal val cachedPrograms: Set<String> = emptySet(),
 ) {
     val connected: Boolean get() = phase == "connected"
@@ -79,6 +80,7 @@ data class AppState(
                 programs = root.optJSONObject("programs")?.let { programs -> programs.keys().asSequence().associateWith { id ->
                     ProgramIdentity.resolve(programs.optJSONArray(id).objects { it as String })
                 } } ?: emptyMap(),
+                staleSession=root.optString("staleSession"),
                 mirrorWaiting=root.optJSONArray("mirrorWaiting").objects {it as String}.toSet(),
                 previewFrames = root.optJSONObject("previews")?.let { frames -> frames.keys().asSequence().associateWith { TerminalScreen.parse(frames.getJSONObject(it)) } } ?: emptyMap(),
                 sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->

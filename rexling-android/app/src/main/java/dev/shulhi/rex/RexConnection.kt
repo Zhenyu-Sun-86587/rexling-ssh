@@ -216,8 +216,22 @@ internal class RexConnection(application: Application, private val scope: Corout
                                     activation.resume();cancelKeyRepeats();resetModifiers()
                                     navigationRequest=NavigationRequest();restoreWorkspace=true
                                 }
+                                val endedSession=next.staleSession.takeIf {it.isNotBlank() && it!=old.staleSession}
+                                if(endedSession!=null) {
+                                    workspace.forgetSession(endedSession)
+                                    if(lastSessionId==endedSession) {
+                                        lastSessionId=""
+                                        preferences.edit {remove("last_session:${next.endpoint}")}
+                                    }
+                                    if(navigationRequest.session==endedSession ||
+                                        (navigationRequest.session==null && next.selectedSession.isBlank())) {
+                                        navigationRequest=NavigationRequest()
+                                    }
+                                }
                                 android.os.Trace.beginSection("Rexlink.previewCache")
-                                try {paneFrames=updatePaneFrames(paneFrames,old,next)} finally {android.os.Trace.endSection()}
+                                try {
+                                    paneFrames=if(endedSession==null) updatePaneFrames(paneFrames,old,next) else emptyMap()
+                                } finally {android.os.Trace.endSection()}
                                 if(!restoreWorkspace && next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession &&
                                     (navigationRequest.session==null || navigationRequest.session==next.selectedSession)) {
                                     val old=state.value.selectedSession
