@@ -123,6 +123,53 @@ class TerminalImeViewportTest {
             }
         } finally {ui.runOnIdle {sampling=false;android.view.Choreographer.getInstance().removeFrameCallback(sampler);incoming.hideKeyboard()}}
     }
+    @Test fun minimizingAFloatingPaneKeepsItsEditorUntilTheTiledEditorIsServed() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val scope=kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+        lateinit var client: RexConnection
+        ui.runOnUiThread {client=RexConnection(context.applicationContext as android.app.Application,scope,"")}
+        val tiled=listOf(PanePlacement("a",0f,0f,1f,1f))
+        var floating by mutableStateOf(listOf(PanePlacement("float",.2f,.2f,.6f,.6f,floating=true)))
+        var focused by mutableStateOf("float")
+        var live by mutableStateOf("float")
+        val views=mutableMapOf<String,TerminalView>()
+        val frame=TerminalScreen(40,20,2,2,-1,0,emptyList())
+        try {
+            ui.setContent {MaterialTheme {
+                MultiPaneLayout(client,"session","tab",tiled,focused,live,live.isNotBlank(),emptyMap(),emptySet(),11f,
+                    onFocus={_,_->},onView={view->view.screen=frame;views[live]=view},
+                    onImage={_,_->false},onPaste={false},imeEnterSubmits=false,tapOpensKeyboard=false,
+                    keyboardChrome={0},extendsUnderNavigation=false,hazeState=remember {HazeState()},captureBackdrop=false,
+                    floatingPanes=floating)
+            }}
+            val outgoing=ui.runOnIdle {views.getValue("float").also {it.requestFocus()}}
+            val inputMethod=requireNotNull(context.getSystemService(android.view.inputmethod.InputMethodManager::class.java))
+            ui.waitUntil(7000) {ui.runOnIdle {outgoing.hasWindowFocus() && inputMethod.isActive(outgoing)}}
+            ui.runOnIdle {outgoing.keyboard()}
+            fun keyboardHeight(view: TerminalView) =
+                ViewCompat.getRootWindowInsets(view)?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+            ui.waitUntil(7000) {keyboardHeight(outgoing)>0}
+            ui.runOnIdle {
+                floating=emptyList()
+                focused="a"
+                live=""
+            }
+            ui.runOnIdle {
+                assertTrue("The outgoing editor must stay attached and focused during the navigation gap",
+                    outgoing.isAttachedToWindow && outgoing.hasFocus())
+                assertFalse(outgoing.controlled)
+                assertTrue(keyboardHeight(outgoing)>0)
+                live="a"
+            }
+            val incoming=ui.runOnIdle {views.getValue("a").also {it.requestFocus()}}
+            ui.waitUntil(5000) {!outgoing.isAttachedToWindow}
+            ui.runOnIdle {
+                assertTrue(incoming.hasFocus())
+                assertTrue(keyboardHeight(incoming)>0)
+                incoming.hideKeyboard()
+            }
+        } finally {ui.runOnIdle {client.close()}}
+    }
     @Test fun keyboardAnimationKeepsTheGridAndCachedRowsStable() {
         var covered by mutableIntStateOf(0);var legacy by mutableStateOf(true)
         val dimensions=mutableListOf<Pair<Int,Int>>();lateinit var view: TerminalView

@@ -46,7 +46,10 @@ internal class RexConnection(application: Application, private val scope: Corout
     internal fun minimizeFloating(session: String,window: String,pane: PanePlacement): Boolean {
         val current=state.value
         if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending ||
-            current.selectedSession!=session || current.selectedBlock!=pane.id || pane.layerId.isBlank()) return false
+            current.selectedSession!=session || pane.layerId.isBlank()) return false
+        val tab=current.windows.firstOrNull {it.id==window} ?: return false
+        if(tab.blocks.none {it.id==current.selectedBlock} ||
+            tab.layout.none {it.id==pane.id && it.floating && !it.minimized && it.layerId==pane.layerId}) return false
         return command("minimize_floating","session" to session,"window" to window,"id" to pane.id,"layerId" to pane.layerId)
     }
     fun movePane(window: String,id: String,before: String?): Boolean {
@@ -546,7 +549,9 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun wheel(lines: Int,col: Int,row: Int,cw: Int,ch: Int) {
         val current=state.value
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
-            command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
+            command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,
+                "navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch,
+                "lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
     }
     fun releaseControl() { activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {

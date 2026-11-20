@@ -14,6 +14,38 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class TerminalBackgroundTest {
+    @Test fun changingThemeKeepsExistingTextReadableOnAnExplicitPromptBackground() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val background = 0xfff4f4f4.toInt()
+            val cells = List(8) { x -> TerminalCell(x, 0, "M", 0xff202328.toInt(), background, 128, 1) }
+            val frame = TerminalScreen(8, 1, null, null, 0xff202328.toInt(), -1, cells)
+            val view = TerminalView(instrumentation.targetContext).apply {
+                textSp = 20f
+                setTerminalPaddingDp(0, 0, 0)
+                screen = frame
+                layout(0, 0, 640, 160)
+            }
+            fun checkDrawn(theme: TerminalPalette, expected: Int) {
+                view.palette = theme
+                val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                try {
+                    view.draw(Canvas(bitmap))
+                    val pixels = IntArray(bitmap.width * bitmap.height)
+                    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                    assertTrue("The prompt should still use its pinned background", background in pixels)
+                    assertTrue("The cached text must use the new display color", expected in pixels)
+                    assertTrue(view.screen === frame)
+                } finally { bitmap.recycle() }
+            }
+            val light = TerminalPalette.Light
+            val amber = TerminalPalette.Dark.copy(foreground = 0xfff5c67c.toInt())
+            checkDrawn(light, light.foreground)
+            checkDrawn(amber, TerminalTextColors().foreground(amber, cells.first()))
+            checkDrawn(light, light.foreground)
+        }
+    }
+
     @Test fun aFullScreenApplicationBackgroundHasNoCellSeamsAtFractionalOffsets() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val expected=0xff394457.toInt()

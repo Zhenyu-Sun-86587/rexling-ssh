@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,12 +36,12 @@ class TerminalActionsDrawerTest {
                         TerminalDrawerAction("Image", ChromeIcon.IMAGE, enabled = false) {},
                         TerminalDrawerAction("Attach file", ChromeIcon.FILE, enabled = false) {},
                         TerminalDrawerAction("Copy viewport", ChromeIcon.COPY) {},
+                        TerminalDrawerAction("Light theme", ChromeIcon.SUN) {},
                     ),
                     actions = listOf(
                         TerminalDrawerAction("New session", ChromeIcon.ADD, opensDrawer = true) {},
                         TerminalDrawerAction("Port forwarding", ChromeIcon.SERVER, opensDrawer = true) {},
                         TerminalDrawerAction("Servers", ChromeIcon.SERVER, opensDrawer = true) {},
-                        TerminalDrawerAction("Toggle Light theme", ChromeIcon.SUN) {},
                         TerminalDrawerAction("Refresh sessions", ChromeIcon.REFRESH) {},
                     ),
                     onPreferences = {},
@@ -54,6 +55,9 @@ class TerminalActionsDrawerTest {
         ui.onNodeWithText("74 × 45").assertIsDisplayed()
         ui.onNodeWithText("Paste").assertIsNotEnabled()
         ui.onNodeWithText("Attach file").assertIsDisplayed().assertIsNotEnabled()
+        val theme = ui.onNodeWithText("Light theme").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val copy = ui.onNodeWithText("Copy viewport").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(theme.left >= copy.right)
         ui.onNodeWithText("Close pane").performScrollTo().assertIsDisplayed()
         ui.onNodeWithContentDescription("Close terminal menu").assertIsDisplayed()
         ui.onNodeWithContentDescription("Preferences").assertIsDisplayed()

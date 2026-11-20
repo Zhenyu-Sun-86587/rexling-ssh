@@ -255,25 +255,25 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     val singlePaneNavigationClearance=if(flushSinglePane) navigationClearance else 0.dp
     val bottomOverlayInset=if(keyboardShown) 0.dp else singlePaneNavigationClearance
-    val floatingOverlay=if(allowFloatingOverlay && tiles!=null && activeFloating!=null) {
-        window?.layout.orEmpty().filter {it.floating && !it.minimized && it.layer==activeFloating.layer}
-    } else emptyList()
+    val floatingOverlay=if(allowFloatingOverlay && tiles!=null) window?.visibleFloatingPlacements().orEmpty()
+        else emptyList()
     var dockFloatingPane by remember(displayedSession,window?.id) {mutableStateOf<String?>(null)}
     val controlled=state.controlled && ready && client.hasScreen
     SideEffect {model.setPaneObscured(menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null || dockFloatingPane!=null)}
     fun openPane(id: String) {
-        val floating=window?.layout?.any {it.id==id && it.floating}==true
-        client.selectBlock(id,null,keepTiled=allowFloatingOverlay && tiles!=null && floating,restoreMinimized=true)
+        client.selectBlock(id,null,keepTiled=tiles!=null,restoreMinimized=true)
     }
-    fun minimizeFloating() {
-        if(window!=null && activeFloating!=null) client.minimizeFloating(displayedSession,window.id,activeFloating)
+    fun minimizeFloating(id: String) {
+        val tab=window ?: return
+        val pane=tab.layout.firstOrNull {it.id==id && it.floating && !it.minimized} ?: return
+        client.minimizeFloating(displayedSession,tab.id,pane)
     }
     LaunchedEffect(model.minimizeFloatingPanes) {
         if(model.minimizeFloatingPanes && activeFloating!=null && tiles==null)
             client.floatingNavigation.returnPane(displayedSession,window)?.let(client::selectBlock)
     }
     SideEffect {window?.let {client.floatingNavigation.remember(displayedSession,it,chosen)}}
-    BackHandler(enabled=ready && !newSession && !appearance && !about && !neovimSettings && !alerts && !fontPicker && closeTarget==null && activeFloating?.layerId?.isNotBlank()==true && picker.isEmpty() && !preferencesOpen && !model.activityVisible) {minimizeFloating()}
+    BackHandler(enabled=ready && !newSession && !appearance && !about && !neovimSettings && !alerts && !fontPicker && closeTarget==null && activeFloating?.layerId?.isNotBlank()==true && picker.isEmpty() && !preferencesOpen && !model.activityVisible) {activeFloating?.let {minimizeFloating(it.id)}}
     val liveBlock=state.selectedBlock.ifBlank {if(state.phase=="preview") "preview" else ""}
     fun closePaneTarget(block: BlockItem)=TerminalCloseTarget(state.selectedSession,block.id,
         (state.programs[block.id] ?: ProgramIdentity.Loading).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
@@ -393,7 +393,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         }
                         else if(tiles!=null && window!=null) MultiPaneLayout(
                             client,displayedSession,window.id,tiles,chosen,liveBlock,controlled,state.programs,state.mirrorWaiting,
-                            fontSize.toFloat(),onFocus={id,grid->client.selectBlock(id,grid)},
+                            fontSize.toFloat(),onFocus={id,grid->client.selectBlock(id,grid,keepTiled=true)},
                             onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             tapOpensKeyboard=model.toolbarWithKeyboardOnly,keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
@@ -419,7 +419,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                 modifier=Modifier.fillMaxSize(),position=model.neovimShortcutPosition,onPosition=model::moveNeovimShortcut,bottomInset=bottomOverlayInset+(if(floating.isNotEmpty() || carouselBlocks.size>1) 64.dp else 10.dp))
                         }
                         if(floating.isNotEmpty()) FloatingPaneDock(floating,activeFloating?.id,state.programs,state.titles,ready,
-                            ::openPane,::minimizeFloating,Modifier.align(Alignment.BottomEnd).padding(end=6.dp,bottom=bottomOverlayInset),directories=state.directories,hazeState=terminalHaze,onExpandedChange={floatingBackdrop=it})
+                            ::openPane,{activeFloating?.let {minimizeFloating(it.id)}},Modifier.align(Alignment.BottomEnd).padding(end=6.dp,bottom=bottomOverlayInset),directories=state.directories,hazeState=terminalHaze,onExpandedChange={floatingBackdrop=it})
                         }
                         if(tabLayout.position==TabBarPosition.RIGHT) tabRail()
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
@@ -470,15 +470,15 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     TerminalDrawerAction(if(multiple) "Single pane" else "Multiple panes",
                         if(multiple) ChromeIcon.ZOOM else ChromeIcon.SPLIT) {model.changeMultiPaneUnfolded(!multiple)}
                 } else null,
+                TerminalDrawerAction(if(palette.dark) "Light theme" else "Dark theme",
+                    if(palette.dark) ChromeIcon.SUN else ChromeIcon.MOON) {
+                    model.changeAppearance(if(palette.dark) Appearance.LIGHT else Appearance.DARK)
+                },
             ),
             actions=listOf(
                 TerminalDrawerAction("New session",ChromeIcon.ADD,enabled=ready,opensDrawer=true) {newSession=true},
                 TerminalDrawerAction("Port forwarding",ChromeIcon.SERVER,opensDrawer=true) {forwards=true},
                 TerminalDrawerAction("Servers · ${model.connectedCount} connected",ChromeIcon.SERVER,opensDrawer=true) {servers=true},
-                TerminalDrawerAction(if(palette.dark) "Toggle Light theme" else "Toggle Dark theme",
-                    if(palette.dark) ChromeIcon.SUN else ChromeIcon.MOON) {
-                    model.changeAppearance(if(palette.dark) Appearance.LIGHT else Appearance.DARK)
-                },
                 TerminalDrawerAction("Refresh sessions",ChromeIcon.REFRESH,enabled=state.connected) {client.refresh()},
             ),
             onPreferences={preferencesOpen=true},

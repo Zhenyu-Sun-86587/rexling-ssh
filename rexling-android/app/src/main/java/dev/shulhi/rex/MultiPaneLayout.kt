@@ -14,6 +14,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -94,7 +95,7 @@ internal fun MultiPaneLayout(
     paneActionsEnabled: Boolean = true,
     floatingPanes: List<PanePlacement> = emptyList(),
     allowFloat: Boolean = false,
-    onMinimizeFloating: ()->Unit = {},
+    onMinimizeFloating: (String)->Unit = {},
     onDockFloating: (String)->Unit = {},
     onClosePane: ((String)->Unit)? = null,
     onFloat: (String)->Unit = {id->client.editTerminal(session,window,id,"float_pane",focus=true)},
@@ -116,17 +117,24 @@ internal fun MultiPaneLayout(
     // A pane zoomed in Rex covers the whole area; the rest stay in the layout but are not shown or mirrored.
     val zoomedPane=placements.firstOrNull {it.id==zoomed}
     val zoomedFloat=floatingPanes.firstOrNull {it.id==zoomed}
-    val selectedFloat=floatingPanes.firstOrNull {it.id==focused}
+    var menuFor by remember(session,window) {mutableStateOf<String?>(null)}
+    val selectedFloat=floatingPanes.firstOrNull {it.id==menuFor} ?: floatingPanes.firstOrNull {it.id==focused}
     val originalBounds=selectedFloat?.layerBounds
     var draftBounds by remember(session,window,selectedFloat?.layerId,originalBounds,zoomed) {mutableStateOf<PaneBounds?>(null)}
     var adjustingFloat by remember(session,window,selectedFloat?.layerId,zoomed) {mutableStateOf(false)}
     val layerBounds=draftBounds ?: originalBounds
     val shownFloating=when {
+        zoomedPane!=null -> emptyList()
         zoomedFloat!=null -> listOf(zoomedFloat.copy(x=0f,y=0f,width=1f,height=1f))
-        draftBounds!=null && originalBounds!=null -> floatingPanes.map {draftBounds!!.positionIn(originalBounds,it)}
+        draftBounds!=null && originalBounds!=null -> floatingPanes.map {
+            if(it.layer==selectedFloat.layer) draftBounds!!.positionIn(originalBounds,it) else it
+        }
         else -> floatingPanes
     }
-    val mirrors=((zoomedPane?.let {listOf(it)} ?: placements)+shownFloating).map {it.id}.filter {it!=liveBlock}
+    val floatingLayers=shownFloating.groupBy {it.layer}
+    fun layerZ(layer: Int)=layer.coerceAtLeast(1)*3f
+    val mirrorTiles=if(zoomedFloat!=null) emptyList() else zoomedPane?.let {listOf(it)} ?: placements
+    val mirrors=(mirrorTiles+shownFloating).map {it.id}.filter {it!=liveBlock}
     val request=mirrors.mapNotNull {id->sizes[id]?.let {(columns,rows)->RexConnection.MirrorPane(id,columns,rows)}}
     // Debounced: while a border is dragged the panes resize on every frame, but their PTYs only once
     // the finger pauses or lifts (the focused pane's resize is debounced the same way).
@@ -148,10 +156,14 @@ internal fun MultiPaneLayout(
     }
     val (laidOut,laidOutSplits)=splitResize?.let {(id,ratio)->splits.firstOrNull {it.id==id}?.let {movedSplit(placements,splits,it,ratio)}}
         ?: (placements to splits)
-    val shownTiles=zoomedPane?.let {listOf(it.copy(x=left,y=top,width=spanX,height=spanY))} ?: laidOut
-    val shownSplits=if(zoomedPane!=null) emptyList() else laidOutSplits
+    val shownTiles=if(zoomedFloat!=null) emptyList() else
+        zoomedPane?.let {listOf(it.copy(x=left,y=top,width=spanX,height=spanY))} ?: laidOut
+    val shownSplits=if(zoomedPane!=null || zoomedFloat!=null) emptyList() else laidOutSplits
+    val imeHandoff=remember {TerminalImeHandoff(PanePlacement::id)}
+    val shownPanes=shownTiles+shownFloating
+    val outgoingEditor=imeHandoff.retainFor(shownPanes)
+    val mountedPanes=shownPanes+listOfNotNull(outgoingEditor?.pane)
     // Keep the controls visible for as long as the move handle is held.
-    var menuFor by remember(session,window) {mutableStateOf<String?>(null)}
     var move by remember(session,window,placements,zoomed,paneActionsEnabled) {mutableStateOf<PaneMove?>(null)}
     val moving=move!=null || adjustingFloat
     LaunchedEffect(draftBounds,adjustingFloat) {
@@ -202,29 +214,32 @@ internal fun MultiPaneLayout(
             val bounds=draftBounds
             if(bounds==null || selectedFloat==null || bounds==originalBounds || !onFloatingBounds(selectedFloat,bounds)) draftBounds=null
         }
-        if(layerBounds!=null && zoomedFloat==null) {
-            Box(Modifier.offset(maxWidth*layerBounds.x,visibleHeight*layerBounds.y)
-                .size(maxWidth*layerBounds.width,visibleHeight*layerBounds.height).zIndex(1f)
+        if(zoomedFloat==null) for((layer,panes) in floatingLayers) key(layer) {
+            val bounds=if(layer==selectedFloat?.layer) layerBounds else panes.first().layerBounds
+            if(bounds!=null) Box(Modifier.offset(maxWidth*bounds.x,visibleHeight*bounds.y)
+                .size(maxWidth*bounds.width,visibleHeight*bounds.height).zIndex(layerZ(layer))
                 .shadow(16.dp,shape,clip=false).background(scheme.background,shape))
         }
-        for(pane in shownTiles+shownFloating) key(pane.id) {
+        for(pane in mountedPanes) key(pane.id) {
+            DisposableEffect(pane.id) {onDispose {imeHandoff.remove(pane.id)}}
+            val retiring=outgoingEditor?.pane?.id==pane.id
             val floating=pane.floating
-            val inset=if(floating && shownFloating.size==1) 0.dp else paneInset
+            val inset=if(floating && floatingLayers[pane.layer]?.size==1) 0.dp else paneInset
             val x=maxWidth*(if(floating) pane.x else (pane.x-left)/spanX)
             val y=visibleHeight*(if(floating) pane.y else (pane.y-top)/spanY)
             val width=maxWidth*(if(floating) pane.width else pane.width/spanX)
             val heightFraction=if(floating) pane.height else pane.height/spanY
             val height=visibleHeight*heightFraction
-            val active=pane.id==focused
+            val active=!retiring && pane.id==focused
             val dropPosition=move?.drop?.takeIf {it.target==pane.id}?.position
             val moveSource=move?.source==pane.id
             val lastRow=!bottomMargin && pane.y+pane.height>=top+spanY-.001f
             val trim=when {floating->inset*2;lastRow->paneInset;else->gap}
             Box(Modifier.offset(x+inset,y+inset).size((width-inset*2).coerceAtLeast(0.dp),(height-trim).coerceAtLeast(0.dp))
-                .then(if(floating) Modifier.zIndex(2f)
-                    .then(if(layerBounds==null) Modifier.shadow(16.dp,shape,clip=false) else Modifier)
+                .then(if(retiring) Modifier.alpha(0f) else if(floating) Modifier.zIndex(layerZ(pane.layer)+1f)
+                    .then(if(pane.layerBounds==null && zoomedFloat==null) Modifier.shadow(16.dp,shape,clip=false) else Modifier)
                     .testTag("Floating terminal pane") else Modifier)
-                .onGloballyPositioned {paneCoordinates[pane.id]=it}
+                .onGloballyPositioned {if(!retiring) paneCoordinates[pane.id]=it}
                 .clip(shape).background(Color(palette.background))
                 .drawWithContent {
                     drawContent()
@@ -270,6 +285,9 @@ internal fun MultiPaneLayout(
                             (height-trim).coerceAtLeast(0.dp).roundToPx()
                     }) {keyboardFocus.takeIf {live}},
                     update={view->
+                        imeHandoff.mount(pane,view)
+                        view.onInputConnectionReady={if(live) imeHandoff.served(pane.id,view)}
+                        view.importantForAccessibility=if(retiring) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                         view.palette=palette
                         view.textSp=fontSize
                         view.setTerminalPaddingDp(12,8,if(floating) 8 else bottomPaddingDp)
@@ -291,18 +309,19 @@ internal fun MultiPaneLayout(
                         view.imageInputTarget=client::imageInputTarget
                         view.onImage=onImage
                         view.onPaste=onPaste
-                        if(!live || !client.bindTerminalView(pane.id,view)) {
+                        if(!retiring && (!live || !client.bindTerminalView(pane.id,view))) {
                             if(!live || view.screen==null) paneFrame?.let {view.screen=it}
                         }
                         if(live) onView(view)
                     },
                 )
+                if(retiring) return@Box
                 if(!active) {
                     Box(Modifier.matchParentSize().semantics {contentDescription="Focus pane"}
                         .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {
                             onFocus(pane.id,sizes[pane.id])
                         })
-                    if(pane.id in waiting || paneFrame==null) Text(
+                    if(pane.id in waiting || (paneFrame==null && pane.id!=liveBlock)) Text(
                         if(paneFrame==null) "Opening terminal…" else "Reconnecting…",
                         Modifier.align(Alignment.Center).background(scheme.surface).padding(6.dp),
                         color=scheme.onSurfaceVariant,fontSize=11.sp,
@@ -338,7 +357,7 @@ internal fun MultiPaneLayout(
                         onSplit=splitPane,onZoom=zoomPane,
                         onFloat=if(allowFloat && !floating) ({menuFor=null;onFloat(pane.id)}) else null,
                         onDock=if(floating) ({menuFor=null;onDockFloating(pane.id)}) else null,
-                        onMinimize=if(floating) ({menuFor=null;onMinimizeFloating()}) else null,
+                        onMinimize=if(floating) ({menuFor=null;onMinimizeFloating(pane.id)}) else null,
                         onClose=onClosePane?.let {close-> {menuFor=null;close(pane.id)}},
                     )
                     if(floating && canAdjustFloat) {
@@ -402,13 +421,14 @@ internal fun MultiPaneLayout(
                 }
             }
         }
-        if(canAdjustFloat && layerBounds!=null && floatingPanes.any {it.id==menuFor}) {
+        val resizePane=selectedFloat?.takeIf {canAdjustFloat && it.id==menuFor}
+        if(resizePane!=null && layerBounds!=null) {
             val grip=36.dp
             val gripTop=(visibleHeight*(layerBounds.y+layerBounds.height)-grip-5.dp)
                 .coerceAtMost(visibleHeight-grip-34.dp)
             FloatingLayerGrip(
                 ChromeIcon.RESIZE,"Resize floating pane",
-                Modifier.offset(maxWidth*(layerBounds.x+layerBounds.width)-grip-5.dp,gripTop).zIndex(3f),
+                Modifier.offset(maxWidth*(layerBounds.x+layerBounds.width)-grip-5.dp,gripTop).zIndex(layerZ(resizePane.layer)+2f),
                 onAdjust={adjustFloat(it,true)},onFinish={finishFloatAdjustment()},onCancel={cancelFloatAdjustment()},
             )
         }

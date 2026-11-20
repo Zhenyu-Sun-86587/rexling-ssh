@@ -1173,6 +1173,9 @@ impl Actor {
         ensure!(!self.monitoring,"Background monitor is read-only");
         let target=self.input_target();
         if !target.matches(&value) {return Ok(());}
+        if value["type"]=="wheel" {
+            return self.send_wheel(&value,target).await;
+        }
         if value["type"]=="click" && (!self.visible || self.paused || self.phase!="connected" || !self.controlled) {return Ok(());}
         ensure!(self.visible && !self.paused && self.phase=="connected" && self.controlled,"Take control before typing");
         let click=value["type"]=="click";
@@ -1195,9 +1198,47 @@ impl Actor {
         // Unlike terminal.write, block.event is serialized by Rex on this connection.
         // An unidentified key with text preserves our already-encoded input bytes;
         // it bypasses Lua bindings, matching the previous raw-write behavior.
-        let payload=json!({"session_id":target.session,"block_id":target.block,"event":input_event(value["type"]=="paste",text)});
+        self.start_input(target,value["type"]=="paste",text).await
+    }
+    async fn start_input(&mut self,target:Target,paste:bool,text:&str)->Result<()> {
+        let payload=json!({"session_id":target.session,"block_id":target.block,"event":input_event(paste,text)});
         let reply=self.control.as_mut().context("not connected")?.start_call("block.event",payload).await?;
-        self.input_acks.push_back(InputAck {target,paste:value["type"]=="paste",reply:Box::pin(reply.receive())});Ok(())
+        self.input_acks.push_back(InputAck {target,paste,reply:Box::pin(reply.receive())});
+        Ok(())
+    }
+    async fn send_wheel(&mut self,value:&Value,target:Target)->Result<()> {
+        if !self.visible || self.paused || self.phase!="connected"
+            || target.navigation<self.latest_navigation.load(Ordering::Acquire) {return Ok(());}
+        let lines=crate::input_queue::wheel_lines(value) as i32;
+        if lines==0 {return Ok(());}
+        let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
+        let terminal=replica.terminal()?;
+        let flags=terminal.input_flags()?;
+        let bytes=if flags&1!=0 {
+            terminal.wheel(lines>0,value["col"].as_i64().unwrap_or(0) as i32,value["row"].as_i64().unwrap_or(0) as i32,
+                value["cw"].as_u64().unwrap_or(1).clamp(1,1024) as u32,value["ch"].as_u64().unwrap_or(1).clamp(1,1024) as u32)?
+        } else if flags&6==6 {
+            match (flags&8!=0,lines<0) {(true,true)=>b"\x1bOA".to_vec(),(true,false)=>b"\x1bOB".to_vec(),(false,true)=>b"\x1b[A".to_vec(),(false,false)=>b"\x1b[B".to_vec()}
+        } else {
+            terminal.scroll_viewport(lines);
+            self.dirty=true;
+            return Ok(());
+        };
+        if bytes.is_empty(){return Ok(());}
+        let text=String::from_utf8(bytes.repeat(lines.unsigned_abs() as usize)).context("Legacy mouse coordinates cannot be sent as UTF-8 terminal input")?;
+        if !self.controlled {
+            self.take_selected().await?;
+            if target!=self.input_target() || target.navigation<self.latest_navigation.load(Ordering::Acquire) {return Ok(());}
+            if let (Some(cols),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
+                && cols>0 && rows>0 {
+                self.control.as_mut().context("not connected")?.terminal(&target.session,&target.block,"resize",
+                    json!({"columns":cols.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
+            }
+        }
+        if self.controlled && target.navigation>=self.latest_navigation.load(Ordering::Acquire) {
+            self.start_input(target,false,&text).await?;
+        }
+        Ok(())
     }
     async fn command(&mut self, value: Value) -> Result<()> {
         let kind=value["type"].as_str().context("command type missing")?;
@@ -1667,19 +1708,12 @@ impl Actor {
                 if !self.visible || session != self.selected_session {
                     return Ok(());
                 }
-                let window = self.windows.as_array().into_iter().flatten()
-                    .find(|w| w["blocks"].as_array().into_iter().flatten().any(|b| b["id"] == self.selected_block));
-                if window.is_none_or(|w| w["id"] != value["window"]) {
-                    return Ok(());
-                }
-                let active_float=window.and_then(|w|w["layout"].as_array()).and_then(|panes|
-                    panes.iter().find(|p|p["id"]==self.selected_block && p["floating"]==true && p["minimized"]!=true));
+                let Some(window)=pane_window(&self.windows,&self.selected_block).filter(|w|w["id"]==value["window"])
+                    else {return Ok(());};
+                let zoomed=window["zoomed"].as_str().filter(|id|!id.is_empty());
                 let wanted: Vec<_> = wanted.into_iter().filter(|want| {
-                    want.block != self.selected_block && window.is_some_and(|w| {
-                        w["layout"].as_array().into_iter().flatten()
-                            .any(|p| p["id"] == want.block && p["minimized"] != true && (p["floating"] == false ||
-                                active_float.is_some_and(|active|p["layer"]==active["layer"])))
-                    })
+                    want.block != self.selected_block && zoomed.is_none_or(|id|id==want.block) &&
+                        pane_layout(window).any(|pane|pane["id"]==want.block && pane["minimized"]!=true)
                 }).collect();
                 if self.retained_floating.as_ref().is_some_and(|pane|wanted.iter().any(|want|want.block==pane.block))
                     && let Some(pane)=self.retained_floating.take() {
@@ -1695,33 +1729,6 @@ impl Actor {
                 self.controlled = false;self.other_owner=false;
                 self.notice = "Viewing terminal".into();
                 self.publish();
-            }
-            "wheel" => {
-                if !self.visible || self.paused || self.phase!="connected"
-                    || value["block"].as_str()!=Some(self.selected_block.as_str())
-                    || value["session"].as_str()!=Some(self.selected_session.as_str()) {return Ok(());}
-                let lines=value["lines"].as_i64().unwrap_or(0).clamp(-32,32) as i32;
-                if lines==0 {return Ok(());}
-                let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
-                let terminal=replica.terminal()?;let flags=terminal.input_flags()?;
-                let bytes=if flags&1!=0 {
-                    terminal.wheel(lines>0,value["col"].as_i64().unwrap_or(0) as i32,value["row"].as_i64().unwrap_or(0) as i32,
-                        value["cw"].as_u64().unwrap_or(1).clamp(1,1024) as u32,value["ch"].as_u64().unwrap_or(1).clamp(1,1024) as u32)?
-                } else if flags&6==6 {match (flags&8!=0,lines<0) {(true,true)=>b"\x1bOA".to_vec(),(true,false)=>b"\x1bOB".to_vec(),(false,true)=>b"\x1b[A".to_vec(),(false,false)=>b"\x1b[B".to_vec()}}
-                else {terminal.scroll_viewport(lines);self.dirty=true;return Ok(());};
-                if bytes.is_empty(){return Ok(());}
-                let text=String::from_utf8(bytes.repeat(lines.unsigned_abs() as usize)).context("Legacy mouse coordinates cannot be sent as UTF-8 terminal input")?;
-                if !self.controlled {
-                    self.take_selected().await?;
-                    if let (Some(cols),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
-                        && cols>0 && rows>0 {
-                        self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"resize",
-                            json!({"columns":cols.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
-                    }
-                }
-                if let Err(error)=self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"write",json!({"data":text})).await {
-                    self.recover(error);self.notice="Scroll outcome uncertain; wheel input was not resent".into();self.publish();
-                }
             }
             "copy_semantic" => {
                 if !self.visible || self.paused || !self.input_target().matches(&value) {return Ok(());}
@@ -1897,17 +1904,14 @@ impl Actor {
 
     async fn open_block_stream(&mut self, block: String, keep_tiled: bool) -> Result<bool> {
         let minimized = minimized_pane(&self.windows, &self.selected_block).is_some();
-        let floating=self.windows.as_array().into_iter().flatten().any(|w|
-            pane_layout(w).any(|p|p["id"]==self.selected_block && p["floating"]==true));
-        let overlay = keep_tiled.then(||self.windows.as_array().into_iter().flatten().find_map(|window| {
-            let panes=window["layout"].as_array()?;
-            let source=panes.iter().find(|pane|pane["id"]==self.selected_block)?;
-            let target=panes.iter().find(|pane|pane["id"]==block && pane["floating"]==true)?;
-            Some(source["floating"]==true && source["layer"]==target["layer"])
-        })).flatten();
-        let opens_overlay=overlay.is_some();
+        let window=pane_window(&self.windows,&self.selected_block);
+        let floating=window.is_some_and(|w|pane_layout(w).any(|p|p["id"]==self.selected_block && p["floating"]==true));
+        let keep_layout=keep_tiled && window.is_some_and(|w| {
+            w["zoomed"].as_str().is_none_or(str::is_empty) &&
+                pane_layout(w).any(|pane|pane["id"]==block && pane["minimized"]!=true)
+        });
         let handoff = self.mirror.wants(&self.selected_session, &block);
-        let retain_as_mirror = !minimized && ((handoff || opens_overlay) && !floating || overlay==Some(true)) &&
+        let retain_as_mirror = !minimized && (keep_layout || handoff && !floating) &&
             self.data.is_some() && self.replica.is_some();
         let was_controlled = self.controlled;
         if retain_as_mirror {
@@ -1929,7 +1933,7 @@ impl Actor {
             })
         } else {
             // Giving up on focus should leave the other visible panes streaming.
-            if !opens_overlay && !block.is_empty() {
+            if !keep_layout && !block.is_empty() {
                 self.mirror.request("", Vec::new());
                 if let Some(control) = self.control.as_mut() {
                     self.mirror.start(control).await;

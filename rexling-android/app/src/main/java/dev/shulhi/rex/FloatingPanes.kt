@@ -26,6 +26,9 @@ internal fun WindowItem.visiblePanes(): List<BlockItem> {
     return blocks.filterNot {it.id in minimized}
 }
 
+internal fun WindowItem.visibleFloatingPlacements(): List<PanePlacement> =
+    layout.filter {it.floating && !it.minimized && it.width>0f && it.height>0f}
+
 internal fun WindowItem.carouselPanes(docked: Boolean,selected: String): List<BlockItem> {
     val visible=visiblePanes()
     if(!docked) return visible

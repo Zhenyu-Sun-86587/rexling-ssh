@@ -132,6 +132,7 @@ class MultiPaneMoveTest {
         val application=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
         val scope=CoroutineScope(Dispatchers.Main)
         val focused=mutableStateOf("right")
+        val minimized=mutableStateOf(true)
         val savedBounds=mutableStateOf(PaneBounds(.25f,.25f,.5f,.5f))
         val adjustments=mutableListOf<PaneBounds>()
         val actions=mutableListOf<String>()
@@ -150,25 +151,31 @@ class MultiPaneMoveTest {
                 val selected=focused.value
                 val original=layout.last()
                 val bounds=savedBounds.value
-                val overlay=bounds.positionIn(original.layerBounds!!,original).copy(layerBounds=bounds).takeIf {it.id==selected}
+                val currentWindow=window.copy(layout=layout.dropLast(1)+
+                    bounds.positionIn(original.layerBounds!!,original).copy(layerBounds=bounds,minimized=minimized.value))
+                val overlay=currentWindow.visibleFloatingPlacements()
+                fun minimize() {
+                    minimized.value=true
+                    if(focused.value==pane.id) focused.value=navigation.returnPane("session",window)!!
+                }
                 val haze=remember {HazeState()}
                 Box(Modifier.width(380.dp).height(320.dp).testTag("Workspace")) {
                     MultiPaneLayout(
-                        client,"session",window.id,multiPaneTiles(window,selected,allowFloatingOverlay=true)!!,
+                        client,"session",window.id,multiPaneTiles(currentWindow,selected,allowFloatingOverlay=true)!!,
                         focused=selected,liveBlock=selected,controlled=true,programs=emptyMap(),
                         waiting=emptySet(),fontSize=11f,onFocus={id,_->focused.value=id},
                         onView={},onImage={_,_->false},onPaste={false},imeEnterSubmits=false,
                         tapOpensKeyboard=false,keyboardChrome={0},extendsUnderNavigation=false,
-                        hazeState=haze,captureBackdrop=false,floatingPanes=listOfNotNull(overlay),allowFloat=true,
+                        hazeState=haze,captureBackdrop=false,floatingPanes=overlay,allowFloat=true,
                         onFloat={actions+="float:$it"},onDockFloating={actions+="dock:$it"},
                         onClosePane={actions+="close:$it"},
-                        onMinimizeFloating={focused.value=navigation.returnPane("session",window)!!},
+                        onMinimizeFloating={minimize()},
                         onFloatingBounds={_,next->adjustments+=next;savedBounds.value=next;true},
                         onSplit={id,split->actions+="split:$id:$split"},
                     )
                     FloatingPaneDock(
-                        listOf(pane),overlay?.id,emptyMap(),emptyMap(),enabled=true,
-                        onOpen={focused.value=it},onMinimize={focused.value=navigation.returnPane("session",window)!!},
+                        listOf(pane),pane.id.takeIf {it==selected},emptyMap(),emptyMap(),enabled=true,
+                        onOpen={minimized.value=false;focused.value=it},onMinimize={minimize()},
                         modifier=Modifier.align(Alignment.BottomEnd),
                     )
                 }
@@ -182,6 +189,9 @@ class MultiPaneMoveTest {
             assertEquals(.5f,overlay.height/workspace.height,.025f)
             assertEquals(workspace.center.x,overlay.center.x,2f)
             assertEquals(workspace.center.y,overlay.center.y,2f)
+            ui.onAllNodesWithContentDescription("Focus pane")[1].performClick()
+            ui.runOnIdle {assertEquals("right",focused.value)}
+            assertEquals(overlay,ui.onNodeWithTag("Floating terminal pane").assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
             val floatingCorner=hasAnyAncestor(hasTestTag("Floating terminal pane"))
             fun revealCorner()=ui.onNode(hasContentDescription("Pane actions, top left") and floatingCorner).performClick()
             revealCorner()

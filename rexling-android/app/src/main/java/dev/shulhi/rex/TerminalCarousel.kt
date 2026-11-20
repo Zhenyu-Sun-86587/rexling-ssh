@@ -50,7 +50,7 @@ import dev.chrisbanes.haze.hazeSource
     val backdrop=MaterialTheme.colorScheme.background
     val scope=rememberCoroutineScope()
     val keepAwake=LocalKeepScreenAwake.current
-    val imeHandoff=remember {TerminalImeHandoff()}
+    val imeHandoff=remember {TerminalImeHandoff(BlockItem::id)}
     var visualId by remember(blocks.map {it.id}) {mutableStateOf(selectedBlock)}
     var drag by remember {mutableFloatStateOf(0f)}
     var dragging by remember {mutableStateOf(false)}
@@ -109,10 +109,10 @@ import dev.chrisbanes.haze.hazeSource
         val showSwitch=(dragging || settling || toast) && blocks.size>1 && blocks.getOrNull(candidate)!=null
         val pages=offsets.map {offset->blocks[Math.floorMod(index+offset,blocks.size)] to offset}
         val retained=imeHandoff.retainFor(pages.map {it.first})
-        val mountedPages=pages+listOfNotNull(retained?.let {it.block to 4})
+        val mountedPages=pages+listOfNotNull(retained?.let {it.pane to 4})
         Box(Modifier.fillMaxSize().then(if(showSwitch || captureBackdrop) Modifier.hazeSource(haze) else Modifier)) {
         for((block,offset) in mountedPages) {
-            val retiring=retained?.block?.id==block.id
+            val retiring=retained?.pane?.id==block.id
             val center=offset==0 && !retiring
             val preferredFrame=if(retiring) retained!!.frame else liveScreen.takeIf {block.id==liveBlock}
             val pageOffset=offset*stride
@@ -213,7 +213,7 @@ import dev.chrisbanes.haze.hazeSource
 }
 
 @Composable private fun CarouselPageFrame(
-    block: String,preferred: TerminalScreen?,previewFrame: (String)->TerminalScreen?,handoff: TerminalImeHandoff,
+    block: String,preferred: TerminalScreen?,previewFrame: (String)->TerminalScreen?,handoff: TerminalImeHandoff<BlockItem>,
     content: @Composable (TerminalScreen?)->Unit,
 ) {
     // Observe this pane from its own recompose scope, independently of the other mounted pages.

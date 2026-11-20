@@ -346,6 +346,32 @@ async fn output_and_rendering_continue_before_input_acknowledgment() {
 }
 
 #[tokio::test]
+async fn wheel_echo_renders_with_two_batches_in_flight_and_coalesces_waiting_motion() {
+    let peer = Peer::new(Duration::ZERO, false, false).await;
+    let (mut actor, shared) = peer.actor(8, true).await;
+    actor.replica.as_mut().unwrap().feed(b"\x1b[?1049h\x1b[?1000h\x1b[?1006h").unwrap();
+    let (tx, rx) = mpsc::channel(128);
+    let wheel = || json!({"type":"wheel","lines":1,"col":4,"row":5,"cw":10,"ch":20});
+    tokio::join!(actor.run(rx), async {
+        tx.send(wheel()).await.unwrap();
+        until(|| shared.lock().unwrap().frame.as_ref().is_some_and(|frame| frame.text().contains("VT_BEFORE_ACK"))).await;
+        assert_eq!(peer.acknowledged.load(Ordering::SeqCst),0);
+        tx.send(wheel()).await.unwrap();
+        until(||peer.writes.lock().unwrap().len()==2).await;
+        for _ in 0..8 { tx.send(wheel()).await.unwrap(); }
+        until(||tx.capacity()==128).await;
+        assert_eq!(peer.writes.lock().unwrap().len(),2);
+        assert_eq!(peer.acknowledged.load(Ordering::SeqCst),0);
+        peer.gate.add_permits(1);
+        until(||peer.writes.lock().unwrap().len()==3).await;
+        assert_eq!(peer.writes.lock().unwrap()[2], "\x1b[<65;5;6M".repeat(8));
+        peer.gate.add_permits(2);
+        until(||peer.acknowledged.load(Ordering::SeqCst)==3).await;
+        shutdown(&tx).await;
+    });
+}
+
+#[tokio::test]
 async fn rejected_input_discards_unsent_text_without_reconnecting_or_taking_control() {
     let peer = Peer::new(Duration::ZERO, true, false).await;
     let (actor, shared) = peer.actor(1, false).await;
@@ -512,9 +538,13 @@ async fn opening_a_floating_overlay_keeps_the_tiled_stream_for_return_focus() {
     assert_eq!(actor.selected_block,"block:test");
     assert!(actor.mirror.wants("session:test","block:tiled"));
 
-    actor.open_block("block:tiled".into()).await.unwrap();
+    actor.command(json!({"type":"block","id":"block:tiled","keepTiled":true})).await.unwrap();
     assert_eq!(actor.selected_block,"block:tiled");
-    assert!(actor.retained_floating.is_some());
+    assert!(actor.mirror.wants("session:test","block:test"));
+    assert!(actor.retained_floating.is_none());
+    actor.command(json!({"type":"mirror","session":"session:test","window":"window:test",
+        "panes":[{"block":"block:test","rows":24,"columns":80}]})).await.unwrap();
+    assert!(actor.mirror.wants("session:test","block:test"));
     assert_eq!(count_data_opens(),before);
 }
 

@@ -156,6 +156,7 @@ class TerminalView(context: Context) : View(context) {
         set(value) { if (field != value) { field = value; metrics(); invalidate() } }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
+    private val textColors = TerminalTextColors()
     private val fonts = TerminalFonts(context)
     private val terminalImages=TerminalImages()
     private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>)
@@ -407,7 +408,7 @@ class TerminalView(context: Context) : View(context) {
             if(cell.x>=columns || cell.width==0 || cell.text.isEmpty() || cell.text.codePointAt(0)==0x10eeee || cell.attributes and 16!=0) continue
             val style=cell.attributes and 3
             paint.typeface=fonts.typefaceFor(style,cell.text)
-            paint.color=if(cell.attributes and 8!=0) palette.background(cell) else palette.foreground(cell)
+            paint.color=textColors.foreground(palette,cell)
             paint.alpha=if(cell.attributes and 4!=0) 150 else 255
             var text=cell.text;var width=cell.width
             val ascii=cell.width==1 && cell.text.length==1 && cell.text[0] in ' '..'~'
@@ -603,7 +604,8 @@ class TerminalView(context: Context) : View(context) {
             MotionEvent.ACTION_UP -> if(scrolling) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 val velocity=-(touchVelocity?.yVelocity ?: 0f).toInt()
-                val history=screen?.scroll
+                val frame=screen
+                val history=frame?.scroll?.takeUnless {frame.applicationScroll && it.below==0L}
                 if(history!=null && history.available>0) {
                     val minimum=-(history.offset.toDouble()*cellHeight).coerceAtMost(1000000.0).toInt()
                     val maximum=(history.below.toDouble()*cellHeight).coerceAtMost(1000000.0).toInt()
