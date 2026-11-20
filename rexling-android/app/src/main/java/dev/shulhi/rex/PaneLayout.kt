@@ -34,14 +34,15 @@ data class PaneBounds(val x: Float,val y: Float,val width: Float,val height: Flo
 
 /** Visible intersection of a server-reported pane with its window, in window fractions. */
 data class PanePlacement(val id: String,val x: Float,val y: Float,val width: Float,val height: Float,val layer: Int=0,val floating: Boolean=false,
-    val layerId: String="",val layerBounds: PaneBounds?=null) {
+    val layerId: String="",val layerBounds: PaneBounds?=null,val minimized: Boolean=false) {
     companion object {
         fun parse(value: JSONObject?): PanePlacement? {
             value ?: return null
             val id=value.optString("id").takeIf {it.isNotBlank()} ?: return null
             val bounds=PaneBounds.parse(value.optJSONArray("rect")) ?: return null
             return PanePlacement(id,bounds.x,bounds.y,bounds.width,bounds.height,value.optInt("layer").coerceIn(0,255),value.optBoolean("floating"),
-                value.optString("layerId"),PaneBounds.parse(value.optJSONArray("layerBounds")))
+                value.optString("layerId"),PaneBounds.parse(value.optJSONArray("layerBounds")),
+                value.optBoolean("floating") && value.optBoolean("minimized"))
         }
     }
 }

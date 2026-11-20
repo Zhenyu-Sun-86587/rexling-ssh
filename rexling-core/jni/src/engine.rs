@@ -117,6 +117,37 @@ mod shift_enter_tests {
     }
 }
 type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Arc<Frame>)>>>>>;
+fn pane_layout(window: &Value) -> impl Iterator<Item = &Value> {
+    window["layout"].as_array().into_iter().flatten()
+}
+
+fn pane_window<'a>(windows: &'a Value, block: &str) -> Option<&'a Value> {
+    windows.as_array()?.iter().find(|window| {
+        window["blocks"].as_array().into_iter().flatten().any(|pane| pane["id"] == block)
+    })
+}
+
+fn minimized_pane<'a>(windows: &'a Value, block: &str) -> Option<(&'a Value, &'a Value)> {
+    let window = pane_window(windows, block)?;
+    let pane = pane_layout(window).find(|pane| pane["id"] == block && pane["minimized"] == true)?;
+    Some((window, pane))
+}
+
+fn visible_terminal(window: &Value) -> Option<&str> {
+    let focused = window["focused"].as_str();
+    window["blocks"].as_array()?.iter()
+        .filter_map(|pane| pane["id"].as_str())
+        .filter(|id| !pane_layout(window).any(|pane| pane["id"] == *id && pane["minimized"] == true))
+        .min_by_key(|id| (Some(*id) != focused, pane_layout(window).any(|pane| pane["id"] == *id && pane["floating"] == true)))
+}
+
+fn visible_target(windows: &Value, block: String) -> String {
+    let Some((window, _)) = minimized_pane(windows, &block) else { return block };
+    visible_terminal(window)
+        .or_else(|| windows.as_array()?.iter().find_map(visible_terminal))
+        .unwrap_or_default().to_owned()
+}
+
 fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'static str,Value)> {
     ensure!(value["session"].as_str()==Some(session),"The selected session changed");
     let kind=value["type"].as_str().context("terminal action required")?;
@@ -133,9 +164,12 @@ fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'stati
     }
     let layout=window["layout"].as_array().context("Pane layout is unavailable")?;
     let placement=layout.iter().find(|p|p["id"]==id).context("Pane layout changed")?;
-    if kind=="resize_floating" {
+    if matches!(kind, "resize_floating" | "minimize_floating") {
         let layer=placement["layerId"].as_str().filter(|id|!id.is_empty()).context("Floating layer is unavailable")?;
         ensure!(placement["floating"]==true && value["layerId"]==layer,"The floating layer changed");
+        if kind == "minimize_floating" {
+            return Ok(("session.set_layer_state",json!({"session_id":session,"layer_id":layer,"state":"minimized"})));
+        }
         let bounds=value["bounds"].as_array().filter(|rect|rect.len()==4).context("Invalid floating bounds")?;
         let fields: Option<Vec<_>>=bounds.iter().map(Value::as_f64).collect();
         let fields=fields.context("Invalid floating bounds")?;
@@ -574,7 +608,10 @@ impl Actor {
                 },
                 result=async {match &mut self.preview_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.preview_task=None;
-                    if let Ok(frames)=result {for(id,frame) in frames {self.preview_updates.insert(id,frame);}self.publish();}
+                    if let Ok(frames)=result {
+                        self.preview_updates.extend(frames.into_iter().filter(|(id,_)| minimized_pane(&self.windows,id).is_none()));
+                        self.publish();
+                    }
                 },
                 result=async {match &mut self.summary_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.summary_task=None;
@@ -817,6 +854,13 @@ impl Actor {
                 Err(error) => return Err(error),
             };
             self.set_view(&attached["view"]);
+            if minimized_pane(&self.windows, &self.selected_block).is_some() {
+                self.release_selected().await?;
+                self.selected_block = visible_target(&self.windows, std::mem::take(&mut self.selected_block));
+                self.data_resume = None;
+                self.replica = None;
+                self.screen = None;
+            }
             if !self.selected_block.is_empty() {
                 let block = self.selected_block.clone();
                 self.apply_theme().await?;
@@ -861,6 +905,7 @@ impl Actor {
             .unwrap_or("");
         let mut windows = Vec::new();
         let mut selected_exists = false;
+        let mut minimized = BTreeSet::new();
         for window in view["windows"].as_array().into_iter().flatten() {
             let mut blocks = Vec::new();
             let mut layout=Vec::new();
@@ -875,6 +920,10 @@ impl Actor {
                     for pane in &mut layout[start..] {
                         pane["layerId"]=layer["layer_id"].clone();
                         pane["layerBounds"]=layer["bounds"].clone();
+                        if layer["state"] == "minimized" {
+                            pane["minimized"] = json!(true);
+                            if let Some(id) = pane["id"].as_str() { minimized.insert(id.to_owned()); }
+                        }
                     }
                 }
                 if layer["kind"]=="tiled" {collect_splits(&layer["layout"],&ids,0,&mut splits);}
@@ -896,7 +945,7 @@ impl Actor {
             }
             // Rex draws a zoomed block over its whole window; layouts keep their normal sizes.
             windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout,"splits":splits,
-                "zoomed":window["zoomed_block_id"].as_str().unwrap_or("")}));
+                "zoomed":window["zoomed_block_id"].as_str().unwrap_or(""),"focused":window["focused_block_id"]}));
         }
         let next = json!(windows);
         let ids = |windows: &Value| -> BTreeSet<String> {
@@ -922,7 +971,10 @@ impl Actor {
         self.windows = next;
         let live: BTreeSet<_>=self.windows.as_array().into_iter().flatten().flat_map(|w|w["blocks"].as_array().into_iter().flatten()).filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
         if self.retained_floating.as_ref().is_some_and(|p|!live.contains(&p.block)) {self.retained_floating=None;}
-        self.mirror.retain(|block| live.contains(block));
+        self.mirror.retain(|block| live.contains(block) && !minimized.contains(block));
+        if !minimized.is_empty() {
+            self.preview_updates.retain(|id, _| !minimized.contains(id));
+        }
         let before=self.progress_reports.len();
         self.progress_reports.retain(|_,r|r["session"]!=self.selected_session || r["block"].as_str().is_some_and(|id|live.contains(id)));
         if self.progress_reports.len()!=before {self.activity_dirty=true;}
@@ -940,14 +992,22 @@ impl Actor {
         if self.selected_session.is_empty() {
             return Ok(());
         }
-        let view = self
-            .control
-            .as_mut()
-            .context("not connected")?
-            .call("session.view", json!({"session_id":self.selected_session}))
-            .await?;
-        self.set_view(&view);
+        let mut handoff = false;
+        loop {
+            let view = self.control.as_mut().context("not connected")?
+                .call("session.view", json!({"session_id":self.selected_session})).await?;
+            self.set_view(&view);
+            if self.retained_floating.as_ref().is_some_and(|pane| minimized_pane(&self.windows, &pane.block).is_some()) {
+                self.close_retained_floating().await;
+            }
+            if minimized_pane(&self.windows, &self.selected_block).is_none() { break; }
+            let block = visible_target(&self.windows, self.selected_block.clone());
+            handoff = self.open_block_stream(block, false).await?;
+        }
         self.publish();
+        if handoff && self.controlled {
+            self.focus_selected().await?;
+        }
         Ok(())
     }
     fn apply_program_details(&mut self, details: Value) {
@@ -1216,15 +1276,7 @@ impl Actor {
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_str)
-                    .filter(|id| {
-                        self.windows.as_array().into_iter().flatten().any(|w| {
-                            w["blocks"]
-                                .as_array()
-                                .into_iter()
-                                .flatten()
-                                .any(|b| b["id"].as_str() == Some(*id))
-                        })
-                    })
+                    .filter(|id| pane_window(&self.windows,id).is_some() && minimized_pane(&self.windows,id).is_none())
                     .take(2)
                     .map(str::to_owned)
                     .collect();
@@ -1361,13 +1413,18 @@ impl Actor {
                 self.creating = false;
                 self.publish();
             }
-            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" | "resize_floating" | "place_pane" => {
+            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" | "resize_floating" | "minimize_floating" | "place_pane" => {
                 ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before editing a terminal");
                 self.refresh_view().await?;
                 let (method,args)=terminal_edit_call(&self.windows,&self.selected_session,&value)?;
                 self.error.clear();
                 // Send once: never repeat a layout mutation after an uncertain reply.
-                self.control.as_mut().context("not connected")?.call(method,args).await?;
+                let control = self.control.as_mut().context("not connected")?;
+                if method == "session.set_layer_state" {
+                    ensure!(control.welcome()["api_revision"].as_u64().is_some_and(|revision| revision >= 9),
+                        "Update this Rex server to sync floating panes");
+                }
+                control.call(method,args).await?;
                 self.refresh_view().await?;
                 if value["type"]=="float_pane" && value["focus"]==true {
                     let block=value["id"].as_str().context("pane ID required")?.to_owned();
@@ -1460,6 +1517,7 @@ impl Actor {
                 self.error.clear();
                 if let Some(block)=value["block"].as_str() {
                     ensure!(self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==block)),"This pane is no longer available. Refresh activity.");
+                    if value["restoreMinimized"] == true { self.restore_minimized(block).await?; }
                     self.open_block(block.to_owned()).await?;
                 }
                 self.publish();
@@ -1470,6 +1528,7 @@ impl Actor {
                     .as_str()
                     .context("block ID required")?
                     .to_owned();
+                if value["restoreMinimized"] == true { self.restore_minimized(&block).await?; }
                 self.open_block_with_layout(block,value["keepTiled"]==true).await?;
             }
             "close_tab" | "close_pane" => {
@@ -1597,11 +1656,11 @@ impl Actor {
                     return Ok(());
                 }
                 let active_float=window.and_then(|w|w["layout"].as_array()).and_then(|panes|
-                    panes.iter().find(|p|p["id"]==self.selected_block && p["floating"]==true));
+                    panes.iter().find(|p|p["id"]==self.selected_block && p["floating"]==true && p["minimized"]!=true));
                 let wanted: Vec<_> = wanted.into_iter().filter(|want| {
                     want.block != self.selected_block && window.is_some_and(|w| {
                         w["layout"].as_array().into_iter().flatten()
-                            .any(|p| p["id"] == want.block && (p["floating"] == false ||
+                            .any(|p| p["id"] == want.block && p["minimized"] != true && (p["floating"] == false ||
                                 active_float.is_some_and(|active|p["layer"]==active["layer"])))
                     })
                 }).collect();
@@ -1788,14 +1847,35 @@ impl Actor {
     async fn open_block(&mut self, block: String) -> Result<()> {
         self.open_block_with_layout(block,false).await
     }
+    async fn restore_minimized(&mut self, block: &str) -> Result<()> {
+        if let Some((_, pane)) = minimized_pane(&self.windows, block) {
+            let layer = pane["layerId"].as_str().context("Floating layer is unavailable")?;
+            let args = json!({"session_id":self.selected_session,"layer_id":layer,"state":"normal"});
+            self.control.as_mut().context("not connected")?.call("session.set_layer_state",args).await?;
+            self.refresh_view().await?;
+        }
+        Ok(())
+    }
     async fn open_block_with_layout(&mut self, block: String, keep_tiled: bool) -> Result<()> {
         ensure!(!self.selected_session.is_empty(), "Choose a session first");
+        let block = visible_target(&self.windows, block);
         if self.selected_block == block && self.data.is_some() && self.replica.is_some() {
             self.publish();
             return Ok(());
         }
+        let handoff = self.open_block_stream(block, keep_tiled).await?;
+        self.refresh_view().await?;
+        if handoff && self.controlled {
+            // A mirror may already own the PTY. Still deliver focus-in to the program.
+            self.focus_selected().await?;
+        }
+        Ok(())
+    }
+
+    async fn open_block_stream(&mut self, block: String, keep_tiled: bool) -> Result<bool> {
+        let minimized = minimized_pane(&self.windows, &self.selected_block).is_some();
         let floating=self.windows.as_array().into_iter().flatten().any(|w|
-            w["layout"].as_array().into_iter().flatten().any(|p|p["id"]==self.selected_block && p["floating"]==true));
+            pane_layout(w).any(|p|p["id"]==self.selected_block && p["floating"]==true));
         let overlay = keep_tiled.then(||self.windows.as_array().into_iter().flatten().find_map(|window| {
             let panes=window["layout"].as_array()?;
             let source=panes.iter().find(|pane|pane["id"]==self.selected_block)?;
@@ -1804,7 +1884,7 @@ impl Actor {
         })).flatten();
         let opens_overlay=overlay.is_some();
         let handoff = self.mirror.wants(&self.selected_session, &block);
-        let retain_as_mirror = ((handoff || opens_overlay) && !floating || overlay==Some(true)) &&
+        let retain_as_mirror = !minimized && ((handoff || opens_overlay) && !floating || overlay==Some(true)) &&
             self.data.is_some() && self.replica.is_some();
         let was_controlled = self.controlled;
         if retain_as_mirror {
@@ -1836,7 +1916,7 @@ impl Actor {
         if retain_as_mirror && let (Some(data), Some(replica)) = (self.data.take(), self.replica.take()) {
             // The departing pane stays visible even when the incoming pane was the only mirror.
             self.mirror.adopt(&self.selected_session,self.selected_block.clone(), data, replica, was_controlled);
-        } else if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+        } else if floating && !minimized && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.close_retained_floating().await;
             self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
         } else if let Some(mut data)=self.data.take() {
@@ -1846,6 +1926,11 @@ impl Actor {
         self.selected_block = block;
         self.controlled = false;
         self.screen = None;
+        if self.selected_block.is_empty() {
+            self.replica = None;
+            self.notice = "Choose a terminal".into();
+            return Ok(false);
+        }
         if let Some(pane)=restored {
             self.replica=Some(pane.replica);self.data=Some(pane.data);
             self.dirty=true;
@@ -1862,13 +1947,7 @@ impl Actor {
         }
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
-        self.refresh_view().await?;
-        if handoff && self.controlled {
-            // A mirror may already own the PTY for sizing, so Android need not claim it again.
-            // Still apply the active theme and deliver a focus-in event to the application.
-            self.focus_selected().await?;
-        }
-        Ok(())
+        Ok(handoff)
     }
     async fn refresh_close_view(&mut self) -> Result<bool> {
         if self.selected_session.is_empty() {return Ok(false);}
@@ -3760,8 +3839,46 @@ while True:
                 v["windows"][0]["layout"].as_array().unwrap().iter().filter(|p|p["layerId"]==layer).count()==2);
             assert_eq!(split["error"],"");
             let new_block=&split["selectedBlock"];
+            app.command(json!({"type":"mirror","session":id,"window":window,"panes":[
+                {"block":first,"columns":40,"rows":20},{"block":second,"columns":40,"rows":20}
+            ]})).unwrap();
+            wait(&app,|v|!v["previews"][second.as_str().unwrap()].is_null() && v["error"]=="");
             app.command(json!({"type":"zoom","session":id,"block":new_block,"zoom":true})).unwrap();
             wait(&app,|v|v["windows"][0]["zoomed"]==*new_block);
+            app.command(json!({"type":"minimize_floating","session":id,"window":window,"id":new_block,"layerId":layer})).unwrap();
+            let layer_minimized=|v:&Value| v["windows"][0]["layout"].as_array().is_some_and(|layout|
+                layout.iter().filter(|pane|pane["layerId"]==layer && pane["minimized"]==true).count()==2);
+            let minimized=wait(&app,|v|layer_minimized(v) && v["selectedBlock"]==*first && !v["screen"].is_null());
+            assert_eq!(minimized["windows"][0]["zoomed"],"");
+            let until=std::time::Instant::now()+Duration::from_secs(5);
+            loop {
+                let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
+                let hidden=&view["windows"][0]["layers"][1];
+                assert_eq!(hidden["state"],"minimized");
+                if hidden["blocks"].as_array().unwrap().iter().all(|pane|pane["owner"].is_null()) { break; }
+                assert!(std::time::Instant::now()<until,"Minimized layer kept a mirror owner: {hidden}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+
+            // Restoring workspace history does not reopen another client's minimized layer.
+            app.command(json!({"type":"block","id":second,"navigationId":10})).unwrap();
+            wait(&app,|v|v["navigationId"]==10 && layer_minimized(v) && v["selectedBlock"]==*first);
+            app.command(json!({"type":"block","id":second,"navigationId":11,"restoreMinimized":true,"keepTiled":true})).unwrap();
+            wait(&app,|v|!layer_minimized(v) && v["selectedBlock"]==*second && text(v).contains("EDIT_READY"));
+            let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
+            assert!(view["windows"][0]["layers"][1]["state"].is_null());
+
+            for state in ["minimized","normal"] {
+                runtime.block_on(writer.call("session.set_layer_state",json!({"session_id":id,"layer_id":layer,"state":state}))).unwrap();
+                wait(&app,|v|layer_minimized(v)==(state=="minimized") && v["selectedBlock"]==*first);
+            }
+            app.command(json!({"type":"block","id":second,"navigationId":12,"restoreMinimized":true})).unwrap();
+            wait(&app,|v|v["navigationId"]==12 && v["selectedBlock"]==*second && !v["screen"].is_null());
+            app.command(json!({"type":"pause"})).unwrap();
+            wait(&app,|v|v["phase"]=="paused");
+            runtime.block_on(writer.call("session.set_layer_state",json!({"session_id":id,"layer_id":layer,"state":"minimized"}))).unwrap();
+            app.command(json!({"type":"resume"})).unwrap();
+            wait(&app,|v|v["phase"]=="connected" && v["selectedBlock"]==*first && layer_minimized(v) && !v["screen"].is_null());
         }));
         runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }

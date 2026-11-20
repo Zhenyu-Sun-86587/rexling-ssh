@@ -43,6 +43,12 @@ internal class RexConnection(application: Application, private val scope: Corout
         return command("resize_floating","session" to session,"window" to window,"id" to pane.id,"layerId" to pane.layerId,
             "bounds" to org.json.JSONArray(listOf(bounds.x,bounds.y,bounds.width,bounds.height)))
     }
+    internal fun minimizeFloating(session: String,window: String,pane: PanePlacement): Boolean {
+        val current=state.value
+        if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending ||
+            current.selectedSession!=session || current.selectedBlock!=pane.id || pane.layerId.isBlank()) return false
+        return command("minimize_floating","session" to session,"window" to window,"id" to pane.id,"layerId" to pane.layerId)
+    }
     fun movePane(window: String,id: String,before: String?): Boolean {
         val current=state.value
         if(handle==0L || !visible || !foreground || !current.connected || current.creating || navigationRequest.pending) return false
@@ -397,7 +403,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         command("session", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun selectBlock(id: String) = selectBlock(id,null)
-    internal fun selectBlock(id: String,grid: Pair<Int,Int>?,keepTiled: Boolean=false) {
+    internal fun selectBlock(id: String,grid: Pair<Int,Int>?,keepTiled: Boolean=false,restoreMinimized: Boolean=false) {
         val current = state.value
         if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
@@ -408,7 +414,8 @@ internal class RexConnection(application: Application, private val scope: Corout
         restoreWorkspace=false
         workspace.remember(current.selectedSession,current.windows,id)
         if(grid!=null) lastSize=grid
-        command("block", "id" to id, "navigationId" to navigationRequest.id,"keepTiled" to keepTiled)
+        command("block", "id" to id, "navigationId" to navigationRequest.id,"keepTiled" to keepTiled,
+            "restoreMinimized" to restoreMinimized)
     }
     fun openPane(session: String,block: String) {
         presentation.flush()
@@ -420,14 +427,14 @@ internal class RexConnection(application: Application, private val scope: Corout
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
         restoreWorkspace=false;workspace.request(session,block)
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
-        command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
+        command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id,"restoreMinimized" to true)
     }
     fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {chromeState.value.programs[it.id] ?: ProgramIdentity.Loading}
     fun tabPaneIndex(window: WindowItem): Int = window.blocks.indexOfFirst {it.id==navigation.pane(state.value.selectedSession,window)}.coerceAtLeast(0)
     fun selectWindow(id: String) {
         val current = state.value
         current.windows.firstOrNull { it.id == id }?.let { window ->
-            val target=navigation.pane(current.selectedSession,window)
+            val target=navigation.pane(current.selectedSession,window.copy(blocks=window.visiblePanes()))
             val next=if(preferences.getBoolean("minimize_floating_panes",false) && window.floatingPanes().any {it.id==target})
                 floatingNavigation.returnPane(current.selectedSession,window) ?: target else target
             next?.let(::selectBlock)
@@ -453,7 +460,9 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun swipePane(step: Int) {
         val current = state.value
         val windows=orderedWindows(current).map {window->
-            if(preferences.getBoolean("minimize_floating_panes",false)) window.copy(blocks=window.tiledPanes()) else window
+            val visible=window.visiblePanes()
+            val panes=if(preferences.getBoolean("minimize_floating_panes",false)) window.tiledPanes().ifEmpty {visible} else visible
+            window.copy(blocks=panes)
         }
         if (current.connected && !current.creating) navigation.neighbour(windows, navigationRequest.block ?: current.selectedBlock, step)?.let(::selectBlock)
     }

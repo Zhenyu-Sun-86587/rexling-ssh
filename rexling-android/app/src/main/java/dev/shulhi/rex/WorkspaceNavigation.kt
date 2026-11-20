@@ -53,7 +53,7 @@ class WorkspaceNavigation {
         val session=state.sessions.firstOrNull {it.id==savedSession}
             ?: state.sessions.firstOrNull {it.id==state.selectedSession} ?: state.sessions.firstOrNull() ?: return null
         if(session.id!=state.selectedSession) return WorkspaceTarget(session.id)
-        val block=pane(session.id,state.windows) ?: return null
+        val block=pane(session.id,state.windows.map {window->window.copy(blocks=window.visiblePanes())}) ?: return null
         return if(block!=state.selectedBlock) WorkspaceTarget(session.id,block) else null
     }
 

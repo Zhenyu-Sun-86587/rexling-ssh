@@ -562,6 +562,6 @@ internal fun multiPaneTiles(window: WindowItem?,focused: String,allowFloatingOve
     val tiled=placements.filterNot {it.floating}
     val hasOverlay=allowFloatingOverlay && placements.any {it.floating}
     val minimum=if(hasOverlay) 1 else 2
-    val focusable=if(hasOverlay) placements else tiled
+    val focusable=if(hasOverlay) placements.filterNot {it.minimized} else tiled
     return tiled.takeIf {it.size in minimum..4 && focusable.any {pane->pane.id==focused}}
 }
