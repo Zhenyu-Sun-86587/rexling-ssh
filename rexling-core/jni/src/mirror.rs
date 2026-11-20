@@ -20,6 +20,7 @@ use tokio::time::Instant;
 // together with its tiled panes.
 pub const MAX_PANES: usize = 64;
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
+const OBSCURED_FRAME_INTERVAL: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Wanted {
@@ -93,6 +94,7 @@ pub struct Mirror {
     release: Vec<(String, String)>,
     drawn_at: Option<Instant>,
     next_slot: usize,
+    obscured: bool,
 }
 
 pub enum Event {
@@ -125,6 +127,14 @@ pub fn parse(value: &Value) -> (String, Vec<Wanted>) {
 }
 
 impl Mirror {
+    pub fn set_obscured(&mut self, obscured: bool) {
+        if self.obscured && !obscured {
+            // Let the latest dirty frame through as soon as the drawer closes.
+            self.drawn_at = None;
+        }
+        self.obscured = obscured;
+    }
+
     pub fn wants(&self, session: &str, block: &str) -> bool {
         self.session == session && self.slots.iter().any(|slot| slot.want.block == block)
     }
@@ -354,7 +364,13 @@ impl Mirror {
 
     pub fn due(&self) -> Option<Instant> {
         let now = Instant::now();
-        let next_frame = self.drawn_at.map_or(now, |at| at + FRAME_INTERVAL);
+        // Keep consuming streams and applying terminal updates at their usual pace.
+        let interval = if self.obscured {
+            OBSCURED_FRAME_INTERVAL
+        } else {
+            FRAME_INTERVAL
+        };
+        let next_frame = self.drawn_at.map_or(now, |at| at + interval);
         self.slots
             .iter()
             .filter_map(|slot| {

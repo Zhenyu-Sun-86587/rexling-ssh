@@ -224,9 +224,17 @@ internal class RexConnection(application: Application, private val scope: Corout
                     if(update>decoder.revision) {
                         try {
                             android.os.Trace.beginSection("Rexlet.decodeUpdate")
-                            val next=try {decoder.decode(NativeBridge.readUpdate(handle,decoder.revision))} finally {android.os.Trace.endSection()}
-                            android.os.Trace.beginSection("Rexlink.ready.$handle.${next.revision}");android.os.Trace.endSection()
+                            val decoded=try {decoder.decodeUpdate(NativeBridge.readUpdate(handle,decoder.revision))} finally {android.os.Trace.endSection()}
+                            android.os.Trace.beginSection("Rexlink.ready.$handle.${decoder.revision}");android.os.Trace.endSection()
                             withContext(Dispatchers.Main.immediate) {
+                                val next=when(decoded) {
+                                    is TerminalUpdate.PaneFrames -> {
+                                        android.os.Trace.beginSection("Rexlink.previewCache")
+                                        try {paneFrames=updatePaneFrames(paneFrames,decoded.frames)} finally {android.os.Trace.endSection()}
+                                        return@withContext
+                                    }
+                                    is TerminalUpdate.Full -> decoded.state
+                                }
                                 navigationRequest = navigationRequest.acknowledge(next)
                                 pendingTabOrder=pendingTabOrder?.keepFor(next)
                                 pendingPaneOrder=pendingPaneOrder?.keepFor(next)
@@ -329,6 +337,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(next==mirrorRequest) return
         mirrorRequest=next
         sendMirror()
+    }
+    internal fun setMirrorObscured(obscured: Boolean) {
+        command("mirror_obscured","obscured" to obscured)
     }
     /** Zooms a pane to fill its window, or restores the layout, as the desktop does; Rex tells every client. */
     internal fun zoom(block: String,zoom: Boolean) {

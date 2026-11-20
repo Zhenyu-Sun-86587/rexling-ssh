@@ -1,6 +1,6 @@
 package dev.shulhi.rex
 
-import androidx.compose.animation.core.animateFloat
+import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -68,9 +68,16 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -345,12 +352,21 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
-/** Call only for visible busy programs; idle chrome owns no animation clock. */
+// Share one clock across tabs and Activity rows. Only active lifecycle collectors keep it running.
+private val workingPhase by lazy {
+    flow {
+        val start=SystemClock.uptimeMillis()
+        while(true) {
+            emit(((SystemClock.uptimeMillis()-start)%1200L)/1200f)
+            delay(50L)
+        }
+    }.stateIn(CoroutineScope(Dispatchers.Main.immediate),SharingStarted.WhileSubscribed(replayExpirationMillis=0L),0f)
+}
+
+/** Call only for visible busy programs. Read the phase during drawing. */
 @Composable internal fun rememberWorkingPhase(working: Boolean): State<Float> {
     if(!working) return remember {mutableFloatStateOf(0f)}
-    val transition=androidx.compose.animation.core.rememberInfiniteTransition(label="Program working")
-    return transition.animateFloat(0f,1f,animationSpec=androidx.compose.animation.core.infiniteRepeatable(
-        animation=androidx.compose.animation.core.tween(1200,easing=androidx.compose.animation.core.LinearEasing)),label="Working highlight")
+    return workingPhase.collectAsStateWithLifecycle()
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

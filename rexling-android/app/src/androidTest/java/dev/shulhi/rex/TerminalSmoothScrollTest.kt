@@ -34,7 +34,7 @@ class TerminalSmoothScrollTest {
                 if(NativeBridge.awaitUpdate(handle,decoder.revision,500)>decoder.revision) {
                     val bytes=NativeBridge.readUpdate(handle,decoder.revision)
                     if(bytes.isNotEmpty()) {
-                        assertEquals("RXT6",bytes.take(4).toByteArray().toString(Charsets.US_ASCII))
+                        assertEquals("RXT8",bytes.take(4).toByteArray().toString(Charsets.US_ASCII))
                         val state=decoder.decode(bytes);found=state.phase=="preview" && state.screen!=null
                         if(found) assertTrue("Default cursor must blink after restoring a native snapshot",state.screen!!.cursorBlinking)
                     }

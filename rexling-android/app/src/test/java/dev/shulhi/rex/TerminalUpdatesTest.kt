@@ -185,11 +185,11 @@ class TerminalUpdatesTest {
     }
 
     @Test fun rxt8KeepsEachPanesDeltaBaseBetweenUnrelatedUpdates() {
-        fun update(revision: Long,id: String,flag: Int,rows: Map<Int,String>): ByteArray {
+        fun update(revision: Long,id: String,flag: Int,rows: Map<Int,String>,metadata: String="",mainFlag: Int=0): ByteArray {
             val out=ByteArrayOutputStream()
             fun n(value: Long,size: Int) {repeat(size) {out.write((value ushr (8*it)).toInt() and 255)}}
             fun text(value: String) {val bytes=value.toByteArray();n(bytes.size.toLong(),4);out.write(bytes)}
-            out.write("RXT8".toByteArray());n(revision,8);text("");n(0,1);n(1,2);text(id)
+            out.write("RXT8".toByteArray());n(revision,8);text(metadata);n(mainFlag.toLong(),1);n(1,2);text(id)
             n(flag.toLong(),1);n(2,2);n(2,2);n(-1,4);n(-1,4);n(-1,4);n(0,4)
             n(2,8);n(0,8);n(2,8);n(0,1);n(1,1);n(0,2);n(rows.size.toLong(),2)
             for((row,value) in rows) {
@@ -199,10 +199,18 @@ class TerminalUpdatesTest {
             return out.toByteArray()
         }
         val decoder=TerminalUpdates()
-        val a=decoder.decode(update(1,"a",3,mapOf(0 to "A",1 to "old"))).previewFrames.getValue("a")
-        decoder.decode(update(2,"b",3,mapOf(0 to "B",1 to "old")))
-        assertTrue(runCatching {decoder.decode(update(3,"missing",2,mapOf(1 to "new")))}.isFailure)
-        val next=decoder.decode(update(4,"a",2,mapOf(1 to "new"))).previewFrames.getValue("a")
+        val initial=decoder.decode(packet(1,3,mapOf(0 to "Foreground",1 to "output")))
+        val first=decoder.decodeUpdate(update(2,"a",3,mapOf(0 to "A",1 to "old"))) as TerminalUpdate.PaneFrames
+        val a=first.frames.getValue("a")
+        val withState=decoder.decodeUpdate(update(3,"b",3,mapOf(0 to "B",1 to "old"),"""{"navigationId":9}""")) as TerminalUpdate.Full
+        assertEquals(9L,withState.state.navigationId)
+        assertSame(initial.screen,withState.state.screen)
+        assertTrue(runCatching {decoder.decodeUpdate(update(4,"missing",2,mapOf(1 to "new")))}.isFailure)
+        assertEquals(3L,decoder.revision)
+        val cleared=decoder.decodeUpdate(update(5,"a",2,mapOf(1 to "new"),mainFlag=1)) as TerminalUpdate.Full
+        val next=cleared.state.previewFrames.getValue("a")
+        assertNull(cleared.state.screen)
+        assertEquals(5L,decoder.revision)
         assertSame(a.lines[0],next.lines[0])
         assertEquals("new",next.lines[1].single().text)
     }

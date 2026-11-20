@@ -1582,6 +1582,10 @@ impl Actor {
                 self.control.as_mut().context("not connected")?.call("session.resize_pane",json!({"session_id":self.selected_session,
                     "direction":direction,"before_block_id":value["before"],"after_block_id":value["after"],"ratio":ratio})).await?;
             }
+            "mirror_obscured" => {
+                let obscured = value["obscured"].as_bool().context("Missing mirror visibility")?;
+                self.mirror.set_obscured(obscured);
+            }
             "mirror" => {
                 let (session,wanted)=crate::mirror::parse(&value);
                 if !self.visible || session != self.selected_session {

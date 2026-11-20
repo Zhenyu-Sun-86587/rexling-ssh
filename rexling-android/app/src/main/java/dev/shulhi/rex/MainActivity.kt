@@ -127,6 +127,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val changingSession=navigation.session!=null && navigation.session!=state.selectedSession
     val windows=if(changingSession) emptyList() else client.orderedWindows(state)
     val window=windows.firstOrNull {w->w.blocks.any {it.id==displayedBlock}} ?: windows.firstOrNull {it.blocks.isNotEmpty()}
+    val activeWindowId=window?.id.orEmpty()
     val activityBadges=remember(model.activitySources,model.activeServer,displayedSession,windows) {
         ActivityBadgePolicy.route(model.activitySources,model.activeServer,displayedSession,windows)
     }
@@ -310,6 +311,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val paneTitle=if(model.servers.isEmpty()) stringResource(R.string.app_name) else
         (state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(chosenBlock?.label.orEmpty(),state.titles[chosen].orEmpty())
     val workspaceBackdrop=rememberBackdropCapture(menu || forwards || preferencesOpen || servers || networkSettings || sshKeysSettings || appearance || about || neovimSettings || toolbarSettings || controlSettings || fontPicker || alerts || picker in setOf("tabs","panes","sessions") || model.activityVisible || dockFloatingPane!=null)
+    if(workspaceBackdrop && tiles!=null) DisposableEffect(client) {
+        client.setMirrorObscured(true)
+        onDispose {client.setMirrorObscured(false)}
+    }
     Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
         // The bottom navigation inset (the gesture handle) is left to the lowest element, so it can
         // extend its background to the screen edge. imePadding consumes the keyboard first, so
@@ -356,11 +361,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             onKeyboard=if(toolbarHidden) ({if(!controlled) client.takeControl() else terminalView?.keyboard()}) else null,vertical=vertical)
                     }
                     val tabRail: @Composable ()->Unit={
-                        TerminalTabRail(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,client::tabPrograms,client::tabPaneIndex,
+                        TerminalTabRail(windows,activeWindowId,state.connected&&!state.creating&&!changingSession,client::selectWindow,client::tabPrograms,client::tabPaneIndex,
                             tabLayout.position,tabLayout.style,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},
                             onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
-                            tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
+                            tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!workspaceBackdrop,
                             onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
                             island=tiles!=null,islandBottom=terminalBottomMargin+(if(extendUnderNav) 0.dp else 8.dp)) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
@@ -422,21 +427,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             fontFamily=MonoUi,fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if(state.connected || state.phase=="preview" || client.hasScreen) {
-                        // Square beside a side tab rail; the bottom tab bar keeps its rounded top.
-                        Column(Modifier.fillMaxWidth().clip(if(tabLayout.side) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(topStart=24.dp,topEnd=24.dp)).background(MaterialTheme.colorScheme.surface)
-                            .then(if(extendUnderNav) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))) {
-                            if(!tabLayout.side) TerminalTabs(windows,window?.id.orEmpty(),state.connected&&!state.creating&&!changingSession,client::selectWindow,panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,paneTitle={w,pane->state.titles[w.blocks.getOrNull(pane)?.id].orEmpty()},paneWorking={w->w.blocks.any {it.id in state.workingBlocks}},onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,animateWorking=!model.activityVisible,tabAttention={w->activityBadges.tabs[w.id] ?: 0},paneProgress={w->
-                                    state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()
-                                },
-                                contentReady=client.hasScreen && !state.creating && !changingSession && windows.isNotEmpty() && windows.all {w->
-                                    val block=w.blocks.getOrNull(client.tabPaneIndex(w))
-                                    block!=null && state.programs[block.id]?.pending==false
-                                },actions={tabActions(false)})
-                            Box(Modifier.fillMaxWidth().then(if(model.toolbarWithKeyboardOnly) Modifier.keyboardRevealed(WindowInsets.ime,WindowInsets.navigationBars) {toolbarHeight[0]=it} else Modifier)) {KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
-                                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,{client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut={client.controlShortcut(it,keyTarget)},inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,onPaste={pasteClipboard()},onPrompt=if(client.hasSemanticPrompts && !changingSession) client::scrollPrompt else null,toolbarKeys=model.toolbarKeys,controlItems=model.controlItems) {
+                        WorkspaceBottomBar(model,client,state,windows,activeWindowId,displayedSession,
+                            tabLayout.side,extendUnderNav,changingSession,!workspaceBackdrop,activityBadges.tabs,
+                            controlled,ready,keyboardVisible,keyTarget,toolbarHeight,
+                            onCloseTab={closeTarget=closeTabTarget(it)},onPaste=::pasteClipboard,onKeyboard={
                                 if(!controlled) client.takeControl() else if(keyboardVisible) terminalView?.hideKeyboard() else terminalView?.keyboard()
-                            }}
-                        }
+                            },actions={tabActions(false)})
                     }
                 }
                 model.images.state?.let {status->ImageUploadOverlay(status,model.images::retry,model.images::cancel,
@@ -576,6 +572,40 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     if(fontPicker) FontSizeDialog(fontSize,model::changeFontSize,hazeState=workspaceHaze) {fontPicker=false}
     if(newSession) NewSessionDialog(model.activeServer.label,ready,client::createSession) {newSession=false}
 
+}
+
+@Composable private fun WorkspaceBottomBar(
+    model: RexModel,client: RexConnection,state: AppState,windows: List<WindowItem>,activeWindowId: String,session: String,
+    sideTabs: Boolean,extendUnderNav: Boolean,changingSession: Boolean,animateWorking: Boolean,tabAttention: Map<String,Int>,
+    controlled: Boolean,ready: Boolean,keyboardVisible: Boolean,keyTarget: String,toolbarHeight: IntArray,
+    onCloseTab: (WindowItem)->Unit,onPaste: ()->Boolean,onKeyboard: ()->Unit,actions: @Composable ()->Unit,
+) {
+    // Square beside a side tab rail; the bottom tab bar keeps its rounded top.
+    val shape=if(sideTabs) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(topStart=24.dp,topEnd=24.dp)
+    Column(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface)
+        .then(if(extendUnderNav) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))) {
+        if(!sideTabs) TerminalTabs(windows,activeWindowId,state.connected && !state.creating && !changingSession,client::selectWindow,
+            panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,
+            paneTitle={window,pane->state.titles[window.blocks.getOrNull(pane)?.id].orEmpty()},
+            paneWorking={window->window.blocks.any {it.id in state.workingBlocks}},
+            onClose=onCloseTab,onMove=client::moveTab,reorderKey=session,animateWorking=animateWorking,
+            tabAttention={window->tabAttention[window.id] ?: 0},paneProgress={window->
+                state.terminalProgress[window.blocks.getOrNull(client.tabPaneIndex(window))?.id]
+                    ?: window.blocks.firstNotNullOfOrNull {state.terminalProgress[it.id]}
+            },contentReady=client.hasScreen && !state.creating && !changingSession && windows.isNotEmpty() && windows.all {window->
+                val block=window.blocks.getOrNull(client.tabPaneIndex(window))
+                block!=null && state.programs[block.id]?.pending==false
+            },actions=actions)
+        Box(Modifier.fillMaxWidth().then(if(model.toolbarWithKeyboardOnly)
+            Modifier.keyboardRevealed(WindowInsets.ime,WindowInsets.navigationBars) {toolbarHeight[0]=it} else Modifier)) {
+            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
+                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,
+                {client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut={client.controlShortcut(it,keyTarget)},
+                inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,onPaste={onPaste()},
+                onPrompt=if(client.hasSemanticPrompts && !changingSession) client::scrollPrompt else null,
+                toolbarKeys=model.toolbarKeys,controlItems=model.controlItems,onKeyboard=onKeyboard)
+        }
+    }
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
