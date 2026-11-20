@@ -285,6 +285,8 @@ struct Actor {
     dirty: bool,
     preview_task: Option<PreviewTask>,
     summary_task: Option<SummaryTask>,
+    pane_catalog_task: Option<SummaryTask>,
+    pane_catalog: Value,
     activity_open: bool,
     monitoring: bool,
     activity_task: Option<ProgramTask>,
@@ -355,6 +357,8 @@ impl Actor {
             dirty: false,
             preview_task: None,
             summary_task: None,
+            pane_catalog_task: None,
+            pane_catalog: Value::Null,
             activity_open:false,monitoring:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
             activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_titles:BTreeMap::new(),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
             program_task: None,
@@ -389,7 +393,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "terminalProgress":crate::progress::selected(&self.progress_reports,&self.selected_session),"identity":self.identity,"error":self.error,"notice":self.notice,"clipboard":self.clipboard,"sessions":self.sessions,
                 "mirrorWaiting":self.mirror_waiting,"windows":self.windows,"selectedSession":self.selected_session,"staleSession":self.stale_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"paneCatalog":self.pane_catalog,"paneCatalogLoading":self.pane_catalog_task.is_some(),"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
@@ -548,6 +552,17 @@ impl Actor {
                     self.summary_task=None;
                     if let Ok(details)=result {self.session_details=details;self.publish();}
                 },
+                result=async {match &mut self.pane_catalog_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.pane_catalog_task=None;
+                    match result {
+                        Ok(catalog)=>self.pane_catalog=catalog,
+                        Err(_)=> {
+                            if self.pane_catalog.is_null() {self.pane_catalog=json!({});}
+                            self.pane_catalog["error"]=json!(true);
+                        }
+                    }
+                    self.publish();
+                },
                 result=async {match &mut self.activity_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(1);
                     match result {
@@ -647,6 +662,8 @@ impl Actor {
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
+        self.pane_catalog_task = None;
+        self.pane_catalog = Value::Null;
         self.activity_task=None;
         self.program_task = None;
         self.preview_updates.clear();
@@ -672,6 +689,7 @@ impl Actor {
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
+        self.pane_catalog_task = None;
         self.activity_task=None;
         self.program_task = None;
         if let Some(c) = self.control.take() {
@@ -1197,6 +1215,16 @@ impl Actor {
                         sessions,
                         own,
                     ));
+                }
+            }
+            "pane_catalog" => {
+                if value["open"]==false {
+                    self.pane_catalog_task=None;
+                    self.pane_catalog=Value::Null;
+                    self.publish();
+                } else if self.phase=="connected" && self.pane_catalog_task.is_none() {
+                    self.pane_catalog_task=Some(pane_catalog_task(self.endpoint.clone().context("no server")?));
+                    self.publish();
                 }
             }
             "rename_session" => {
@@ -2014,6 +2042,7 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
                             || s.starts_with("rex-android-summary")
                             || s.starts_with("rex-android-programs")
                             || s.starts_with("rex-android-activity")
+                            || s.starts_with("rex-android-pane-catalog")
                     }) {
                         continue;
                     }
@@ -2078,6 +2107,76 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
         .context("session details timed out")?
     })
 }
+
+fn pane_catalog_task(endpoint: Endpoint) -> SummaryTask {
+    Box::pin(async move {
+        use tokio::time::{Instant, timeout, timeout_at};
+
+        let (mut control, sessions) = timeout(Duration::from_secs(5), async {
+            let mut control = Control::connect(endpoint, None, Trace::default()).await?;
+            control.call("client.set_label", json!({"label":"rex-android-pane-catalog"})).await?;
+            // A passive attachment can read topology without opening streams or taking control.
+            let sessions = control.call("session.attach_all", json!({"event_scope":"session"})).await?["sessions"].clone();
+            Ok::<_, anyhow::Error>((control, sessions))
+        }).await??;
+
+        let mut items = Vec::new();
+        let mut partial = false;
+        let mut timed_out = false;
+        let topology_deadline = Instant::now() + Duration::from_secs(7);
+        for session in sessions.as_array().into_iter().flatten() {
+            let Some(id) = session["session_id"].as_str() else { continue };
+            match timeout_at(topology_deadline, control.call("session.view", json!({"session_id":id}))).await {
+                Ok(Ok(view)) => {
+                    for window in view["windows"].as_array().into_iter().flatten() {
+                        for block in window["layers"].as_array().into_iter().flatten()
+                            .flat_map(|layer| layer["blocks"].as_array().into_iter().flatten())
+                        {
+                            if block["creator_name"] != "com.superlogical.terminal" { continue; }
+                            if let Some(block_id) = block["block_id"].as_str() {
+                                items.push(json!({"session":id,"block":block_id,"label":block["label"]}));
+                            }
+                        }
+                    }
+                }
+                Ok(Err(_)) => partial = true,
+                Err(_) => {
+                    partial = true;
+                    timed_out = true;
+                    break;
+                }
+            }
+        }
+        if !timed_out {
+            let metadata_deadline = Instant::now() + Duration::from_secs(6);
+            for item in &mut items {
+                let session = item["session"].as_str().unwrap_or_default();
+                let block = item["block"].as_str().unwrap_or_default();
+                let result = timeout_at(metadata_deadline, async {
+                    let process = control.terminal(session, block, "process", json!({})).await?;
+                    let title = control.terminal(session, block, "title", json!({})).await.unwrap_or(Value::Null);
+                    Ok::<_, anyhow::Error>((process, title))
+                }).await;
+                match result {
+                    Ok(Ok((process, title))) => {
+                        item["programs"] = program_candidates(&process, &Value::Null);
+                        item["directory"] = json!(program_directory(&process));
+                        item["title"] = json!(program_title(&process, &Value::Null, &title));
+                    }
+                    Ok(Err(error)) if missing_terminal(&error) => (),
+                    Ok(Err(_)) => partial = true,
+                    Err(_) => {
+                        partial = true;
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = timeout(Duration::from_secs(1), control.close()).await;
+        Ok(json!({"items":items,"partial":partial}))
+    })
+}
+
 fn rgb(rgb: [u8; 3]) -> u32 {
     ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32
 }
@@ -2935,6 +3034,62 @@ mod tests {
         runtime.block_on(writer.close()).unwrap();
         result.unwrap();
     }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_pane_catalog_lists_background_sessions_without_changing_focus() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer = runtime.block_on(Control::connect(
+            Endpoint::new(&server, Duration::from_secs(10)).unwrap(), None, Trace::default(),
+        )).unwrap();
+        let fixtures: Vec<_> = ["foreground", "background"].into_iter().map(|label| {
+            let session = runtime.block_on(writer.call("session.create", json!({
+                "label":format!("rex-android-catalog-{}-{label}",std::process::id()),
+                "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}}]
+            }))).unwrap();
+            (
+                session["session_id"].as_str().unwrap().to_owned(),
+                session["initial_windows"][0]["block_ids"][0].as_str().unwrap().to_owned(),
+            )
+        }).collect();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (foreground, active_block) = &fixtures[0];
+            let (background, target_block) = &fixtures[1];
+            // Rex can defer starting a new terminal until it has been opened.
+            let second = Session::spawn().unwrap();
+            second.command(json!({"type":"connect","server":server})).unwrap();
+            wait(&second, |v| v["phase"] == "connected");
+            second.command(json!({"type":"session","id":background,"block":target_block})).unwrap();
+            wait(&second, |v| v["selectedBlock"] == *target_block &&
+                v["directories"][target_block].as_str().is_some_and(|cwd| !cwd.is_empty()));
+            let app = Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":server})).unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":foreground,"block":active_block,"navigationId":16})).unwrap();
+            let active = wait(&app, |v| v["selectedBlock"] == *active_block && v["screen"].is_object());
+            app.command(json!({"type":"pane_catalog","open":true})).unwrap();
+            let catalog = wait(&app, |v| v["paneCatalog"]["items"].is_array() && v["paneCatalogLoading"] == false);
+            let entries = catalog["paneCatalog"]["items"].as_array().unwrap();
+            assert!(entries.iter().any(|v| v["session"] == *foreground && v["block"] == *active_block));
+            assert!(entries.iter().any(|v| v["session"] == *background && v["block"] == *target_block &&
+                v["directory"].as_str().is_some_and(|cwd| !cwd.is_empty())), "Missing background pane metadata: {entries:?}");
+            assert_eq!(catalog["selectedBlock"], *active_block);
+            assert_eq!(catalog["controlled"], active["controlled"]);
+            assert_eq!(catalog["screen"]["columns"], active["screen"]["columns"]);
+            app.command(json!({"type":"session","id":background,"block":target_block,"navigationId":17})).unwrap();
+            wait(&app, |v| v["selectedSession"] == *background && v["selectedBlock"] == *target_block && v["navigationId"] == 17);
+            app.command(json!({"type":"pane_catalog","open":false})).unwrap();
+            wait(&app, |v| v["paneCatalog"].is_null() && v["paneCatalogLoading"] == false);
+        }));
+        for (session, _) in &fixtures {
+            runtime.block_on(writer.attach(session)).unwrap();
+            runtime.block_on(writer.call("session.destroy", json!({"session_id":session}))).unwrap();
+        }
+        runtime.block_on(writer.close()).unwrap();
+        result.unwrap();
+    }
+
     #[test]
     #[ignore = "requires an explicitly supplied owned Rex server"]
     fn live_close_tabs_and_panes_preserves_backgrounds_and_selects_neighbours() {

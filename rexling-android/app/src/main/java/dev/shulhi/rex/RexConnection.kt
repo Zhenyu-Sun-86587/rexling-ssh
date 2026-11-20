@@ -388,7 +388,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(grid!=null) lastSize=grid
         command("block", "id" to id, "navigationId" to navigationRequest.id)
     }
-    fun openActivity(session: String,block: String) {
+    fun openPane(session: String,block: String) {
         presentation.flush()
         val current=state.value
         if(!visible || !current.connected || current.creating) return
@@ -450,6 +450,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun jumpLastSession() { if(state.value.sessions.any { it.id==lastSessionId }) selectSession(lastSessionId) }
     fun refreshSessionDetails() { if(state.value.connected) command("sessions_info") }
+    internal fun requestPaneCatalog(open: Boolean) {command("pane_catalog","open" to open)}
     fun prefetchPanes(ids: List<String>) {
         if(state.value.connected && !state.value.creating) command("peek","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
     }

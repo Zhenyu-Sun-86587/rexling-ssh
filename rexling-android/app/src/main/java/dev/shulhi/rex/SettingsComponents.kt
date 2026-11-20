@@ -43,10 +43,13 @@ internal object SettingsType {
 @Composable internal fun SettingsSection(title: String,compact: Boolean=true,content: @Composable ColumnScope.()->Unit) {
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text(title,Modifier.padding(start=4.dp),style=SettingsType.section,color=MaterialTheme.colorScheme.primary)
-        Surface(shape=RoundedCornerShape(if(compact) 12.dp else 20.dp),color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f)) {
-            Column(Modifier.fillMaxWidth(),content=content)
-        }
+        SettingsCard(compact=compact) {Column(Modifier.fillMaxWidth(),content=content)}
     }
+}
+
+@Composable internal fun SettingsCard(modifier: Modifier=Modifier,compact: Boolean=true,content: @Composable ()->Unit) {
+    Surface(modifier,shape=RoundedCornerShape(if(compact) 12.dp else 20.dp),
+        color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f),content=content)
 }
 
 @Composable internal fun SettingsDivider() {

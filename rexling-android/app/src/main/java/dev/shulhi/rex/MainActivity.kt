@@ -27,7 +27,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -40,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -119,8 +119,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val navigation=client.navigationRequest
     val displayedSession=navigation.session ?: state.selectedSession
     val currentSessionKey=sessionKey(model.activeServerId,displayedSession)
+    val sessionLabel=state.sessions.firstOrNull {it.id==displayedSession}?.label
     val sessionStrip=SessionCatalog.strip(model.sessionTargets,SessionTarget(model.activeServer,
-        SessionItem(displayedSession,state.sessions.firstOrNull {it.id==displayedSession}?.label ?: if(state.connected) "No session" else state.phase)))
+        SessionItem(displayedSession,sessionLabel ?: if(state.connected) "No session" else state.phase)))
     val displayedBlock=navigation.block ?: state.selectedBlock
     val changingSession=navigation.session!=null && navigation.session!=state.selectedSession
     val windows=if(changingSession) emptyList() else client.orderedWindows(state)
@@ -247,7 +248,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val bottomOverlayInset=if(keyboardShown) 0.dp else singlePaneNavigationClearance
     var hiddenFloating by rememberSaveable(displayedSession,window?.id) {mutableStateOf("")}
     val controlled=state.controlled && ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen)
-    SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
+    SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
     fun openPane(id: String) {hiddenFloating="";client.selectBlock(id)}
     fun minimizeFloating() {
         hiddenFloating=chosen
@@ -278,13 +279,24 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         if(index>=0 && blocks.size>1) client.prefetchPanes(listOf(blocks[Math.floorMod(index-1,blocks.size)].id,blocks[(index+1)%blocks.size].id).distinct())
     }
     LaunchedEffect(ready,chosen,client.hasScreen,hiddenFloating) {if(ready && (!floatingActive || hiddenFloating!=chosen)) client.claimActivePane()}
-    LaunchedEffect(controlled,client.keyboardRequest,terminalView) {
+    LaunchedEffect(controlled,terminalView) {
         if(controlled) {
             terminalView?.requestFocus()
             client.applySize()
-            if(client.keyboardRequest==displayedBlock && terminalView!=null) {terminalView?.keyboard();client.keyboardShown()}
         }
     }
+    // A modal drawer holds window focus until it closes. Keep the keyboard request until the terminal can receive it.
+    val windowFocused=LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(controlled,client.keyboardRequest,terminalView,displayedBlock,menu,windowFocused) {
+        val view=terminalView
+        if(windowFocused && !menu && controlled && view!=null && client.keyboardRequest.isNotEmpty() && client.keyboardRequest==displayedBlock) {
+            view.keyboard()
+            client.keyboardShown()
+        }
+    }
+    val chosenBlock=blocks.firstOrNull {it.id==chosen}
+    val paneTitle=if(model.servers.isEmpty()) stringResource(R.string.app_name) else
+        (state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(chosenBlock?.label.orEmpty(),state.titles[chosen].orEmpty())
     val workspaceBackdrop=rememberBackdropCapture(menu || forwards || preferencesOpen || servers || networkSettings || sshKeysSettings || appearance || about || neovimSettings || toolbarSettings || controlSettings || fontPicker || alerts || picker in setOf("tabs","panes","sessions") || model.activityVisible)
     Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
         // The bottom navigation inset (the gesture handle) is left to the lowest element, so it can
@@ -295,32 +307,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
                 blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
                 serverIcons=model.sessionTargets.associate {it.key to it.server.icon}+(currentSessionKey to model.activeServer.icon),
-                working=chosen in state.workingBlocks,title=if(model.servers.isEmpty()) stringResource(R.string.app_name) else (state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(blocks.firstOrNull {it.id==chosen}?.label.orEmpty(),state.titles[chosen].orEmpty()),menu={
-                    Box {
-                        ChromeButton(ChromeIcon.MORE,"Terminal menu"){menu=true}
-                        DropdownMenu(menu,{menu=false},modifier=Modifier.drawerFrost(workspaceHaze,RoundedCornerShape(16.dp),workspaceBackdrop),shape=RoundedCornerShape(16.dp),containerColor=Color.Transparent,tonalElevation=0.dp) {
-                            Text(model.activeServer.label,Modifier.padding(horizontal=16.dp,vertical=6.dp),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
-                            Text(if(state.connected) if(controlled) "In control" else "Viewing terminal" else state.phase,
-                                Modifier.padding(horizontal=16.dp,vertical=8.dp),fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                            client.screenDimensions?.let {Text("${it.first} × ${it.second}",Modifier.padding(horizontal=16.dp),fontFamily=MonoUi,fontSize=11.sp)}
-                            HorizontalDivider(Modifier.padding(vertical=6.dp))
-                            TerminalMenuItem("New session",ChromeIcon.ADD,enabled=ready,onClick={menu=false;newSession=true})
-                            OwnershipMenuItem(controlled,ready&&client.hasScreen) {menu=false;if(controlled) client.releaseControl() else client.takeControl()}
-                            QuickThemeMenuItem(palette.dark) {dark->menu=false;model.changeAppearance(if(dark) Appearance.DARK else Appearance.LIGHT)}
-                            TerminalMenuItem("Preferences",ChromeIcon.SETTINGS,onClick={menu=false;preferencesOpen=true})
-                            TerminalMenuItem("Copy viewport",ChromeIcon.COPY,enabled=client.hasScreen,onClick={
-                                menu=false;client.terminal.value?.let {screen->(getClipboard(model.getApplication()) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))}
-                            })
-                            TerminalMenuItem("Paste",ChromeIcon.PASTE,enabled=controlled,onClick={
-                                menu=false;pasteClipboard()
-                            })
-                            TerminalMenuItem("Attach image",ChromeIcon.IMAGE,enabled=controlled && model.images.state==null,onClick={menu=false;chooseImage()})
-                            TerminalMenuItem("Attach file",ChromeIcon.FILE,enabled=controlled && model.images.state==null,onClick={menu=false;chooseFile()})
-                            TerminalMenuItem("Port forwarding",ChromeIcon.SERVER,onClick={menu=false;forwards=true})
-                            TerminalMenuItem("Servers · ${model.connectedCount} connected",ChromeIcon.SERVER,onClick={menu=false;servers=true})
-                            TerminalMenuItem("Refresh sessions",ChromeIcon.REFRESH,enabled=state.connected,onClick={menu=false;client.refresh()})
-                        }
-                    }
+                working=chosen in state.workingBlocks,title=paneTitle,menu={
+                    ChromeButton(ChromeIcon.MORE,"Terminal menu") {menu=true}
                 })
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize()) {
@@ -445,6 +433,44 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             }
         }
     }
+    if(menu) {
+        val canTakeControl=ready && client.hasScreen
+        val canAttach=controlled && model.images.state==null
+        TerminalActionsDrawer(
+            title=if(chosenBlock==null) "Terminal actions" else paneTitle,
+            subtitle=listOfNotNull(sessionLabel,model.activeServer.label.takeIf {model.servers.isNotEmpty()}).joinToString(" · "),
+            status=if(state.connected) if(controlled) "In control" else "Viewing terminal" else state.phase,
+            dimensions=client.screenDimensions,
+            controlled=controlled,
+            ownership=if(canTakeControl) ({
+                if(controlled) client.releaseControl() else client.takeControl()
+            }) else null,
+            quickActions=listOf(
+                TerminalDrawerAction("Paste",ChromeIcon.PASTE,enabled=controlled) {pasteClipboard()},
+                TerminalDrawerAction("Image",ChromeIcon.IMAGE,enabled=canAttach,run=::chooseImage),
+                TerminalDrawerAction("Attach file",ChromeIcon.FILE,enabled=canAttach,run=::chooseFile),
+                TerminalDrawerAction("Copy viewport",ChromeIcon.COPY,enabled=client.hasScreen) {
+                    client.terminal.value?.let {screen->
+                        (getClipboard(context) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))
+                    }
+                },
+            ),
+            actions=listOf(
+                TerminalDrawerAction("New session",ChromeIcon.ADD,enabled=ready,opensDrawer=true) {newSession=true},
+                TerminalDrawerAction("Port forwarding",ChromeIcon.SERVER,opensDrawer=true) {forwards=true},
+                TerminalDrawerAction("Servers · ${model.connectedCount} connected",ChromeIcon.SERVER,opensDrawer=true) {servers=true},
+                TerminalDrawerAction(if(palette.dark) "Toggle Light theme" else "Toggle Dark theme",
+                    if(palette.dark) ChromeIcon.SUN else ChromeIcon.MOON) {
+                    model.changeAppearance(if(palette.dark) Appearance.LIGHT else Appearance.DARK)
+                },
+                TerminalDrawerAction("Refresh sessions",ChromeIcon.REFRESH,enabled=state.connected) {client.refresh()},
+            ),
+            onPreferences={preferencesOpen=true},
+            onClosePane=chosenBlock?.takeIf {ready}?.let {block-> {closeTarget=closePaneTarget(block)} },
+            onDismiss={menu=false},
+            hazeState=workspaceHaze,
+        )
+    }
     if(model.activityVisible) ActivitySheet(model.activitySources,model::refreshActivity,model::openActivity,onClose={model.showActivity(false)},onSeen=model::markActivitySeen,onMarkAll=model::markAllActivitySeen,hazeState=workspaceHaze)
     NetworkPrompts()
     if(sshKeysSettings) SshKeysSheet(onClose={sshKeysSettings=false},hazeState=workspaceHaze)
@@ -492,9 +518,18 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         onDockPane={tab,id,anchor,split->client.editTerminal(displayedSession,tab,id,"dock_pane",anchor=anchor,split=split)},error=state.error,hazeState=workspaceHaze,
         sessions=SwitcherSessions(model.sessionTargets.size,
             model.sessionTargets.firstOrNull {it.key==currentSessionKey}?.let {"${it.session.label} · ${it.server.label}"}.orEmpty(),
-            sessionsPageHeight(model.sessionTargets),onShown=model::refreshSessionDetails) {
+            onShown=model::refreshSessionDetails) {
             SessionsPage(model.sessionTargets,currentSessionKey,model.lastSessionKey,ready,model.closingSessionKey.ifBlank {model.renamingSessionKey},model.sessionActionError,model::closeSession,model::renameSession,
-                onSelect={picker="";model.selectSessionTarget(it)},onNew={picker="";newSession=true})
+                onSelect={picker="";model.selectSessionTarget(it)},onNew={picker="";newSession=true},
+                allPanes={back->
+                    DisposableEffect(model) {
+                        model.showPaneCatalog(true)
+                        onDispose {model.showPaneCatalog(false)}
+                    }
+                    AllPanesPage(model.paneCatalogSources,model.activeServerId,displayedSession,chosen,back,model::refreshPaneCatalog) {target->
+                        model.openCatalogPane(target).also {opened->if(opened) picker=""}
+                    }
+                })
         },openSessions=picker=="sessions")
     closeTarget?.let {target->
         AlertDialog(onDismissRequest={closeTarget=null},title={Text(if(target.tab) "Close tab?" else "Close pane?")},
@@ -512,31 +547,28 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
 }
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
-/** The drawer's preferred height for the sessions page; filtering never resizes it. */
-internal fun sessionsPageHeight(targets: List<SessionTarget>)=
-    (128+targets.size.coerceIn(1,7)*64+targets.map {it.server.id}.distinct().size.coerceAtMost(5)*24).dp.coerceIn(248.dp,600.dp)
-
 /** Sessions grouped by server, with search, New session, rename and close. A page of [TabPaneSwitcher]. */
-@Composable internal fun SessionsPage(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onRenameSession: (SessionTarget,String)->Boolean,onSelect: (String)->Unit,onNew: ()->Unit) {
+@Composable internal fun SessionsPage(targets: List<SessionTarget>,current: String,last: String,canCreate: Boolean,closing: String,error: String,onCloseSession: (SessionTarget)->Unit,onRenameSession: (SessionTarget,String)->Boolean,onSelect: (String)->Unit,onNew: ()->Unit,
+    allPanes: (@Composable (onBack: ()->Unit)->Unit)?=null) {
     var search by rememberSaveable {mutableStateOf("")}
+    var showAllPanes by rememberSaveable {mutableStateOf(false)}
+    if(showAllPanes && allPanes!=null) {
+        BackHandler {showAllPanes=false}
+        allPanes {showAllPanes=false}
+        return
+    }
     var closeTarget by remember {mutableStateOf<SessionTarget?>(null)}
     var renameTarget by remember {mutableStateOf<SessionTarget?>(null)}
+    var revealedRow by remember(search) {mutableStateOf<String?>(null)}
     val groups=remember(targets,current,search) {SessionCatalog.groups(targets,current,search)}
     val scheme=MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).padding(top=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            BasicTextField(search,{search=it},Modifier.weight(1f).heightIn(min=40.dp)
-                .clip(RoundedCornerShape(12.dp)).background(scheme.surfaceVariant.copy(alpha=.45f)).padding(horizontal=12.dp,vertical=10.dp),
-                textStyle=SettingsType.row.copy(color=scheme.onSurface),singleLine=true,
-                cursorBrush=androidx.compose.ui.graphics.SolidColor(scheme.primary),
-                decorationBox={field->Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    ChromeSymbol(ChromeIcon.SEARCH,Modifier.size(17.dp),scheme.onSurfaceVariant)
-                    Box(Modifier.weight(1f)) {if(search.isEmpty()) Text("Find session…",style=SettingsType.row,color=scheme.onSurfaceVariant);field()}
-                }})
-            FilledTonalButton(onClick=onNew,enabled=canCreate,contentPadding=PaddingValues(horizontal=10.dp,vertical=0.dp),modifier=Modifier.heightIn(min=40.dp)) {
-                ChromeSymbol(ChromeIcon.ADD,Modifier.size(15.dp),scheme.primary)
-                Spacer(Modifier.width(4.dp));Text("New session",style=SettingsType.section)
+            SwitcherSearchField(search,{search=it},"Find session…",Modifier.weight(1f))
+            if(allPanes!=null) TextButton(onClick={showAllPanes=true},contentPadding=PaddingValues(horizontal=6.dp)) {
+                Text("All panes",style=SettingsType.section,maxLines=1)
             }
+            SwitcherAddButton("New session",canCreate,onNew)
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f),contentPadding=PaddingValues(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             if(groups.isEmpty()) item {Text(if(targets.isEmpty()) "No sessions yet" else "No matching sessions",Modifier.padding(vertical=16.dp),style=SettingsType.row,color=scheme.onSurfaceVariant)}
@@ -551,7 +583,10 @@ internal fun sessionsPageHeight(targets: List<SessionTarget>)=
                 }
                 items(group.sessions,key={it.key}) {target->
                     SessionRow(target,current==target.key,last==target.key,closing==target.key,
-                        onSelect={onSelect(target.key)},onClose={closeTarget=target},onRename={renameTarget=target})
+                        onSelect={onSelect(target.key)},onClose={closeTarget=target},onRename={renameTarget=target},
+                        revealed=revealedRow==target.key,onReveal={open->
+                            if(open) revealedRow=target.key else if(revealedRow==target.key) revealedRow=null
+                        })
                 }
             }
         }

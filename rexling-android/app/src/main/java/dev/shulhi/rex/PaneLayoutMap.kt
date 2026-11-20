@@ -19,6 +19,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.unit.dp
 
@@ -35,6 +36,10 @@ import androidx.compose.ui.unit.dp
         }
         BoxWithConstraints(Modifier.fillMaxWidth().height(88.dp).clip(RoundedCornerShape(12.dp))
             .background(scheme.surfaceVariant.copy(alpha=.45f)).border(1.dp,scheme.outlineVariant,RoundedCornerShape(12.dp))
+            .pointerInput(enabled) {
+                // A held drag in the map must not turn into a pane-opening tap on release.
+                if(enabled) detectTabDrag(start={true},move={},end={},cancel={})
+            }
             .padding(3.dp).selectableGroup().semantics {contentDescription="Pane layout"}) {
             window.layout.filter {showFloating || !it.floating}.forEach {placement->
                 val block=window.blocks.firstOrNull {it.id==placement.id}

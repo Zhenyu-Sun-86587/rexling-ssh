@@ -27,28 +27,27 @@ class TerminalEditActionsTest {
     }
     @Test fun tabAndPaneRenameActionsNeverOpenTheTerminal() {
         show(0)
-        ui.onNodeWithContentDescription("Actions for tab Project").performClick()
-        ui.onNodeWithText("Rename tab").performClick()
+        ui.onNodeWithContentDescription("Tab Project").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Rename tab").performClick()
         ui.onNode(hasSetTextAction()).performTextReplacement("Release")
         ui.onNodeWithText("Save").performClick()
         ui.onNodeWithText("Panes").performClick()
-        ui.onNodeWithContentDescription("Actions for pane fish").performClick()
-        ui.onNodeWithText("Rename pane").performClick()
+        ui.onNodeWithContentDescription("Pane fish").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Rename pane").performClick()
         ui.onNode(hasSetTextAction()).performTextReplacement("Console")
         ui.onNodeWithText("Save").performClick()
         ui.runOnIdle {assertEquals(listOf("rename-tab:w:Release","rename-pane:w:a:Console"),calls)}
     }
     @Test fun dockingChoosesTheTargetAndSideWhileFloatingKeepsOneTiledPane() {
         show(1)
-        ui.onNodeWithContentDescription("Actions for pane Floating task").performClick()
-        ui.onNodeWithText("Dock pane").performClick()
+        ui.onNodeWithContentDescription("Pane Floating task").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Dock pane").performClick()
         ui.onNodeWithText("Split below").performClick()
         ui.onNodeWithText("Dock").performClick()
-        ui.onNodeWithContentDescription("Actions for pane Agent task").performClick()
-        ui.onNodeWithText("Float pane").performClick()
-        ui.onNodeWithContentDescription("Actions for pane fish").performClick()
-        ui.onNodeWithText("Float pane").assertIsNotEnabled()
-        ui.onNodeWithText("Keep one docked pane in this tab").assertIsDisplayed()
+        ui.onNodeWithContentDescription("Pane Agent task").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Float pane").performClick()
+        ui.onNodeWithContentDescription("Pane fish").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Float pane").assertIsNotEnabled()
         ui.runOnIdle {assertEquals(listOf("dock:w:f:a:BELOW","float:w:b"),calls)}
     }
     @Test fun rejectedRenameKeepsTheInputAndSupportsResetToAutomatic() {

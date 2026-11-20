@@ -5,29 +5,28 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable internal fun SessionRow(target: SessionTarget,active: Boolean,last: Boolean,closing: Boolean,
-    onSelect: ()->Unit,onClose: ()->Unit,onRename: ()->Unit={}) {
-    var menu by remember {mutableStateOf(false)}
-    // No swipe-to-close: rows sit in a horizontal pager, so sideways swipes always change page.
-    // Close and Rename stay in the actions menu.
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) {
+    onSelect: ()->Unit,onClose: ()->Unit,onRename: ()->Unit={},revealed: Boolean,onReveal: (Boolean)->Unit) {
+    val actions=listOf(SwitcherRowAction("Rename session",ChromeIcon.EDIT,run=onRename),
+        SwitcherRowAction("Close session",ChromeIcon.CLOSE,destructive=true,run=onClose))
+    SwitcherSwipeRow(revealed,onReveal,actions,enabled=!closing) {
         Row(Modifier.fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=if(active) .8f else .35f))
             .clickable(enabled=!closing,onClick=onSelect)
-            .semantics {customActions=listOf(CustomAccessibilityAction("Rename session"){onRename();true},CustomAccessibilityAction("Close session"){onClose();true})}
-            .heightIn(min=56.dp).padding(start=10.dp,end=2.dp,top=4.dp,bottom=4.dp),
+            .semantics {
+                if(!closing) customActions=actions.map {action->CustomAccessibilityAction(action.label) {onReveal(false);action.run();true}}
+            }
+            .heightIn(min=56.dp).padding(start=10.dp,end=12.dp,top=4.dp,bottom=4.dp),
             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
             Column(Modifier.weight(1f)) {
@@ -38,13 +37,6 @@ import androidx.compose.ui.unit.sp
             when {closing->CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=1.5.dp)
                 active->Text("current",color=MaterialTheme.colorScheme.primary,style=SettingsType.detail,fontWeight=FontWeight.SemiBold)
                 last->Text("previous",color=MaterialTheme.colorScheme.onSurfaceVariant,style=SettingsType.detail)}
-            Box {
-                ChromeButton(ChromeIcon.MORE,"Session actions for ${target.session.label} on ${target.server.label}",!closing){menu=true}
-                DropdownMenu(menu,{menu=false},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
-                    TerminalMenuItem("Rename session",ChromeIcon.EDIT,onClick={menu=false;onRename()})
-                    TerminalMenuItem("Close session",ChromeIcon.CLOSE,destructive=true,onClick={menu=false;onClose()})
-                }
-            }
         }
     }
 }

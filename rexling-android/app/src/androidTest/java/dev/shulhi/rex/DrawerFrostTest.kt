@@ -49,7 +49,7 @@ class DrawerFrostTest {
                 when(choice.intValue) {
                     0->ActivitySheet(listOf(ActivitySource(server,true,false,"",false,listOf(record))),{},{},{},hazeState=haze)
                     1->TabPaneSwitcher(emptyList(),"","",emptyMap(),emptyMap(),emptyMap(),{0},true,true,true,{},{},{},{_,_->},{},{},{},hazeState=haze,
-                        sessions=SwitcherSessions(1,"",sessionsPageHeight(listOf(target))) {SessionsPage(listOf(target),target.key,"",true,"","",{},{_,_->true},{},{})},openSessions=true)
+                        sessions=SwitcherSessions(1,"") {SessionsPage(listOf(target),target.key,"",true,"","",{},{_,_->true},{},{})},openSessions=true)
                     2->TabPaneSwitcher(listOf(window),"w","b",mapOf("b" to ProgramIdentity.resolve(listOf("codex"))),mapOf("b" to "Review changes"),mapOf("b" to "~/Dev/project"),{0},true,true,true,{},{},{},{_,_->},{},{},{},hazeState=haze)
                     3->Box(Modifier.align(Alignment.TopEnd).padding(top=60.dp,end=12.dp)) {
                         DropdownMenu(true,{},modifier=Modifier.drawerFrost(haze,RoundedCornerShape(16.dp)),shape=RoundedCornerShape(16.dp),containerColor=Color.Transparent,tonalElevation=0.dp) {

@@ -53,6 +53,7 @@ data class AppState(
     val directories: Map<String, String> = emptyMap(),
     val mirrorWaiting: Set<String> = emptySet(),
     val previewFrames: Map<String, TerminalScreen> = emptyMap(), val sessionDetails: Map<String, SessionDetail> = emptyMap(),
+    internal val paneCatalog: PaneCatalogSnapshot? = null, internal val paneCatalogLoading: Boolean = false,
     val revision: Long = 0, val phase: String = "disconnected", val endpoint: String = "",
     internal val clipboardWrite: TerminalClipboardWrite?=null,
     val identity: String = "", val error: String = "", val notice: String = "",
@@ -85,6 +86,7 @@ data class AppState(
                 previewFrames = root.optJSONObject("previews")?.let { frames -> frames.keys().asSequence().associateWith { TerminalScreen.parse(frames.getJSONObject(it)) } } ?: emptyMap(),
                 sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->
                     val d=details.getJSONObject(key);SessionDetail(d.optString("attachment"),d.optInt("tabs"),d.optInt("panes")) } } ?: emptyMap(),
+                paneCatalog=root.optJSONObject("paneCatalog")?.let(PaneCatalogSnapshot::parse),paneCatalogLoading=root.optBoolean("paneCatalogLoading"),
                 revision = root.optLong("revision"), navigationId = root.optLong("navigationId"),tabMoveId=root.optLong("tabMoveId"),paneMoveId=root.optLong("paneMoveId"),connectionEpoch=root.optLong("connectionEpoch"),otherOwner=root.optBoolean("otherOwner"),attentionCount=root.optInt("attentionCount").coerceIn(0,1024), phase = root.optString("phase", "disconnected"),
                 clipboardWrite=root.optJSONObject("clipboard")?.let {TerminalClipboardWrite(it.optLong("serial"),it.optString("text"),it.optString("block"),it.optLong("connection"),it.optLong("navigation"),it.optBoolean("local"))},
                 endpoint = root.optString("endpoint"), identity = root.optString("identity"),
@@ -110,7 +112,7 @@ data class AppState(
     }
 }
 private fun argb(rgb: Int): Int = rgb or (0xff shl 24)
-private fun <T> JSONArray?.objects(map: (Any) -> T): List<T> = if (this == null) emptyList() else (0 until length()).map { map(get(it)) }
+internal fun <T> JSONArray?.objects(map: (Any) -> T): List<T> = if (this == null) emptyList() else (0 until length()).map { map(get(it)) }
 
 object TerminalInput {
     // Shift+Enter has no legacy encoding (it would be a plain \r). The engine
