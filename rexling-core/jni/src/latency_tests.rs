@@ -445,6 +445,26 @@ async fn minimized_floating_terminal_reopens_live_without_another_snapshot() {
 }
 
 #[tokio::test(flavor="current_thread")]
+async fn opening_a_floating_overlay_keeps_the_tiled_stream_for_return_focus() {
+    let peer=Peer::with_floating(Duration::ZERO,false,false,true).await;
+    let (mut actor,_)=peer.actor(8,true).await;
+    actor.controlled=false;
+    actor.refresh_view().await.unwrap();
+    actor.open_block("block:tiled".into()).await.unwrap();
+    let count_data_opens=||peer.methods.lock().unwrap().iter().filter(|m|m.as_str()=="data.connect").count();
+    let before=count_data_opens();
+
+    actor.command(json!({"type":"block","id":"block:test","keepTiled":true})).await.unwrap();
+    assert_eq!(actor.selected_block,"block:test");
+    assert!(actor.mirror.wants("session:test","block:tiled"));
+
+    actor.open_block("block:tiled".into()).await.unwrap();
+    assert_eq!(actor.selected_block,"block:tiled");
+    assert!(actor.retained_floating.is_some());
+    assert_eq!(count_data_opens(),before);
+}
+
+#[tokio::test(flavor="current_thread")]
 async fn retained_floating_stream_consumes_hidden_output_without_publishing_or_clipboard_replay() {
     let peer=Peer::with_floating(Duration::ZERO,false,false,true).await;
     let (mut actor,shared)=peer.actor(8,true).await;

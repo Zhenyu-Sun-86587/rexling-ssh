@@ -133,6 +133,17 @@ fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'stati
     }
     let layout=window["layout"].as_array().context("Pane layout is unavailable")?;
     let placement=layout.iter().find(|p|p["id"]==id).context("Pane layout changed")?;
+    if kind=="resize_floating" {
+        let layer=placement["layerId"].as_str().filter(|id|!id.is_empty()).context("Floating layer is unavailable")?;
+        ensure!(placement["floating"]==true && value["layerId"]==layer,"The floating layer changed");
+        let bounds=value["bounds"].as_array().filter(|rect|rect.len()==4).context("Invalid floating bounds")?;
+        let fields: Option<Vec<_>>=bounds.iter().map(Value::as_f64).collect();
+        let fields=fields.context("Invalid floating bounds")?;
+        let (x,y,w,h)=(fields[0],fields[1],fields[2],fields[3]);
+        ensure!(x>=0.0 && y>=0.0 && w>0.0 && h>0.0 && x<1.0 && y<1.0 &&
+            x+w<=1.000001 && y+h<=1.000001,"Floating panes must fit inside the window");
+        return Ok(("session.resize_layer",json!({"session_id":session,"layer_id":layer,"bounds":[x,y,w.min(1.0-x),h.min(1.0-y)]})));
+    }
     let tiled:Vec<_>=layout.iter().filter(|p|p["floating"]==false).collect();
     if kind=="float_pane" {
         ensure!(placement["floating"]==false,"This pane is already floating");
@@ -841,7 +852,14 @@ impl Actor {
                 let ids=layer["blocks"].as_array().into_iter().flatten()
                     .filter(|b|b["creator_name"]=="com.superlogical.terminal")
                     .filter_map(|b|b["block_id"].as_str()).collect();
+                let start=layout.len();
                 collect_pane_layout(&layer["layout"],&ids,index,layer["kind"]!="tiled",0,&mut layout);
+                if layer["kind"]=="floating" && layer["layer_id"].is_string() {
+                    for pane in &mut layout[start..] {
+                        pane["layerId"]=layer["layer_id"].clone();
+                        pane["layerBounds"]=layer["bounds"].clone();
+                    }
+                }
                 if layer["kind"]=="tiled" {collect_splits(&layer["layout"],&ids,0,&mut splits);}
                 for block in layer["blocks"].as_array().into_iter().flatten() {
                     if block["creator_name"] != "com.superlogical.terminal" {
@@ -1326,7 +1344,7 @@ impl Actor {
                 self.creating = false;
                 self.publish();
             }
-            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" => {
+            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" | "resize_floating" => {
                 ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before editing a terminal");
                 self.refresh_view().await?;
                 let (method,args)=terminal_edit_call(&self.windows,&self.selected_session,&value)?;
@@ -1334,6 +1352,10 @@ impl Actor {
                 // Send once: never repeat a layout mutation after an uncertain reply.
                 self.control.as_mut().context("not connected")?.call(method,args).await?;
                 self.refresh_view().await?;
+                if value["type"]=="float_pane" && value["focus"]==true {
+                    let block=value["id"].as_str().context("pane ID required")?.to_owned();
+                    self.open_block_with_layout(block,true).await?;
+                }
             }
             "move_tab" => {
                 ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before moving tabs");
@@ -1431,7 +1453,7 @@ impl Actor {
                     .as_str()
                     .context("block ID required")?
                     .to_owned();
-                self.open_block(block).await?;
+                self.open_block_with_layout(block,value["keepTiled"]==true).await?;
             }
             "close_tab" | "close_pane" => {
                 ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before closing a terminal");
@@ -1500,7 +1522,9 @@ impl Actor {
                     .as_str()
                     .context("Server created no terminal block")?
                     .to_owned();
-                self.open_block(block).await?;
+                let keep_tiled=value["type"]=="new_pane" && value["keepTiled"]==true;
+                if keep_tiled {self.refresh_view().await?;}
+                self.open_block_with_layout(block,keep_tiled).await?;
                 self.creating = false;
                 self.publish();
             }
@@ -1551,12 +1575,19 @@ impl Actor {
                 if window.is_none_or(|w| w["id"] != value["window"]) {
                     return Ok(());
                 }
-                let wanted = wanted.into_iter().filter(|want| {
+                let active_float=window.and_then(|w|w["layout"].as_array()).and_then(|panes|
+                    panes.iter().find(|p|p["id"]==self.selected_block && p["floating"]==true));
+                let wanted: Vec<_> = wanted.into_iter().filter(|want| {
                     want.block != self.selected_block && window.is_some_and(|w| {
                         w["layout"].as_array().into_iter().flatten()
-                            .any(|p| p["id"] == want.block && p["floating"] == false)
+                            .any(|p| p["id"] == want.block && (p["floating"] == false ||
+                                active_float.is_some_and(|active|p["layer"]==active["layer"])))
                     })
                 }).collect();
+                if self.retained_floating.as_ref().is_some_and(|pane|wanted.iter().any(|want|want.block==pane.block))
+                    && let Some(pane)=self.retained_floating.take() {
+                    self.mirror.adopt(&session,pane.block,pane.data,pane.replica,false);
+                }
                 self.mirror.request(&session, wanted);
                 self.publish_mirror_status();
             }
@@ -1734,6 +1765,9 @@ impl Actor {
         Ok(())
     }
     async fn open_block(&mut self, block: String) -> Result<()> {
+        self.open_block_with_layout(block,false).await
+    }
+    async fn open_block_with_layout(&mut self, block: String, keep_tiled: bool) -> Result<()> {
         ensure!(!self.selected_session.is_empty(), "Choose a session first");
         if self.selected_block == block && self.data.is_some() && self.replica.is_some() {
             self.publish();
@@ -1741,8 +1775,16 @@ impl Actor {
         }
         let floating=self.windows.as_array().into_iter().flatten().any(|w|
             w["layout"].as_array().into_iter().flatten().any(|p|p["id"]==self.selected_block && p["floating"]==true));
+        let overlay = keep_tiled.then(||self.windows.as_array().into_iter().flatten().find_map(|window| {
+            let panes=window["layout"].as_array()?;
+            let source=panes.iter().find(|pane|pane["id"]==self.selected_block)?;
+            let target=panes.iter().find(|pane|pane["id"]==block && pane["floating"]==true)?;
+            Some(source["floating"]==true && source["layer"]==target["layer"])
+        })).flatten();
+        let opens_overlay=overlay.is_some();
         let handoff = self.mirror.wants(&self.selected_session, &block);
-        let retain_as_mirror = handoff && !floating && self.data.is_some() && self.replica.is_some();
+        let retain_as_mirror = ((handoff || opens_overlay) && !floating || overlay==Some(true)) &&
+            self.data.is_some() && self.replica.is_some();
         let was_controlled = self.controlled;
         if retain_as_mirror {
             if was_controlled && let Some(control) = self.control.as_mut() {
@@ -1762,18 +1804,20 @@ impl Actor {
                 block: block.clone(), data, replica,
             })
         } else {
-            self.mirror.request("", Vec::new());
-            if let Some(control) = self.control.as_mut() {
-                self.mirror.start(control).await;
+            if !opens_overlay {
+                self.mirror.request("", Vec::new());
+                if let Some(control) = self.control.as_mut() {
+                    self.mirror.start(control).await;
+                }
             }
             None
         };
-        if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+        if retain_as_mirror && let (Some(data), Some(replica)) = (self.data.take(), self.replica.take()) {
+            // The departing pane stays visible even when the incoming pane was the only mirror.
+            self.mirror.adopt(&self.selected_session,self.selected_block.clone(), data, replica, was_controlled);
+        } else if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.close_retained_floating().await;
             self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
-        } else if retain_as_mirror && let (Some(data), Some(replica)) = (self.data.take(), self.replica.take()) {
-            // The departing pane stays visible even when the incoming pane was the only mirror.
-            self.mirror.adopt(self.selected_block.clone(), data, replica, was_controlled);
         } else if let Some(mut data)=self.data.take() {
             let _=tokio::time::timeout(Duration::from_secs(2),data.close()).await;
         }
@@ -3657,6 +3701,22 @@ while True:
             }
             let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
             assert_eq!(view["windows"][0]["label"],"Renamed tab");assert_eq!(view["windows"][0]["layers"].as_array().unwrap().len(),1);
+
+            app.command(json!({"type":"float_pane","session":id,"window":window,"id":second,"focus":true})).unwrap();
+            let floated=wait(&app,|v|v["selectedBlock"]==*second && v["windows"][0]["layout"].as_array().unwrap().iter()
+                .any(|p|p["id"]==*second && p["floating"]==true));
+            let layer=floated["windows"][0]["layout"].as_array().unwrap().iter().find(|p|p["id"]==*second).unwrap()["layerId"].clone();
+            assert!(layer.as_str().is_some_and(|id|!id.is_empty()));
+            let bounds=json!([0.2,0.25,0.55,0.5]);
+            app.command(json!({"type":"resize_floating","session":id,"window":window,"id":second,"layerId":layer,"bounds":bounds})).unwrap();
+            wait(&app,|v|v["windows"][0]["layout"].as_array().unwrap().iter().any(|p|p["id"]==*second && p["layerBounds"]==bounds));
+            app.command(json!({"type":"new_pane","session":id,"anchor":second,"direction":"horizontal","keepTiled":true})).unwrap();
+            let split=wait(&app,|v|v["selectedBlock"]!=*second && !v["screen"].is_null() &&
+                v["windows"][0]["layout"].as_array().unwrap().iter().filter(|p|p["layerId"]==layer).count()==2);
+            assert_eq!(split["error"],"");
+            let new_block=&split["selectedBlock"];
+            app.command(json!({"type":"zoom","session":id,"block":new_block,"zoom":true})).unwrap();
+            wait(&app,|v|v["windows"][0]["zoomed"]==*new_block);
         }));
         runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }

@@ -1,12 +1,20 @@
 package dev.shulhi.rex
 
 import android.app.Application
+import android.content.res.Configuration
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -17,11 +25,117 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
 class MultiPaneMoveTest {
     @get:Rule val ui=createComposeRule()
+
+    @Test fun aSharedWindowCallbackDisablesFullWorkspaceEvenBeforeBoundsChange() {
+        lateinit var activity: ComponentActivity
+        ui.setContent {
+            val host=LocalActivity.current as ComponentActivity
+            SideEffect {activity=host}
+            Text(if(isUnfoldedFullScreen()) "Full workspace" else "Compact workspace")
+        }
+        assumeTrue(ui.onAllNodesWithText("Full workspace").fetchSemanticsNodes().isNotEmpty())
+        ui.runOnIdle {activity.onMultiWindowModeChanged(true,Configuration(activity.resources.configuration))}
+        ui.onNodeWithText("Compact workspace").assertIsDisplayed()
+        ui.runOnIdle {activity.onMultiWindowModeChanged(false,Configuration(activity.resources.configuration))}
+        ui.onNodeWithText("Full workspace").assertIsDisplayed()
+    }
+
+    @Test fun floatingPaneOpensOverTheTilesAndMinimizingRestoresThePreviousPane() {
+        val application=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        val scope=CoroutineScope(Dispatchers.Main)
+        val focused=mutableStateOf("right")
+        val savedBounds=mutableStateOf(PaneBounds(.25f,.25f,.5f,.5f))
+        val adjustments=mutableListOf<PaneBounds>()
+        val actions=mutableListOf<String>()
+        val pane=BlockItem("floating","Logs")
+        val layout=listOf(
+            PanePlacement("left",0f,0f,.5f,1f),PanePlacement("right",.5f,0f,.5f,1f),
+            PanePlacement(pane.id,.25f,.25f,.5f,.5f,layer=1,floating=true,layerId="layer:test",layerBounds=savedBounds.value),
+        )
+        val window=WindowItem("tab","Project",listOf(BlockItem("left","Left"),BlockItem("right","Right"),pane),layout)
+        val navigation=FloatingPaneNavigation()
+        navigation.remember("session",window,focused.value)
+        lateinit var client: RexConnection
+        ui.runOnUiThread {client=RexConnection(application,scope,"")}
+        try {
+            ui.setContent {MaterialTheme {
+                val selected=focused.value
+                val original=layout.last()
+                val bounds=savedBounds.value
+                val overlay=bounds.positionIn(original.layerBounds!!,original).copy(layerBounds=bounds).takeIf {it.id==selected}
+                val haze=remember {HazeState()}
+                Box(Modifier.width(380.dp).height(320.dp).testTag("Workspace")) {
+                    MultiPaneLayout(
+                        client,"session",window.id,multiPaneTiles(window,selected,allowFloatingOverlay=true)!!,
+                        focused=selected,liveBlock=selected,controlled=true,programs=emptyMap(),
+                        waiting=emptySet(),fontSize=11f,onFocus={id,_->focused.value=id},
+                        onView={},onImage={_,_->false},onPaste={false},imeEnterSubmits=false,
+                        tapOpensKeyboard=false,keyboardChrome={0},extendsUnderNavigation=false,
+                        hazeState=haze,captureBackdrop=false,floatingPanes=listOfNotNull(overlay),allowFloat=true,
+                        onFloat={actions+="float:$it"},onDockFloating={actions+="dock:$it"},
+                        onClosePane={actions+="close:$it"},
+                        onMinimizeFloating={focused.value=navigation.returnPane("session",window)!!},
+                        onFloatingBounds={_,next->adjustments+=next;savedBounds.value=next;true},
+                        onSplit={id,split->actions+="split:$id:$split"},
+                    )
+                    FloatingPaneDock(
+                        listOf(pane),overlay?.id,emptyMap(),emptyMap(),enabled=true,
+                        onOpen={focused.value=it},onMinimize={focused.value=navigation.returnPane("session",window)!!},
+                        modifier=Modifier.align(Alignment.BottomEnd),
+                    )
+                }
+            }}
+            ui.onNodeWithTag("Floating terminal pane").assertDoesNotExist()
+            ui.onNodeWithContentDescription("Open floating pane: Logs").performClick()
+            ui.onAllNodesWithContentDescription("Focus pane").assertCountEquals(2)
+            val overlay=ui.onNodeWithTag("Floating terminal pane").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val workspace=ui.onNodeWithTag("Workspace").fetchSemanticsNode().boundsInRoot
+            assertEquals(.5f,overlay.width/workspace.width,.025f)
+            assertEquals(.5f,overlay.height/workspace.height,.025f)
+            assertEquals(workspace.center.x,overlay.center.x,2f)
+            assertEquals(workspace.center.y,overlay.center.y,2f)
+            val floatingCorner=hasAnyAncestor(hasTestTag("Floating terminal pane"))
+            fun revealCorner()=ui.onNode(hasContentDescription("Pane actions, top left") and floatingCorner).performClick()
+            revealCorner()
+            ui.onNodeWithContentDescription("Move floating pane").performTouchInput {swipe(center,center+androidx.compose.ui.geometry.Offset(48f,28f))}
+            ui.runOnIdle {assertTrue(adjustments.single().x>.25f);assertEquals(.5f,adjustments.single().width,.01f)}
+            ui.onNodeWithContentDescription("Resize floating pane").performTouchInput {swipe(center,center+androidx.compose.ui.geometry.Offset(64f,52f))}
+            ui.runOnIdle {
+                assertTrue("Move and resize should each commit once: $adjustments",adjustments.size==2)
+                assertTrue("Resize should increase both dimensions: $adjustments",adjustments.last().width>.5f && adjustments.last().height>.5f)
+            }
+            ui.onNodeWithContentDescription("More pane actions").performClick()
+            ui.onNodeWithText("Split right").performClick()
+            revealCorner()
+            ui.onNodeWithContentDescription("More pane actions").performClick()
+            ui.onNodeWithText("Dock pane").performClick()
+            revealCorner()
+            ui.onNodeWithContentDescription("More pane actions").performClick()
+            ui.onNodeWithText("Close pane").performClick()
+            revealCorner()
+            ui.onNodeWithContentDescription("More pane actions").performClick()
+            ui.onNodeWithText("Minimize floating pane").performClick()
+            ui.onNodeWithTag("Floating terminal pane").assertDoesNotExist()
+            ui.onAllNodesWithContentDescription("Pane actions, top left")[1].performClick()
+            ui.onNodeWithContentDescription("More pane actions").performClick()
+            ui.onNodeWithText("Float pane").performClick()
+            ui.onAllNodesWithContentDescription("Pane actions, top left")[0].performClick()
+            ui.onNodeWithContentDescription("More pane actions").performClick()
+            ui.onNodeWithText("Close pane").performClick()
+            ui.runOnIdle {
+                assertEquals("right",focused.value)
+                assertEquals(listOf("split:floating:RIGHT","dock:floating","close:floating","float:right","close:left"),actions)
+            }
+        } finally {
+            ui.runOnIdle {client.close();scope.cancel()}
+        }
+    }
 
     @Test fun eitherCornerRevealsTheLeftHandleAndOnlyAValidDropSwaps() {
         val application=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application

@@ -74,7 +74,7 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
         return program.tabTitle(tab.label,block?.label.orEmpty(),windows.indexOf(tab)+1,titles[block?.id].orEmpty())
     }
     val drawerSurface=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,
+    if(dock==null) ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,
         dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         Column(drawerSurface.fillMaxWidth().height(minOf(preferredHeight,maxHeight*.82f)).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
@@ -198,7 +198,7 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
                         } else {
                             if(panes.isEmpty()) item {SwitcherEmpty("No panes yet","Choose a tab or create a new one.")}
                             else if(hasLayout && showLayout) item(key="layout") {
-                                PaneLayoutMap(current!!,selectedBlock,programs,titles,enabled,onPane)
+                                PaneLayoutMap(current!!,selectedBlock,programs,titles,enabled,onSelect=onPane)
                                 Spacer(Modifier.height(4.dp))
                             }
                             val displayed=if(drag.id==null) panes else drag.order.mapNotNull {id->panes.firstOrNull {it.id==id}}
@@ -246,8 +246,7 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
     }
     dock?.let {(window,id)->
         val tab=windows.firstOrNull {it.id==window}
-        val anchors=tab?.tiledPanes().orEmpty().filterNot {it.id==id}
-        DockPaneDialog(anchors,programs,titles,enabled && tab?.floatingPanes()?.any {it.id==id}==true,
+        DockPaneSheet(tab,programs,titles,enabled && tab?.floatingPanes()?.any {it.id==id}==true,hazeState,
             onDock={anchor,split->onDockPane(window,id,anchor,split)},onClose={dock=null})
     }
 }

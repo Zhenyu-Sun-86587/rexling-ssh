@@ -30,12 +30,18 @@ internal class RexConnection(application: Application, private val scope: Corout
     private var paneMoveSerial=0L
     private var pendingPaneOrder by mutableStateOf<PendingPaneOrder?>(null)
     fun orderedWindows(value: AppState): List<WindowItem> = pendingPaneOrder?.apply(value,pendingTabOrder?.apply(value) ?: value.windows) ?: pendingTabOrder?.apply(value) ?: value.windows
-    fun editTerminal(session: String,window: String,id: String,type: String,label: String="",anchor: String="",split: PaneSplit=PaneSplit.RIGHT): Boolean {
+    fun editTerminal(session: String,window: String,id: String,type: String,label: String="",anchor: String="",split: PaneSplit=PaneSplit.RIGHT,focus: Boolean=false): Boolean {
         val current=state.value
         if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending || current.selectedSession!=session) return false
         val tab=current.windows.firstOrNull {it.id==window} ?: return false
         if(type=="rename_tab") {if(id!=window) return false} else if(tab.blocks.none {it.id==id}) return false
-        return command(type,"session" to session,"window" to window,"id" to id,"label" to label.trim(),"anchor" to anchor,"direction" to split.name.lowercase())
+        return command(type,"session" to session,"window" to window,"id" to id,"label" to label.trim(),"anchor" to anchor,"direction" to split.name.lowercase(),"focus" to focus)
+    }
+    internal fun resizeFloating(session: String,window: String,pane: PanePlacement,bounds: PaneBounds): Boolean {
+        val current=state.value
+        if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending || current.selectedSession!=session) return false
+        return command("resize_floating","session" to session,"window" to window,"id" to pane.id,"layerId" to pane.layerId,
+            "bounds" to org.json.JSONArray(listOf(bounds.x,bounds.y,bounds.width,bounds.height)))
     }
     fun movePane(window: String,id: String,before: String?): Boolean {
         val current=state.value
@@ -375,7 +381,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         command("session", "id" to id, "navigationId" to navigationRequest.id)
     }
     fun selectBlock(id: String) = selectBlock(id,null)
-    internal fun selectBlock(id: String,grid: Pair<Int,Int>?) {
+    internal fun selectBlock(id: String,grid: Pair<Int,Int>?,keepTiled: Boolean=false) {
         val current = state.value
         if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
@@ -386,7 +392,7 @@ internal class RexConnection(application: Application, private val scope: Corout
         restoreWorkspace=false
         workspace.remember(current.selectedSession,current.windows,id)
         if(grid!=null) lastSize=grid
-        command("block", "id" to id, "navigationId" to navigationRequest.id)
+        command("block", "id" to id, "navigationId" to navigationRequest.id,"keepTiled" to keepTiled)
     }
     fun openPane(session: String,block: String) {
         presentation.flush()
@@ -473,9 +479,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         val current = state.value
         if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank()) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_tab", "session" to current.selectedSession)}
     }
-    fun createPane(split: PaneSplit=PaneSplit.RIGHT,anchor: String=state.value.selectedBlock) {
+    fun createPane(split: PaneSplit=PaneSplit.RIGHT,anchor: String=state.value.selectedBlock,keepTiled: Boolean=false) {
         val current = state.value
-        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank() && current.windows.any {w->w.blocks.any {it.id==anchor}}) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_pane", "session" to current.selectedSession, "anchor" to anchor, "direction" to split.direction)}
+        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank() && current.windows.any {w->w.blocks.any {it.id==anchor}}) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_pane", "session" to current.selectedSession, "anchor" to anchor, "direction" to split.direction,"keepTiled" to keepTiled)}
     }
     fun closePane(session: String,id: String) {
         val current=state.value

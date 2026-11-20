@@ -7,6 +7,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.Manifest
 import android.os.Build
 import android.provider.Settings
@@ -217,6 +218,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     // instead extends under the gesture handle: side tabs with the key toolbar hidden.
     val panelShown=state.connected || state.phase=="preview" || client.hasScreen
     val unfoldedFullScreen=isUnfoldedFullScreen()
+    val hasHinge=remember(context) {context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)}
+    val allowFloatingOverlay=unfoldedFullScreen && hasHinge
     val tabLayout=model.tabLayout(tabWidth.first)
     // From the setting, not the keyboard, so the layout keeps one mode while the keyboard animates.
     val extendUnderNav=panelShown && tabLayout.side && model.toolbarWithKeyboardOnly
@@ -234,10 +237,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val toolbarHeight=remember(keyboardDensity) {intArrayOf(with(keyboardDensity) {1.dp.roundToPx()+45.dp.roundToPx()})}
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
     val chosen=displayedBlock.ifBlank {blocks.firstOrNull()?.id.orEmpty()}
-    val floating=if(model.minimizeFloatingPanes) window?.floatingPanes().orEmpty() else emptyList()
+    val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen,allowFloatingOverlay) else null
+    val floating=if(model.minimizeFloatingPanes || (allowFloatingOverlay && tiles!=null)) window?.floatingPanes().orEmpty() else emptyList()
     val carouselBlocks=window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
     val floatingActive=floating.any {it.id==chosen}
-    val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen) else null
     val flushSinglePane=tabLayout.side && tiles==null
     val terminalBottomMargin=when {
         flushSinglePane -> 0.dp
@@ -247,17 +250,26 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val singlePaneNavigationClearance=if(flushSinglePane) navigationClearance else 0.dp
     val bottomOverlayInset=if(keyboardShown) 0.dp else singlePaneNavigationClearance
     var hiddenFloating by rememberSaveable(displayedSession,window?.id) {mutableStateOf("")}
+    val floatingOverlay=if(allowFloatingOverlay && tiles!=null && chosen!=hiddenFloating) {
+        val layer=window?.layout?.firstOrNull {it.floating && it.id==chosen}?.layer
+        window?.layout.orEmpty().filter {it.floating && it.layer==layer}
+    } else emptyList()
+    var dockFloatingPane by remember(displayedSession,window?.id) {mutableStateOf<String?>(null)}
     val controlled=state.controlled && ready && client.hasScreen && (!floatingActive || hiddenFloating!=chosen)
-    SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null)}
-    fun openPane(id: String) {hiddenFloating="";client.selectBlock(id)}
+    SideEffect {model.setPaneObscured((floatingActive && hiddenFloating==chosen) || menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null || dockFloatingPane!=null)}
+    fun openPane(id: String) {
+        hiddenFloating=""
+        client.selectBlock(id,null,keepTiled=allowFloatingOverlay && tiles!=null && floating.any {it.id==id})
+    }
     fun minimizeFloating() {
         hiddenFloating=chosen
+        if(floatingOverlay.isNotEmpty() && window?.zoomed==chosen) client.zoom(chosen,false)
         window?.let {client.floatingNavigation.returnPane(displayedSession,it)}?.let(client::selectBlock)
     }
     LaunchedEffect(navigation.id) {if(navigation.pending) hiddenFloating=""}
-    LaunchedEffect(model.minimizeFloatingPanes) {if(model.minimizeFloatingPanes && floatingActive) minimizeFloating()}
+    LaunchedEffect(model.minimizeFloatingPanes) {if(model.minimizeFloatingPanes && floatingActive && tiles==null) minimizeFloating()}
     SideEffect {window?.let {client.floatingNavigation.remember(displayedSession,it,chosen)}}
-    BackHandler(enabled=ready && model.minimizeFloatingPanes && !newSession && !appearance && !about && !neovimSettings && !alerts && !fontPicker && closeTarget==null && floatingActive && hiddenFloating!=chosen && picker.isEmpty() && !preferencesOpen && !model.activityVisible) {minimizeFloating()}
+    BackHandler(enabled=ready && !newSession && !appearance && !about && !neovimSettings && !alerts && !fontPicker && closeTarget==null && floatingActive && hiddenFloating!=chosen && picker.isEmpty() && !preferencesOpen && !model.activityVisible) {minimizeFloating()}
     val liveBlock=state.selectedBlock.ifBlank {if(state.phase=="preview") "preview" else ""}
     fun closePaneTarget(block: BlockItem)=TerminalCloseTarget(state.selectedSession,block.id,
         (state.programs[block.id] ?: ProgramIdentity.Loading).paneTitle(block.label,state.titles[block.id].orEmpty()),false,listOf(block.id))
@@ -297,7 +309,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val chosenBlock=blocks.firstOrNull {it.id==chosen}
     val paneTitle=if(model.servers.isEmpty()) stringResource(R.string.app_name) else
         (state.programs[chosen] ?: ProgramIdentity.Loading).paneTitle(chosenBlock?.label.orEmpty(),state.titles[chosen].orEmpty())
-    val workspaceBackdrop=rememberBackdropCapture(menu || forwards || preferencesOpen || servers || networkSettings || sshKeysSettings || appearance || about || neovimSettings || toolbarSettings || controlSettings || fontPicker || alerts || picker in setOf("tabs","panes","sessions") || model.activityVisible)
+    val workspaceBackdrop=rememberBackdropCapture(menu || forwards || preferencesOpen || servers || networkSettings || sshKeysSettings || appearance || about || neovimSettings || toolbarSettings || controlSettings || fontPicker || alerts || picker in setOf("tabs","panes","sessions") || model.activityVisible || dockFloatingPane!=null)
     Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
         // The bottom navigation inset (the gesture handle) is left to the lowest element, so it can
         // extend its background to the screen edge. imePadding consumes the keyboard first, so
@@ -350,12 +362,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!model.activityVisible,
                             onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
-                            island=tiles!=null && !floatingActive,islandBottom=terminalBottomMargin+(if(extendUnderNav) 0.dp else 8.dp)) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            island=tiles!=null,islandBottom=terminalBottomMargin+(if(extendUnderNav) 0.dp else 8.dp)) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
                         Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=terminalBottomMargin)) {
-                        if(!floatingActive || hiddenFloating!=chosen) {
+                        if(tiles!=null || !floatingActive || hiddenFloating!=chosen) {
                         val onView: (TerminalView)->Unit={view->
                             terminalView=view
                             view.onOpenLink={url->
@@ -377,6 +389,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
                             bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,
                             splits=window.splits,zoomed=window.zoomed,paneActionsEnabled=ready,
+                            floatingPanes=floatingOverlay,allowFloat=allowFloatingOverlay && tiles.size>1,
+                            onMinimizeFloating=::minimizeFloating,onDockFloating={dockFloatingPane=it},
+                            onClosePane={id->blocks.firstOrNull {it.id==id}?.let {closeTarget=closePaneTarget(it)}},
                         )
                         else LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},onView,
@@ -386,7 +401,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             squareCorners=tabLayout.side,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
                         }
-                        if(floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                        if(tiles==null && floatingActive && hiddenFloating==chosen) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                             Text("Floating panes minimized",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
@@ -445,7 +460,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             ownership=if(canTakeControl) ({
                 if(controlled) client.releaseControl() else client.takeControl()
             }) else null,
-            quickActions=listOf(
+            quickActions=listOfNotNull(
                 TerminalDrawerAction("Paste",ChromeIcon.PASTE,enabled=controlled) {pasteClipboard()},
                 TerminalDrawerAction("Image",ChromeIcon.IMAGE,enabled=canAttach,run=::chooseImage),
                 TerminalDrawerAction("Attach file",ChromeIcon.FILE,enabled=canAttach,run=::chooseFile),
@@ -454,6 +469,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         (getClipboard(context) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Rex terminal",screen.plainText()))
                     }
                 },
+                if(unfoldedFullScreen) {
+                    val multiple=model.multiPaneUnfolded
+                    TerminalDrawerAction(if(multiple) "Single pane" else "Multiple panes",
+                        if(multiple) ChromeIcon.ZOOM else ChromeIcon.SPLIT) {model.changeMultiPaneUnfolded(!multiple)}
+                } else null,
             ),
             actions=listOf(
                 TerminalDrawerAction("New session",ChromeIcon.ADD,enabled=ready,opensDrawer=true) {newSession=true},
@@ -509,7 +529,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         state.programs,state.titles,state.directories,client::tabPaneIndex,ready,
         canCreateTab=ready && state.selectedSession.isNotBlank(),canCreatePane=ready && state.selectedSession.isNotBlank(),
         onTab={picker="";client.selectWindow(it)},onPane={picker="";openPane(it)},
-        onNewTab={picker="";client.createTab()},onNewPane={anchor,split->picker="";client.createPane(split,anchor)},
+        onNewTab={picker="";client.createTab()},onNewPane={anchor,split->
+            picker="";client.createPane(split,anchor,keepTiled=allowFloatingOverlay && tiles!=null && floating.any {it.id==anchor})
+        },
         onCloseTab={picker="";closeTarget=closeTabTarget(it)},onClosePane={picker="";closeTarget=closePaneTarget(it)},
         onClose={picker=""},initialPage=if(picker=="panes") 1 else 0,onMoveTab=client::moveTab,onMovePane=client::movePane,reorderKey=currentSessionKey,
         onRenameTab={tab,label->client.editTerminal(displayedSession,tab,tab,"rename_tab",label=label)},
@@ -531,6 +553,16 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     }
                 })
         },openSessions=picker=="sessions")
+    dockFloatingPane?.let {id->
+        if(allowFloatingOverlay && window!=null && window.floatingPanes().any {it.id==id}) {
+            DockPaneSheet(window,state.programs,state.titles,ready,workspaceHaze,
+                onDock={anchor,split->client.editTerminal(displayedSession,window.id,id,"dock_pane",anchor=anchor,split=split)},
+                onClose={dockFloatingPane=null})
+        }
+    }
+    LaunchedEffect(allowFloatingOverlay,window?.layout,dockFloatingPane) {
+        if(!allowFloatingOverlay || window?.layout?.any {it.id==dockFloatingPane && it.floating}!=true) dockFloatingPane=null
+    }
     closeTarget?.let {target->
         AlertDialog(onDismissRequest={closeTarget=null},title={Text(if(target.tab) "Close tab?" else "Close pane?")},
             text={Text(if(target.tab) "Close “${target.label}”? This ends every program in its ${target.blocks.size} pane${if(target.blocks.size==1) "" else "s"}."

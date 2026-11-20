@@ -74,7 +74,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, CHECK, PLAY, STOP, ZOOM, UNZOOM, MOVE }
+internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, MINIMIZE, RESIZE, CHECK, PLAY, STOP, ZOOM, UNZOOM, MOVE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -93,6 +93,8 @@ internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRO
             ChromeIcon.PLAY -> {drawPath(Path().apply {moveTo(8f*u,5f*u);lineTo(19f*u,12f*u);lineTo(8f*u,19f*u);close()},color,style=Stroke(width,join=StrokeJoin.Round))}
             ChromeIcon.STOP -> {box(6f,6f,12f,12f,1.5f)}
             ChromeIcon.FLOAT -> {box(3f,7f,14f,14f);box(10f,3f,11f,10f)}
+            ChromeIcon.MINIMIZE -> line(5f,12f,19f,12f)
+            ChromeIcon.RESIZE -> {line(6f,18f,18f,6f);line(12f,18f,18f,12f)}
             ChromeIcon.SPLIT -> { box(3f,4f,18f,16f);line(12f,4f,12f,20f) }
             ChromeIcon.SPLIT_RIGHT, ChromeIcon.SPLIT_BELOW -> {
                 val right=icon==ChromeIcon.SPLIT_RIGHT

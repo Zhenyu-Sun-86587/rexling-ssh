@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import androidx.compose.ui.unit.IntSize
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -134,15 +135,29 @@ class ModelsTest {
         assertEquals(TabWidthClass.MEDIUM,TabWidthClass.of(440));assertEquals(TabWidthClass.WIDE,TabWidthClass.of(760))
     }
 
-    @Test fun multiPaneShowsTwoToFourTiledPanesIncludingTheFocusedOne() {
+    @Test fun multiPaneKeepsTheTiledLayoutWhenAFloatingPaneIsFocused() {
         fun tab(vararg rects: PanePlacement)=WindowItem("w","Tab",rects.map {BlockItem(it.id,it.id)},rects.toList())
         val left=PanePlacement("a",0f,0f,.5f,1f);val right=PanePlacement("b",.5f,0f,.5f,1f)
         val floating=PanePlacement("f",.2f,.2f,.3f,.3f,layer=1,floating=true)
         assertEquals(listOf(left,right),multiPaneTiles(tab(left,right,floating),"a"))
+        assertEquals(listOf(left,right),multiPaneTiles(tab(left,right,floating),"f",allowFloatingOverlay=true))
+        assertEquals(listOf(left),multiPaneTiles(tab(left,floating),"f",allowFloatingOverlay=true))
+        assertEquals(listOf(left),multiPaneTiles(tab(left,floating),"a",allowFloatingOverlay=true))
         assertEquals(null,multiPaneTiles(tab(left),"a"))                       // one pane: carousel
-        assertEquals(null,multiPaneTiles(tab(left,right),"f"))                 // focused pane floats
+        assertEquals(null,multiPaneTiles(tab(left,right,floating),"f"))        // overlay unavailable
         assertEquals(null,multiPaneTiles(tab(left,right,PanePlacement("c",0f,0f,.2f,.2f),PanePlacement("d",0f,0f,.2f,.2f),PanePlacement("e",0f,0f,.2f,.2f)),"a"))
         assertEquals(null,multiPaneTiles(null,"a"))
+    }
+
+    @Test fun fullWorkspaceRequiresTheWholeLargeDisplayAndSingleWindowMode() {
+        val inner=IntSize(2448,1848)
+        val cover=IntSize(900,2120)
+        val density=2.5f
+        assertTrue(fullWorkspaceWindow(inner,inner,density,sharedWindow=false))
+        assertFalse(fullWorkspaceWindow(IntSize(1620,1848),inner,density,sharedWindow=false))
+        assertFalse(fullWorkspaceWindow(IntSize(2448,1700),inner,density,sharedWindow=false))
+        assertFalse(fullWorkspaceWindow(IntSize(2440,1840),inner,density,sharedWindow=true))
+        assertFalse(fullWorkspaceWindow(cover,cover,density,sharedWindow=false))
     }
 
     @Test fun paneSplitLinesParseOnlyUsableBorders() {

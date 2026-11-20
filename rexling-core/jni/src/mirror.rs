@@ -16,7 +16,9 @@ use std::{
 };
 use tokio::time::Instant;
 
-pub const MAX_PANES: usize = 3;
+// Rex's default window limit. The unfolded workspace can display a split floating layer
+// together with its tiled panes.
+pub const MAX_PANES: usize = 64;
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
 
 #[derive(Clone, Debug, PartialEq)]
@@ -147,7 +149,10 @@ impl Mirror {
         None
     }
 
-    pub fn adopt(&mut self, block: String, data: Data, replica: Replica, owned: bool) {
+    pub fn adopt(&mut self, session: &str, block: String, data: Data, replica: Replica, owned: bool) {
+        if self.session != session {
+            self.request(session, Vec::new());
+        }
         let mut slot = Slot::new(Wanted {
             block,
             columns: 0,
@@ -426,17 +431,21 @@ mod tests {
 
     #[test]
     fn parse_keeps_order_drops_duplicates_and_caps_panes() {
-        let (session, wanted) = parse(&json!({"session": "session:a", "panes": [
+        let mut panes=json!([
             {"block": "b1", "columns": 80, "rows": 24},
             {"block": "b1", "columns": 10, "rows": 10},
             {"block": "", "columns": 10, "rows": 10},
             {"block": "b2", "columns": 9999, "rows": 9999},
             {"block": "b3", "columns": 0, "rows": 0},
             {"block": "b4", "columns": 40, "rows": 12},
-        ]}));
+            {"block": "b5", "columns": 40, "rows": 12},
+        ]);
+        panes.as_array_mut().unwrap().extend((6..=MAX_PANES+1).map(|i|json!({"block":format!("b{i}"),"columns":40,"rows":12})));
+        let (session, wanted) = parse(&json!({"session":"session:a","panes":panes}));
         assert_eq!(session, "session:a");
+        assert_eq!(wanted.len(),MAX_PANES);
         assert_eq!(
-            wanted,
+            &wanted[..4],
             vec![
                 Wanted {
                     block: "b1".into(),
@@ -452,6 +461,11 @@ mod tests {
                     block: "b3".into(),
                     columns: 1,
                     rows: 1
+                },
+                Wanted {
+                    block: "b4".into(),
+                    columns: 40,
+                    rows: 12
                 },
             ]
         );

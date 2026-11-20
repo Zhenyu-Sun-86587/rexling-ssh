@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,14 +24,16 @@ import dev.chrisbanes.haze.HazeState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun SettingsDrawer(title: String,closeDescription: String,onClose: ()->Unit,
     hazeState: HazeState?=null,onBack: (() -> Unit)?=null,swipeToDismiss: Boolean=true,backDescription: String="Back to appearance",
-    subtitle: String?=null,headerActions: @Composable RowScope.()->Unit={},content: @Composable ColumnScope.()->Unit) {
+    subtitle: String?=null,surfaceColor: Color=Color.Transparent,headerActions: @Composable RowScope.()->Unit={},content: @Composable ColumnScope.()->Unit) {
     val localHaze=remember {HazeState()}
+    val shape=BottomSheetDefaults.ExpandedShape
     // Built outside the sheet on purpose: drawerFrost redraws when its host window draws, and inside the
     // sheet that host is the sheet's own window, which then redraws itself every frame while open.
-    val frost=if(swipeToDismiss) Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-        else Modifier.paneFrost(hazeState ?: localHaze,BottomSheetDefaults.ExpandedShape,edge=false,opacity=.72f,blur=24.dp)
+    val frost=if(swipeToDismiss) Modifier.drawerFrost(hazeState,shape)
+        else Modifier.paneFrost(hazeState ?: localHaze,shape,edge=false,opacity=.72f,blur=24.dp)
+    val surface=if(surfaceColor==Color.Transparent) frost else Modifier.background(surfaceColor,shape).then(frost)
     @Composable fun Body(modifier: Modifier=Modifier) {
-        Column(modifier.then(frost).fillMaxWidth()
+        Column(modifier.then(surface).fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
             DrawerHandle()
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {

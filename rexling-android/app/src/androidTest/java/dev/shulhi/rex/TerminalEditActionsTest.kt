@@ -42,13 +42,28 @@ class TerminalEditActionsTest {
         show(1)
         ui.onNodeWithContentDescription("Pane Floating task").swipeForSwitcherActions()
         ui.onNodeWithContentDescription("Dock pane").performClick()
-        ui.onNodeWithText("Split below").performClick()
-        ui.onNodeWithText("Dock").performClick()
+        ui.onNodeWithContentDescription("Close dock pane").assertIsDisplayed()
+        ui.onNodeWithContentDescription("Close tab and pane switcher").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Close dock pane").performClick()
+        ui.onNodeWithContentDescription("Pane Floating task").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Dock pane").performClick()
+        val map=ui.onNodeWithContentDescription("Pane layout").fetchSemanticsNode().boundsInRoot
+        val drawer=ui.onNodeWithTag("Frosted overlay").fetchSemanticsNode().boundsInRoot
+        assertEquals(4f/3f,map.width/map.height,.01f)
+        assertEquals(drawer.center.x,map.center.x,1f)
+        assertTrue(map.width<drawer.width)
+        ui.onNodeWithContentDescription("Layout pane Floating task").assertDoesNotExist()
+        ui.onNodeWithText("Dock right").assertIsDisplayed().performClick()
+        ui.onNodeWithContentDescription("Close dock pane").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Pane Floating task").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Dock pane").performClick()
+        ui.onNodeWithContentDescription("Layout pane Agent task").performClick().assertIsSelected()
+        ui.onNodeWithText("Dock below").assertIsDisplayed().performClick()
         ui.onNodeWithContentDescription("Pane Agent task").swipeForSwitcherActions()
         ui.onNodeWithContentDescription("Float pane").performClick()
         ui.onNodeWithContentDescription("Pane fish").swipeForSwitcherActions()
         ui.onNodeWithContentDescription("Float pane").assertIsNotEnabled()
-        ui.runOnIdle {assertEquals(listOf("dock:w:f:a:BELOW","float:w:b"),calls)}
+        ui.runOnIdle {assertEquals(listOf("dock:w:f:a:RIGHT","dock:w:f:b:BELOW","float:w:b"),calls)}
     }
     @Test fun rejectedRenameKeepsTheInputAndSupportsResetToAutomatic() {
         val target=TerminalRenameTarget("w","a",false,"My pane");var accept=false;var closed=0;var value=""
