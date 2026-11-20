@@ -144,6 +144,19 @@ fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'stati
             x+w<=1.000001 && y+h<=1.000001,"Floating panes must fit inside the window");
         return Ok(("session.resize_layer",json!({"session_id":session,"layer_id":layer,"bounds":[x,y,w.min(1.0-x),h.min(1.0-y)]})));
     }
+    if kind=="place_pane" {
+        let anchor=value["anchor"].as_str().context("Choose a target pane")?;
+        validate_tiled_drag(window,value,id,anchor)?;
+        let (direction,side)=match value["position"].as_str() {
+            Some("left")=>("horizontal","before"),
+            Some("right")=>("horizontal","after"),
+            Some("above")=>("vertical","before"),
+            Some("below")=>("vertical","after"),
+            _=>anyhow::bail!("Choose a side of the target pane"),
+        };
+        return Ok(("session.move_block",json!({"session_id":session,"block_id":id,"anchor_block_id":anchor,
+            "direction":direction,"side":side,"ratio":0.5})));
+    }
     let tiled:Vec<_>=layout.iter().filter(|p|p["floating"]==false).collect();
     if kind=="float_pane" {
         ensure!(placement["floating"]==false,"This pane is already floating");
@@ -173,18 +186,22 @@ fn split_anchor<'a>(windows: &Value,command: &'a Value)->Result<&'a str> {
         "This pane is no longer available; choose another pane");
     Ok(anchor)
 }
+fn validate_tiled_drag(window: &Value,command: &Value,source: &str,target: &str)->Result<()> {
+    let tiled: Vec<_> = window["layout"].as_array().into_iter().flatten()
+        .filter(|pane| pane["floating"] == false)
+        .filter_map(|pane| pane["id"].as_str())
+        .collect();
+    ensure!(window["zoomed"].as_str().is_none_or(str::is_empty)
+        && command["tiled"] == json!(tiled), "The pane layout changed; try again");
+    ensure!(source != target && tiled.contains(&source) && tiled.contains(&target),
+        "Choose two different tiled panes");
+    Ok(())
+}
 fn pane_reorder_swaps(windows: &Value,command: &Value)->Result<Vec<(String,String)>> {
     let window=windows.as_array().into_iter().flatten().find(|w|w["id"]==command["window"] && w["id"].is_string()).context("That tab is no longer available")?;
     if let Some(other) = command["swapWith"].as_str() {
         let block = command["id"].as_str().context("pane ID required")?;
-        let tiled: Vec<_> = window["layout"].as_array().into_iter().flatten()
-            .filter(|pane| pane["floating"] == false)
-            .filter_map(|pane| pane["id"].as_str())
-            .collect();
-        ensure!(window["zoomed"].as_str().is_none_or(str::is_empty)
-            && command["tiled"] == json!(tiled), "The pane layout changed; try again");
-        ensure!(block != other && tiled.contains(&block) && tiled.contains(&other),
-            "Choose two different tiled panes");
+        validate_tiled_drag(window,command,block,other)?;
         return Ok(vec![(block.to_owned(), other.to_owned())]);
     }
     let mut ids:Vec<String>=window["blocks"].as_array().into_iter().flatten().filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
@@ -1344,7 +1361,7 @@ impl Actor {
                 self.creating = false;
                 self.publish();
             }
-            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" | "resize_floating" => {
+            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" | "resize_floating" | "place_pane" => {
                 ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before editing a terminal");
                 self.refresh_view().await?;
                 let (method,args)=terminal_edit_call(&self.windows,&self.selected_session,&value)?;
@@ -2322,6 +2339,11 @@ mod tests {
         invalid["label"]=json!("");assert_eq!(terminal_edit_call(&windows,"s",&invalid).unwrap().1["label"],"");
         let mut invalid=command("dock_pane","f");invalid["anchor"]=json!("f");assert!(terminal_edit_call(&windows,"s",&invalid).is_err());
         let only=json!([{"id":"w","blocks":[{"id":"a"}],"layout":[{"id":"a","floating":false}]}]);assert!(terminal_edit_call(&only,"s",&command("float_pane","a")).is_err());
+        let place=json!({"type":"place_pane","session":"s","window":"w","id":"b","anchor":"a","position":"below","tiled":["a","b"]});
+        for (key,value) in [("anchor",json!("f")),("anchor",json!("b")),("tiled",json!(["b","a"])),("position",json!("center"))] {
+            let mut invalid=place.clone();invalid[key]=value;
+            assert!(terminal_edit_call(&windows,"s",&invalid).is_err());
+        }
     }
 
     #[test]
@@ -3701,6 +3723,25 @@ while True:
             }
             let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
             assert_eq!(view["windows"][0]["label"],"Renamed tab");assert_eq!(view["windows"][0]["layers"].as_array().unwrap().len(),1);
+
+            let mut tiled=json!([first,second]);
+            for (position,axis,before) in [("left",0,true),("above",1,true),("right",0,false),("below",1,false)] {
+                app.command(json!({"type":"place_pane","session":id,"window":window,"id":second,"anchor":first,
+                    "position":position,"tiled":tiled})).unwrap();
+                let placed=wait(&app,|v| {
+                    let Some(layout)=v["windows"][0]["layout"].as_array() else {return false;};
+                    let origin=|id:&Value|layout.iter().find(|p|p["id"]==*id).and_then(|p|p["rect"][axis].as_f64());
+                    match (origin(first),origin(second)) {
+                        (Some(anchor),Some(moved))=>if before {moved<anchor} else {moved>anchor},
+                        _=>false,
+                    }
+                });
+                let layout=placed["windows"][0]["layout"].as_array().unwrap();
+                assert_eq!(layout.len(),2);
+                assert!(layout.iter().all(|p|p["floating"]==false));
+                assert_eq!(placed["error"],"");assert_eq!(placed["selectedBlock"],*first);assert_eq!(placed["controlled"],true);
+                tiled=Value::Array(layout.iter().map(|p|p["id"].clone()).collect());
+            }
 
             app.command(json!({"type":"float_pane","session":id,"window":window,"id":second,"focus":true})).unwrap();
             let floated=wait(&app,|v|v["selectedBlock"]==*second && v["windows"][0]["layout"].as_array().unwrap().iter()

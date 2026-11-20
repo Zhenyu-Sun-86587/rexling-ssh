@@ -52,15 +52,20 @@ internal class RexConnection(application: Application, private val scope: Corout
         pendingPaneOrder=PendingPaneOrder(current.selectedSession,window,++paneMoveSerial,order)
         return command("move_pane","session" to current.selectedSession,"window" to window,"id" to id,"before" to before.orEmpty(),"blocks" to org.json.JSONArray(old),"requestId" to paneMoveSerial)
     }
-    internal fun swapPanePositions(session: String,window: String,source: String,target: String,tiled: List<String>) {
+    internal fun dropPane(session: String,window: String,source: String,target: String,position: PaneDropPosition,tiled: List<String>) {
         val current=state.value
         if(handle==0L || !visible || !foreground || !current.connected || current.creating ||
             navigationRequest.pending || current.selectedSession!=session || source==target) return
         val tab=current.windows.firstOrNull {it.id==window} ?: return
         if(tab.zoomed.isNotBlank() || tab.layout.filterNot {it.floating}.map {it.id}!=tiled ||
             source !in tiled || target !in tiled || tab.blocks.none {it.id==current.selectedBlock}) return
-        command("move_pane","session" to session,"window" to window,"id" to source,"swapWith" to target,
-            "tiled" to org.json.JSONArray(tiled))
+        val layout=org.json.JSONArray(tiled)
+        if(position==PaneDropPosition.CENTER) {
+            command("move_pane","session" to session,"window" to window,"id" to source,"swapWith" to target,"tiled" to layout)
+        } else {
+            command("place_pane","session" to session,"window" to window,"id" to source,"anchor" to target,
+                "position" to position.name.lowercase(),"tiled" to layout)
+        }
     }
     fun moveTab(id: String,before: String?): Boolean {
         val current=state.value

@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -137,10 +138,10 @@ class MultiPaneMoveTest {
         }
     }
 
-    @Test fun eitherCornerRevealsTheLeftHandleAndOnlyAValidDropSwaps() {
+    @Test fun eitherCornerRevealsTheHandleAndDropPositionChoosesSwapOrSplit() {
         val application=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
         val scope=CoroutineScope(Dispatchers.Main)
-        val swaps=mutableListOf<Pair<String,String>>()
+        val drops=mutableListOf<Triple<String,String,PaneDropPosition>>()
         val splits=mutableListOf<Pair<String,PaneSplit>>()
         lateinit var client: RexConnection
         ui.runOnUiThread {client=RexConnection(application,scope,"")}
@@ -157,7 +158,7 @@ class MultiPaneMoveTest {
                         tapOpensKeyboard=false,keyboardChrome={0},extendsUnderNavigation=false,
                         hazeState=remember {HazeState()},captureBackdrop=false,
                         onSplit={id,split->splits+=id to split},
-                        onSwap={source,target->swaps+=source to target},
+                        onDrop={source,target,position->drops+=Triple(source,target,position)},
                     )
                 }
             }}
@@ -166,15 +167,26 @@ class MultiPaneMoveTest {
             val zoom=ui.onNodeWithContentDescription("Zoom pane").assertIsDisplayed()
             val start=grip.fetchSemanticsNode().boundsInRoot
             assertTrue(start.right<zoom.fetchSemanticsNode().boundsInRoot.left)
-            val destination=ui.onNodeWithContentDescription("Focus pane").fetchSemanticsNode().boundsInRoot.center-start.topLeft
+            val target=ui.onNodeWithContentDescription("Focus pane").fetchSemanticsNode().boundsInRoot
+            fun destination(x: Float,y: Float)=target.topLeft+Offset(target.width*x,target.height*y)-start.topLeft
             grip.performTouchInput {
                 down(center)
-                moveTo(destination,delayMillis=200)
+                moveTo(destination(.5f,.9f),delayMillis=200)
                 cancel()
             }
-            ui.runOnIdle {assertEquals(emptyList<Pair<String,String>>(),swaps)}
-            grip.performTouchInput {swipe(center,destination,durationMillis=300)}
-            ui.runOnIdle {assertEquals(listOf("left" to "right"),swaps)}
+            ui.runOnIdle {assertTrue(drops.isEmpty())}
+            val positions=listOf(
+                PaneDropPosition.CENTER to destination(.5f,.5f),
+                PaneDropPosition.BELOW to destination(.5f,.9f),
+                PaneDropPosition.RIGHT to destination(.9f,.5f),
+                PaneDropPosition.ABOVE to destination(.5f,.1f),
+                PaneDropPosition.LEFT to destination(.1f,.5f),
+            )
+            positions.forEachIndexed {index,(_,end)->
+                if(index>0) ui.onAllNodesWithContentDescription("Pane actions, top left")[0].performClick()
+                grip.performTouchInput {swipe(center,end,durationMillis=300)}
+            }
+            ui.runOnIdle {assertEquals(positions.map {Triple("left","right",it.first)},drops)}
             ui.onAllNodesWithContentDescription("Pane actions")[1].performClick()
             ui.onNodeWithContentDescription("Move pane").assertIsDisplayed()
             ui.onNodeWithContentDescription("Zoom pane").assertIsDisplayed()

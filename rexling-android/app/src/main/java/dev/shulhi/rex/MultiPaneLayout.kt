@@ -19,8 +19,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -45,7 +49,33 @@ import androidx.compose.ui.zIndex
 import androidx.core.app.MultiWindowModeChangedInfo
 import androidx.core.util.Consumer
 
-private data class PaneMove(val source: String,val target: String?=null)
+internal enum class PaneDropPosition {
+    CENTER, LEFT, RIGHT, ABOVE, BELOW;
+
+    fun preview(size: Size): Rect = when(this) {
+        CENTER -> Rect(0f,0f,size.width,size.height)
+        LEFT -> Rect(0f,0f,size.width/2,size.height)
+        RIGHT -> Rect(size.width/2,0f,size.width,size.height)
+        ABOVE -> Rect(0f,0f,size.width,size.height/2)
+        BELOW -> Rect(0f,size.height/2,size.width,size.height)
+    }
+}
+
+internal fun paneDropPosition(bounds: Rect,point: Offset): PaneDropPosition? {
+    if(!bounds.contains(point)) return null
+    val x=(point.x-bounds.left)/bounds.width
+    val y=(point.y-bounds.top)/bounds.height
+    val horizontal=minOf(x,1f-x)
+    val vertical=minOf(y,1f-y)
+    return when {
+        minOf(horizontal,vertical)>=.25f -> PaneDropPosition.CENTER
+        horizontal<=vertical -> if(x<.5f) PaneDropPosition.LEFT else PaneDropPosition.RIGHT
+        else -> if(y<.5f) PaneDropPosition.ABOVE else PaneDropPosition.BELOW
+    }
+}
+
+private data class PaneDrop(val target: String,val position: PaneDropPosition)
+private data class PaneMove(val source: String,val drop: PaneDrop?=null)
 
 /** Server layout with one mounted terminal view per visible pane. */
 @Composable
@@ -68,8 +98,8 @@ internal fun MultiPaneLayout(
     onFloat: (String)->Unit = {id->client.editTerminal(session,window,id,"float_pane",focus=true)},
     onFloatingBounds: (PanePlacement,PaneBounds)->Boolean = {pane,bounds->client.resizeFloating(session,window,pane,bounds)},
     onSplit: (String,PaneSplit)->Unit = {id,split->client.createPane(split,id,keepTiled=floatingPanes.any {it.id==id})},
-    onSwap: (String,String)->Unit = {source,target->
-        client.swapPanePositions(session,window,source,target,placements.map {it.id})
+    onDrop: (String,String,PaneDropPosition)->Unit = {source,target,position->
+        client.dropPane(session,window,source,target,position,placements.map {it.id})
     },
 ) {
     val palette=LocalTerminalPalette.current
@@ -126,10 +156,10 @@ internal fun MultiPaneLayout(
         }
     }
     val paneCoordinates=remember(session,window) {mutableMapOf<String,LayoutCoordinates>()}
-    val swap by rememberUpdatedState(onSwap)
-    fun completeMove(source: String,target: String) {
+    val dropPane by rememberUpdatedState(onDrop)
+    fun completeMove(source: String,drop: PaneDrop) {
         menuFor=null
-        swap(source,target)
+        dropPane(source,drop.target,drop.position)
     }
     DisposableEffect(client,session,window) {onDispose {client.mirror(session,window,emptyList())}}
     // Like the desktop: each pane a rounded card on the window background, with room between them and
@@ -168,7 +198,7 @@ internal fun MultiPaneLayout(
             val heightFraction=if(floating) pane.height else pane.height/spanY
             val height=visibleHeight*heightFraction
             val active=pane.id==focused
-            val dropTarget=move?.target==pane.id
+            val dropPosition=move?.drop?.takeIf {it.target==pane.id}?.position
             val moveSource=move?.source==pane.id
             val lastRow=!bottomMargin && pane.y+pane.height>=top+spanY-.001f
             val trim=when {floating->inset*2;lastRow->gap/2;else->gap}
@@ -180,11 +210,21 @@ internal fun MultiPaneLayout(
                 .clip(shape).background(Color(palette.background))
                 .drawWithContent {
                     drawContent()
-                    if(dropTarget) drawRect(scheme.primary.copy(alpha=.16f))
+                    if(dropPosition!=null) {
+                        val preview=dropPosition.preview(size)
+                        val edge=1.5.dp.toPx()
+                        if(preview.width>edge*2 && preview.height>edge*2) {
+                            val origin=preview.topLeft+Offset(edge,edge)
+                            val extent=Size(preview.width-edge*2,preview.height-edge*2)
+                            val radius=CornerRadius(8.dp.toPx())
+                            drawRoundRect(scheme.primary.copy(alpha=.22f),origin,extent,radius)
+                            drawRoundRect(scheme.primary,origin,extent,radius,style=Stroke(edge))
+                        }
+                    }
                 }
                 // Keep the border and padding fixed while moving so the PTY grid stays the same.
                 .border(1.5.dp,when {
-                    moveSource || dropTarget || active -> scheme.primary
+                    moveSource || active -> scheme.primary
                     else -> scheme.outline.copy(alpha=.25f)
                 },shape)
                 .padding(1.5.dp)) {
@@ -293,7 +333,7 @@ internal fun MultiPaneLayout(
                         val otherPanes=shownTiles.filter {it.id!=pane.id}
                         val targetActions=otherPanes.map {other->
                             CustomAccessibilityAction("Swap with pane ${shownTiles.indexOf(other)+1}") {
-                                completeMove(pane.id,other.id)
+                                completeMove(pane.id,PaneDrop(other.id,PaneDropPosition.CENTER))
                                 true
                             }
                         }
@@ -310,18 +350,24 @@ internal fun MultiPaneLayout(
                                         onDragStart={move=PaneMove(pane.id)},
                                         onDragCancel={move=null},
                                         onDragEnd={
-                                            val target=move?.target
+                                            val drop=move?.drop
                                             move=null
-                                            if(target!=null) completeMove(pane.id,target)
+                                            if(drop!=null) completeMove(pane.id,drop)
                                         },
                                     ) {change,_->
                                         change.consume()
                                         val point=handleCoordinates[0]?.takeIf {it.isAttached}?.localToWindow(change.position)
-                                        val target=otherPanes.firstOrNull {other->
-                                            point!=null && paneCoordinates[other.id]?.takeIf {it.isAttached}
-                                                ?.boundsInWindow()?.contains(point)==true
-                                        }?.id
-                                        move=PaneMove(pane.id,target)
+                                        val drop=point?.let {position->
+                                            val overFloating=shownFloating.any {floatingPane->
+                                                paneCoordinates[floatingPane.id]?.takeIf {it.isAttached}
+                                                    ?.boundsInWindow()?.contains(position)==true
+                                            }
+                                            if(overFloating) null else otherPanes.firstNotNullOfOrNull {other->
+                                                val bounds=paneCoordinates[other.id]?.takeIf {it.isAttached}?.boundsInWindow()
+                                                bounds?.let {paneDropPosition(it,position)}?.let {PaneDrop(other.id,it)}
+                                            }
+                                        }
+                                        move=PaneMove(pane.id,drop)
                                     }
                                 },contentAlignment=Alignment.Center) {
                                 ChromeSymbol(ChromeIcon.MOVE)
