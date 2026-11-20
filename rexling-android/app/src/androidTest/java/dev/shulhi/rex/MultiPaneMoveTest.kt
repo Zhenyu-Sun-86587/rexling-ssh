@@ -5,12 +5,15 @@ import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +35,84 @@ import org.junit.Test
 
 class MultiPaneMoveTest {
     @get:Rule val ui=createComposeRule()
+
+    @Test fun paneAndSidebarGuttersAreNarrowWithWideDividerTargets() {
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        val scope=CoroutineScope(Dispatchers.Main)
+        val side=mutableStateOf(TabBarPosition.LEFT)
+        val acknowledgedRatio=mutableFloatStateOf(.5f)
+        val placements=listOf(
+            PanePlacement("left",0f,0f,.5f,1f),
+            PanePlacement("upper",.5f,0f,.5f,.5f),
+            PanePlacement("lower",.5f,.5f,.5f,.5f),
+        )
+        val splits=listOf(
+            PaneSplitLine("columns",true,.5f,0f,0f,1f,1f,"left","upper"),
+            PaneSplitLine("rows",false,.5f,.5f,0f,.5f,1f,"upper","lower"),
+        )
+        lateinit var client: RexConnection
+        ui.runOnUiThread {client=RexConnection(app,scope,"")}
+        try {
+            ui.setContent {MaterialTheme {
+                val rail=side.value
+                val (serverPanes,serverSplits)=movedSplit(placements,splits,splits.first(),acknowledgedRatio.floatValue)
+                val sidebar: @androidx.compose.runtime.Composable ()->Unit={
+                    TerminalTabRail(emptyList(),"",true,{}, {emptyList()},{0},rail,TabRailStyle.ICONS,island=true) {}
+                }
+                Row(Modifier.width(380.dp).height(360.dp)) {
+                    if(rail==TabBarPosition.LEFT) sidebar()
+                    Box(Modifier.weight(1f).fillMaxHeight().testTag("Tiled workspace")) {
+                        MultiPaneLayout(client,"session","tab",serverPanes,focused="",liveBlock="",controlled=false,
+                            programs=emptyMap(),waiting=emptySet(),fontSize=11f,onFocus={_,_->},onView={},
+                            onImage={_,_->false},onPaste={false},imeEnterSubmits=false,tapOpensKeyboard=false,
+                            keyboardChrome={0},extendsUnderNavigation=false,hazeState=remember {HazeState()},
+                            captureBackdrop=false,sideRail=rail,splits=serverSplits)
+                    }
+                    if(rail==TabBarPosition.RIGHT) sidebar()
+                }
+            }}
+            val paneBorder=with(ui.density) {1.5.dp.roundToPx()}
+            val gutter=with(ui.density) {4.dp.toPx()}
+            val outer=with(ui.density) {8.dp.toPx()}
+            for(rail in listOf(TabBarPosition.LEFT,TabBarPosition.RIGHT)) {
+                ui.runOnIdle {side.value=rail}
+                val tabs=ui.onNodeWithContentDescription("Tabs").fetchSemanticsNode().boundsInRoot
+                val workspace=ui.onNodeWithTag("Tiled workspace").fetchSemanticsNode().boundsInRoot
+                val (left,upper,lower)=ui.onAllNodesWithContentDescription("Focus pane").fetchSemanticsNodes().map {it.boundsInRoot}
+                assertEquals(gutter,upper.left-left.right-2*paneBorder,2f)
+                assertEquals(gutter,lower.top-upper.bottom-2*paneBorder,2f)
+                assertEquals(outer,left.top-workspace.top-paneBorder,2f)
+                val sidebarGap=if(rail==TabBarPosition.LEFT) left.left-tabs.right else tabs.left-upper.right
+                assertEquals(gutter,sidebarGap-paneBorder,2f)
+            }
+            val columns=ui.onNodeWithContentDescription("Resize panes side by side").assertWidthIsEqualTo(24.dp)
+            ui.onNodeWithContentDescription("Resize stacked panes").assertHeightIsEqualTo(24.dp)
+            val before=columns.fetchSemanticsNode().boundsInRoot.center.x
+            columns.performTouchInput {
+                val from=center+Offset(8.dp.toPx(),0f)
+                swipe(from,from+Offset(32.dp.toPx(),0f))
+            }
+            val first=columns.fetchSemanticsNode().boundsInRoot.center.x
+            assertTrue(first>before)
+            val workspace=ui.onNodeWithTag("Tiled workspace").fetchSemanticsNode().boundsInRoot
+            val firstRatio=.5f+(first-before)/(workspace.width-outer)
+            columns.performTouchInput {
+                down(center)
+                moveBy(Offset(28.dp.toPx(),0f),delayMillis=100)
+            }
+            val second=columns.fetchSemanticsNode().boundsInRoot.center.x
+            assertTrue(second>first)
+            ui.runOnIdle {acknowledgedRatio.floatValue=firstRatio}
+            assertEquals(second,columns.fetchSemanticsNode().boundsInRoot.center.x,2f)
+            columns.performTouchInput {
+                moveBy(Offset(20.dp.toPx(),0f),delayMillis=100)
+                up()
+            }
+            assertTrue(columns.fetchSemanticsNode().boundsInRoot.center.x>second)
+        } finally {
+            ui.runOnIdle {client.close();scope.cancel()}
+        }
+    }
 
     @Test fun aSharedWindowCallbackDisablesFullWorkspaceEvenBeforeBoundsChange() {
         lateinit var activity: ComponentActivity

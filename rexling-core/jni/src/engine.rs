@@ -403,7 +403,7 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
-        self.mirror_waiting = self.mirror.waiting().into_iter().map(str::to_owned).collect();
+        self.mirror_waiting = self.mirror.waiting().map(str::to_owned).collect();
         if self.activity_dirty {
             let mut items=crate::progress::activity(&self.activity,&self.activity_panes,&self.progress_reports);
             for item in items.as_array_mut().into_iter().flatten().filter(|v|v["progressOnly"]==true && v["session"]==self.selected_session) {
@@ -437,7 +437,7 @@ impl Actor {
         }
     }
     fn publish_mirror_status(&mut self) {
-        if self.mirror.waiting() != self.mirror_waiting {
+        if !self.mirror.waiting().eq(self.mirror_waiting.iter().map(String::as_str)) {
             self.publish();
         }
     }
@@ -553,7 +553,7 @@ impl Actor {
                     let frames = self.mirror.frames();
                     if !frames.is_empty() {
                         self.preview_updates.extend(frames);
-                        if self.mirror.waiting() == self.mirror_waiting {
+                        if self.mirror.waiting().eq(self.mirror_waiting.iter().map(String::as_str)) {
                             self.publish_mirror_frames();
                         } else {
                             self.publish();

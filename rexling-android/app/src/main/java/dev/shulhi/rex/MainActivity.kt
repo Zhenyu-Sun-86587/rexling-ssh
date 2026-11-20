@@ -392,7 +392,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             tapOpensKeyboard=model.toolbarWithKeyboardOnly,keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
-                            bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,
+                            bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,sideRail=tabLayout.position,
                             splits=window.splits,zoomed=window.zoomed,paneActionsEnabled=ready,
                             floatingPanes=floatingOverlay,allowFloat=allowFloatingOverlay && tiles.size>1,
                             onMinimizeFloating=::minimizeFloating,onDockFloating={dockFloatingPane=it},
@@ -675,7 +675,7 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
-    TerminalCarousel(blocks,chosen,liveBlock,screen,client.paneFrames,programs,controlled,fontSize,
+    TerminalCarousel(blocks,chosen,liveBlock,screen,{client.paneFrames[it]},programs,controlled,fontSize,
         onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
         navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset)
 }

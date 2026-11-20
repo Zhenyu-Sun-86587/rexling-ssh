@@ -20,6 +20,7 @@ use tokio::time::Instant;
 // together with its tiled panes.
 pub const MAX_PANES: usize = 64;
 const FRAME_INTERVAL: Duration = Duration::from_millis(33);
+const BUSY_FRAME_INTERVAL: Duration = Duration::from_millis(66);
 const OBSCURED_FRAME_INTERVAL: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Debug, PartialEq)]
@@ -345,12 +346,11 @@ impl Mirror {
         }
     }
 
-    pub fn waiting(&self) -> Vec<&str> {
+    pub fn waiting(&self) -> impl Iterator<Item = &str> {
         self.slots
             .iter()
             .filter(|slot| !slot.presented)
             .map(|slot| slot.want.block.as_str())
-            .collect()
     }
 
     pub fn retry_due(&self) -> Option<Instant> {
@@ -367,6 +367,12 @@ impl Mirror {
         // Keep consuming streams and applying terminal updates at their usual pace.
         let interval = if self.obscured {
             OBSCURED_FRAME_INTERVAL
+        } else if self.slots.len() >= 5 && self.slots.iter().filter(|slot| {
+            slot.live.as_ref().is_some_and(|live| live.replica.ready() &&
+                (live.dirty || live.animation.is_some_and(|at| at <= now)))
+        }).nth(4).is_some() {
+            // Leave actor time for focused input when several full frames are due together.
+            BUSY_FRAME_INTERVAL
         } else {
             FRAME_INTERVAL
         };

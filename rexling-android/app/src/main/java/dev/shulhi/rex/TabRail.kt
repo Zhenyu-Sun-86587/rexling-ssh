@@ -86,7 +86,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     // Resizes are debounced, so the animated width sends the pane only its final size.
     // Beside the multi-pane layout the rail is a floating card like the panes: rounded, inset, and
     // ending level with them; slightly narrower so the terminal keeps about the same width.
-    val width by androidx.compose.animation.core.animateDpAsState(if(island) (if(titles) 176.dp else 56.dp) else if(titles) 184.dp else 60.dp,
+    val width by androidx.compose.animation.core.animateDpAsState(if(island) (if(titles) 144.dp else 48.dp) else if(titles) 152.dp else 52.dp,
         androidx.compose.animation.core.tween(180),label="Tab rail width")
     val outward=if(side==TabBarPosition.LEFT) 1f else -1f
     val threshold=with(androidx.compose.ui.platform.LocalDensity.current) {32.dp.toPx()}
@@ -128,7 +128,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
             onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES);true})}
         .padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
-            contentPadding=PaddingValues(horizontal=6.dp,vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
+            contentPadding=PaddingValues(horizontal=if(titles) 4.dp else 2.dp,vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w->
                 fun moveBy(delta: Int): Boolean {
                     val target=i+delta
@@ -172,8 +172,8 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                         }
                         .combinedClickable(enabled=enabled,role=Role.Tab,onLongClickLabel="Tab options",
                             onLongClick={menuId=w.id},onClick={onSelect(w.id)})
-                        .padding(horizontal=if(titles) 8.dp else 0.dp),
-                        verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(titles) Arrangement.spacedBy(6.dp) else Arrangement.Center) {
+                        .padding(horizontal=if(titles) 6.dp else 0.dp),
+                        verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(titles) Arrangement.spacedBy(4.dp) else Arrangement.Center) {
                         Box(contentAlignment=Alignment.Center) {
                             ProgramStack(programs,pane,fixedSlot=true)
                             if(unread>0 || busy) Box(Modifier.align(Alignment.TopEnd).offset(x=2.dp,y=(-2).dp).size(8.dp)

@@ -76,6 +76,7 @@ internal fun paneDropPosition(bounds: Rect,point: Offset): PaneDropPosition? {
 
 private data class PaneDrop(val target: String,val position: PaneDropPosition)
 private data class PaneMove(val source: String,val drop: PaneDrop?=null)
+private data class PaneResize(val id: String,val ratio: Float,val active: Boolean=true)
 
 /** Server layout with one mounted terminal view per visible pane. */
 @Composable
@@ -87,6 +88,7 @@ internal fun MultiPaneLayout(
     onPaste: () -> Boolean, imeEnterSubmits: Boolean, tapOpensKeyboard: Boolean,
     keyboardChrome: () -> Int, extendsUnderNavigation: Boolean, hazeState: HazeState, captureBackdrop: Boolean,
     bottomPaddingDp: Int = 6, bottomMargin: Boolean = true,
+    sideRail: TabBarPosition = TabBarPosition.BOTTOM,
     splits: List<PaneSplitLine> = emptyList(), zoomed: String = "",
     ime: WindowInsets = WindowInsets.ime, navigation: WindowInsets = WindowInsets.navigationBars,
     paneActionsEnabled: Boolean = true,
@@ -132,10 +134,19 @@ internal fun MultiPaneLayout(
         kotlinx.coroutines.delay(100)
         client.mirror(session,window,request)
     }
-    // A border being dragged, and its ratio. The panes reflow live from it; it stays after release until
-    // Rex reports the new layout (new [splits]), so nothing snaps back in between.
-    var drag by remember(splits) {mutableStateOf<Pair<String,Float>?>(null)}
-    val (laidOut,laidOutSplits)=drag?.let {(id,ratio)->splits.firstOrNull {it.id==id}?.let {movedSplit(placements,splits,it,ratio)}}
+    // A server layout update may acknowledge an earlier resize while a new drag is underway.
+    var splitResize by remember(session,window,zoomed) {mutableStateOf<PaneResize?>(null)}
+    val pendingResize=splitResize?.takeUnless {it.active}
+    LaunchedEffect(splits,pendingResize) {
+        if(pendingResize!=null) {
+            val serverSplit=splits.firstOrNull {it.id==pendingResize.id}
+            if(serverSplit!=null && kotlin.math.abs(serverSplit.ratio-pendingResize.ratio)>.001f) {
+                kotlinx.coroutines.delay(2000)
+            }
+            if(splitResize===pendingResize) splitResize=null
+        }
+    }
+    val (laidOut,laidOutSplits)=splitResize?.let {(id,ratio)->splits.firstOrNull {it.id==id}?.let {movedSplit(placements,splits,it,ratio)}}
         ?: (placements to splits)
     val shownTiles=zoomedPane?.let {listOf(it.copy(x=left,y=top,width=spanX,height=spanY))} ?: laidOut
     val shownSplits=if(zoomedPane!=null) emptyList() else laidOutSplits
@@ -165,9 +176,16 @@ internal fun MultiPaneLayout(
     // Like the desktop: each pane a rounded card on the window background, with room between them and
     // a thin accent outline on the focused one.
     val shape=androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    val gap=4.dp
+    val paneInset=gap/2
+    val edgeInset=8.dp-paneInset
     // The workspace reserves the navigation clearance when the bottom row has no extra margin.
-    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().then(if(captureBackdrop) Modifier.hazeSource(hazeState) else Modifier).background(scheme.background).padding(start=4.dp,top=4.dp,end=4.dp,bottom=if(bottomMargin) 4.dp else 0.dp)) {
-        val gap=8.dp
+    BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().then(if(captureBackdrop) Modifier.hazeSource(hazeState) else Modifier)
+        .background(scheme.background).padding(
+            start=if(sideRail==TabBarPosition.LEFT) paneInset else edgeInset,
+            end=if(sideRail==TabBarPosition.RIGHT) paneInset else edgeInset,
+            top=edgeInset,bottom=if(bottomMargin) edgeInset else 0.dp,
+        )) {
         val visibleHeight=maxHeight
         val canAdjustFloat=paneActionsEnabled && selectedFloat?.layerId?.isNotBlank()==true && originalBounds!=null && zoomedFloat==null
         val viewportWidth=with(density) {maxWidth.toPx()}.coerceAtLeast(1f)
@@ -191,7 +209,7 @@ internal fun MultiPaneLayout(
         }
         for(pane in shownTiles+shownFloating) key(pane.id) {
             val floating=pane.floating
-            val inset=if(floating && shownFloating.size==1) 0.dp else gap/2
+            val inset=if(floating && shownFloating.size==1) 0.dp else paneInset
             val x=maxWidth*(if(floating) pane.x else (pane.x-left)/spanX)
             val y=visibleHeight*(if(floating) pane.y else (pane.y-top)/spanY)
             val width=maxWidth*(if(floating) pane.width else pane.width/spanX)
@@ -201,7 +219,7 @@ internal fun MultiPaneLayout(
             val dropPosition=move?.drop?.takeIf {it.target==pane.id}?.position
             val moveSource=move?.source==pane.id
             val lastRow=!bottomMargin && pane.y+pane.height>=top+spanY-.001f
-            val trim=when {floating->inset*2;lastRow->gap/2;else->gap}
+            val trim=when {floating->inset*2;lastRow->paneInset;else->gap}
             Box(Modifier.offset(x+inset,y+inset).size((width-inset*2).coerceAtLeast(0.dp),(height-trim).coerceAtLeast(0.dp))
                 .then(if(floating) Modifier.zIndex(2f)
                     .then(if(layerBounds==null) Modifier.shadow(16.dp,shape,clip=false) else Modifier)
@@ -396,32 +414,46 @@ internal fun MultiPaneLayout(
         }
         // Pane borders: drag the grip in the gap and the panes reflow with it; on release Rex moves the
         // border for every client.
-        for(split in shownSplits) key(split.id) {
+        // Ancestor dividers keep their grab area where a nested divider meets them.
+        for(split in shownSplits.asReversed()) key(split.id) {
             val original=splits.firstOrNull {it.id==split.id} ?: split
-            val dragging=drag?.first==split.id
+            val currentSplit by rememberUpdatedState(original)
+            val dragging=splitResize?.let {it.id==split.id && it.active}==true
             val shown=split.ratio
             val horizontal=split.horizontal
             val startX=maxWidth*((split.x-left)/spanX);val startY=maxHeight*((split.y-top)/spanY)
             val spanW=maxWidth*(split.width/spanX);val spanH=maxHeight*(split.height/spanY)
             val along=if(horizontal) spanW else spanH
-            val alongPx=with(density) {along.toPx()}.coerceAtLeast(1f)
+            val alongPx by rememberUpdatedState(with(density) {along.toPx()}.coerceAtLeast(1f))
             val touch=24.dp
             val handle=if(horizontal) Modifier.offset(startX+spanW*shown-touch/2,startY).size(touch,spanH)
                 else Modifier.offset(startX,startY+spanH*shown-touch/2).size(spanW,touch)
             Box(handle.semantics {contentDescription=if(horizontal) "Resize panes side by side" else "Resize stacked panes"}
-                // Keyed on the split alone: re-keying on its moving ratio would restart the gesture mid-drag.
-                .pointerInput(split.id,horizontal,alongPx) {
-                    var ratio=original.ratio
-                    val start: (androidx.compose.ui.geometry.Offset)->Unit={ratio=drag?.takeIf {it.first==original.id}?.second ?: original.ratio;drag=original.id to ratio}
-                    val end: ()->Unit={drag?.takeIf {it.first==original.id}?.let {client.resizeSplit(original,it.second)}}
-                    val cancel: ()->Unit={drag=null}
-                    if(horizontal) detectHorizontalDragGestures(start,end,cancel) {change,amount->
-                        change.consume();ratio=(ratio+amount/alongPx).coerceIn(.1f,.9f);drag=original.id to ratio}
-                    else detectVerticalDragGestures(start,end,cancel) {change,amount->
-                        change.consume();ratio=(ratio+amount/alongPx).coerceIn(.1f,.9f);drag=original.id to ratio}
+                .pointerInput(client,session,window,split.id,horizontal) {
+                    var previous: PaneResize?=null
+                    val start: (Offset)->Unit={
+                        previous=splitResize
+                        val shownRatio=previous?.takeIf {it.id==split.id}?.ratio ?: currentSplit.ratio
+                        splitResize=PaneResize(split.id,shownRatio)
+                    }
+                    val end: ()->Unit={
+                        splitResize?.takeIf {it.id==split.id && it.active}?.let {resize->
+                            splitResize=resize.copy(active=false)
+                            client.resizeSplit(currentSplit,resize.ratio)
+                        }
+                    }
+                    val cancel: ()->Unit={splitResize=previous}
+                    val adjust: (androidx.compose.ui.input.pointer.PointerInputChange,Float)->Unit={change,amount->
+                        change.consume()
+                        splitResize?.takeIf {it.id==split.id && it.active}?.let {resize->
+                            splitResize=resize.copy(ratio=(resize.ratio+amount/alongPx).coerceIn(.1f,.9f))
+                        }
+                    }
+                    if(horizontal) detectHorizontalDragGestures(start,end,cancel,adjust)
+                    else detectVerticalDragGestures(start,end,cancel,adjust)
                 },contentAlignment=androidx.compose.ui.Alignment.Center) {
                 Box(Modifier.background(if(dragging) scheme.primary else scheme.outline.copy(alpha=.5f),androidx.compose.foundation.shape.RoundedCornerShape(2.dp))
-                    .then(if(horizontal) Modifier.size(4.dp,36.dp) else Modifier.size(36.dp,4.dp)))
+                    .then(if(horizontal) Modifier.size(2.dp,36.dp) else Modifier.size(36.dp,2.dp)))
             }
         }
     }

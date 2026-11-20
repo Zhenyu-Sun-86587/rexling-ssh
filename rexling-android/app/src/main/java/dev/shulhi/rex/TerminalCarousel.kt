@@ -35,7 +35,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 
 @Composable internal fun TerminalCarousel(blocks: List<BlockItem>,selectedBlock: String,liveBlock: String,
-    liveScreen: TerminalScreen?,frames: Map<String,TerminalScreen>,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
+    liveScreen: TerminalScreen?,previewFrame: (String)->TerminalScreen?,programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
     onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""},onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imageTarget: ()->String=mouseTarget,bottomControlsInset: androidx.compose.ui.unit.Dp=0.dp,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
@@ -114,8 +114,7 @@ import dev.chrisbanes.haze.hazeSource
         for((block,offset) in mountedPages) {
             val retiring=retained?.block?.id==block.id
             val center=offset==0 && !retiring
-            val frame=if(retiring) retained!!.frame else
-                (if(block.id==liveBlock && liveScreen!=null) liveScreen else frames[block.id]) ?: imeHandoff.frame(block.id)
+            val preferredFrame=if(retiring) retained!!.frame else liveScreen.takeIf {block.id==liveBlock}
             val pageOffset=offset*stride
             key(block.id) {
                 DisposableEffect(block.id) {onDispose {imeHandoff.remove(block.id)}}
@@ -127,56 +126,57 @@ import dev.chrisbanes.haze.hazeSource
                 }.clip(if(squareCorners) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(21.dp)).background(Color(palette.background))
                     .paneScrim(backdrop) {(abs(pageOffset+drag)/stride).coerceIn(0f,1f)*.48f}
                     .then(if(center || retiring) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
-                    Box(Modifier.fillMaxSize()) {
-                        if(frame!=null) AndroidView(
-                            factory={TerminalView(it)},modifier=Modifier.fillMaxSize().terminalImeViewport(imeInsets,navigationInsets,keyboardChrome,extendsUnderNavigation) {keyboardFocus}.clipToBounds(),
-                            update={view ->
-                                view.keepAwakeMode=if(center) keepAwake else KeepScreenAwake.SYSTEM
-                                imeHandoff.mount(block,view)
-                                view.onInputConnectionReady={if(center) imeHandoff.served(block.id,view)}
-                                view.onKeyboardFocus={keyboardFocus=it}
-                                keyboardFocus=view.keyboardFocus
-                                view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
-                                val bottomPadding=if(bottomControlsInset>0.dp || blocks.size>1) 28 else 6
-                                view.setTerminalPaddingDp(12,8,bottomPadding+navigationClearance.value.roundToInt())
-                                view.palette=palette;view.textSp=fontSize
-                                if(retiring || block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
-                                view.interactive=center
-                                view.keyboardSuggestions=programs[block.id]?.kind!=ProgramKind.NEOVIM
-                                view.imeEnterSubmits=imeEnterSubmits
-                                view.tapOpensKeyboard=tapOpensKeyboard
-                                view.controlled=center && controlled && block.id==liveBlock
-                                view.imageInputTarget=imageTarget
-                                view.onImage=if(center && block.id==liveBlock) onImage else {_,release->release();false}
-                                view.onPaste=if(center && block.id==liveBlock) onPaste else ({false})
-                                view.onInput=onInput
-                                view.onMouseClick=if(center && block.id==liveBlock) onMouseClick else ({_,_,_,_->})
-                                view.mouseTarget=mouseTarget
-                                view.onActivate=if(center && block.id==liveBlock) onActivate else ({})
-                                view.onWheel=if(center && block.id==liveBlock) onWheel else ({_,_,_,_,_->})
-                                view.onScroll=if(center && block.id==liveBlock) onScroll else {_->}
-                                view.onPaneDrag=if(center) {dx,active ->
-                                    if(!settling) {
-                                        dragging=active;toast=false
-                                        drag=if(blocks.size<2) dx*.2f else dx
-                                        if(!active) drag=0f
-                                    }
-                                } else null
-                                view.onPaneDragEnd=if(center) {dx,velocity->if(!settling) finish(dx,velocity)} else null
-                                view.importantForAccessibility=if(center) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                                if(center) onView(view)
-                            })
-                        else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
-                            Text(if(center) "Opening terminal…" else block.label,fontFamily=MonoUi,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    CarouselPageFrame(block.id,preferredFrame,previewFrame,imeHandoff) {frame->
+                        Box(Modifier.fillMaxSize()) {
+                            if(frame!=null) AndroidView(
+                                factory={TerminalView(it)},modifier=Modifier.fillMaxSize().terminalImeViewport(imeInsets,navigationInsets,keyboardChrome,extendsUnderNavigation) {keyboardFocus}.clipToBounds(),
+                                update={view ->
+                                    view.keepAwakeMode=if(center) keepAwake else KeepScreenAwake.SYSTEM
+                                    imeHandoff.mount(block,view)
+                                    view.onInputConnectionReady={if(center) imeHandoff.served(block.id,view)}
+                                    view.onKeyboardFocus={keyboardFocus=it}
+                                    keyboardFocus=view.keyboardFocus
+                                    view.onDimensions=if(center && block.id==liveBlock) onDimensions else {_,_->}
+                                    val bottomPadding=if(bottomControlsInset>0.dp || blocks.size>1) 28 else 6
+                                    view.setTerminalPaddingDp(12,8,bottomPadding+navigationClearance.value.roundToInt())
+                                    view.palette=palette;view.textSp=fontSize
+                                    if(retiring || block.id!=liveBlock || bindLiveView?.invoke(block.id,view)!=true) view.screen=frame
+                                    view.interactive=center
+                                    view.keyboardSuggestions=programs[block.id]?.kind!=ProgramKind.NEOVIM
+                                    view.imeEnterSubmits=imeEnterSubmits
+                                    view.tapOpensKeyboard=tapOpensKeyboard
+                                    view.controlled=center && controlled && block.id==liveBlock
+                                    view.imageInputTarget=imageTarget
+                                    view.onImage=if(center && block.id==liveBlock) onImage else {_,release->release();false}
+                                    view.onPaste=if(center && block.id==liveBlock) onPaste else ({false})
+                                    view.onInput=onInput
+                                    view.onMouseClick=if(center && block.id==liveBlock) onMouseClick else ({_,_,_,_->})
+                                    view.mouseTarget=mouseTarget
+                                    view.onActivate=if(center && block.id==liveBlock) onActivate else ({})
+                                    view.onWheel=if(center && block.id==liveBlock) onWheel else ({_,_,_,_,_->})
+                                    view.onScroll=if(center && block.id==liveBlock) onScroll else {_->}
+                                    view.onPaneDrag=if(center) {dx,active ->
+                                        if(!settling) {
+                                            dragging=active;toast=false
+                                            drag=if(blocks.size<2) dx*.2f else dx
+                                            if(!active) drag=0f
+                                        }
+                                    } else null
+                                    view.onPaneDragEnd=if(center) {dx,velocity->if(!settling) finish(dx,velocity)} else null
+                                    view.importantForAccessibility=if(center) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                                    if(center) onView(view)
+                                })
+                            else Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                                Text(if(center) "Opening terminal…" else block.label,fontFamily=MonoUi,fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        if(center && (frame?.scroll?.below ?: 0)>0) {
+                            Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=(if(blocks.size>1) if(hasMinimap) 128.dp else 88.dp else 10.dp)+bottomControlsInset+bottomOverlayInset)
+                                .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
+                                .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
+                                fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
                         }
                     }
-                    if(center && (frame?.scroll?.below ?: 0)>0) {
-                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=(if(blocks.size>1) if(hasMinimap) 128.dp else 88.dp else 10.dp)+bottomControlsInset+bottomOverlayInset)
-                            .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
-                            .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
-                            fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
-                    }
-
                 }
             }
         }
@@ -210,4 +210,15 @@ import dev.chrisbanes.haze.hazeSource
             }
         }
     }
+}
+
+@Composable private fun CarouselPageFrame(
+    block: String,preferred: TerminalScreen?,previewFrame: (String)->TerminalScreen?,handoff: TerminalImeHandoff,
+    content: @Composable (TerminalScreen?)->Unit,
+) {
+    // Observe this pane from its own recompose scope, independently of the other mounted pages.
+    val frame=preferred ?: remember(block,previewFrame) {
+        derivedStateOf(referentialEqualityPolicy()) {previewFrame(block)}
+    }.value ?: handoff.frame(block)
+    content(frame)
 }
