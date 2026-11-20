@@ -62,6 +62,7 @@ data class AppState(
     val screen: TerminalScreen? = null, val creating: Boolean = false, val navigationId: Long = 0,val tabMoveId: Long=0,val paneMoveId: Long=0,val connectionEpoch: Long=0,val otherOwner: Boolean=false,val attentionCount: Int=0,
     internal val staleSession: String = "",
     internal val cachedPrograms: Set<String> = emptySet(),
+    internal val awaitingPaneSelection: Boolean = false,
 ) {
     val connected: Boolean get() = phase == "connected"
     companion object {
@@ -81,7 +82,7 @@ data class AppState(
                 programs = root.optJSONObject("programs")?.let { programs -> programs.keys().asSequence().associateWith { id ->
                     ProgramIdentity.resolve(programs.optJSONArray(id).objects { it as String })
                 } } ?: emptyMap(),
-                staleSession=root.optString("staleSession"),
+                staleSession=root.optString("staleSession"), awaitingPaneSelection=root.optBoolean("awaitingPaneSelection"),
                 mirrorWaiting=root.optJSONArray("mirrorWaiting").objects {it as String}.toSet(),
                 previewFrames = root.optJSONObject("previews")?.let { frames -> frames.keys().asSequence().associateWith { TerminalScreen.parse(frames.getJSONObject(it)) } } ?: emptyMap(),
                 sessionDetails = root.optJSONObject("sessionDetails")?.let { details -> details.keys().asSequence().associateWith { key ->

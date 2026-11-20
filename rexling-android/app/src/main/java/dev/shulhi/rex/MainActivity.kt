@@ -388,7 +388,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             }
                         }
                         val captureTerminal=floatingBackdrop || wheelBackdrop || ownerBackdrop || readyBackdrop || model.images.state!=null
-                        if(tiles!=null && window!=null) MultiPaneLayout(
+                        if(carouselBlocks.isEmpty()) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                            Text("Floating panes minimized",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        else if(tiles!=null && window!=null) MultiPaneLayout(
                             client,displayedSession,window.id,tiles,chosen,liveBlock,controlled,state.programs,state.mirrorWaiting,
                             fontSize.toFloat(),onFocus={id,grid->client.selectBlock(id,grid)},
                             onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,

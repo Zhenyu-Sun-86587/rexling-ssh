@@ -49,7 +49,7 @@ class WorkspaceNavigation {
     }
 
     fun target(state: AppState,savedSession: String): WorkspaceTarget? {
-        if(!state.connected || state.creating) return null
+        if(!state.connected || state.creating || state.awaitingPaneSelection) return null
         val session=state.sessions.firstOrNull {it.id==savedSession}
             ?: state.sessions.firstOrNull {it.id==state.selectedSession} ?: state.sessions.firstOrNull() ?: return null
         if(session.id!=state.selectedSession) return WorkspaceTarget(session.id)

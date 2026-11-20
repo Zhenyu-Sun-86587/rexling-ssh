@@ -335,6 +335,7 @@ struct Actor {
     selected_session: String,
     stale_session: String,
     selected_block: String,
+    awaiting_pane_selection: bool,
     navigation_id: u64,
     tab_move_id: u64,
     pane_move_id: u64,
@@ -407,6 +408,7 @@ impl Actor {
             selected_session: String::new(),
             stale_session: String::new(),
             selected_block: String::new(),
+            awaiting_pane_selection: false,
             navigation_id: 0,
             tab_move_id: 0,
             pane_move_id: 0,
@@ -455,6 +457,7 @@ impl Actor {
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "terminalProgress":crate::progress::selected(&self.progress_reports,&self.selected_session),"identity":self.identity,"error":self.error,"notice":self.notice,"clipboard":self.clipboard,"sessions":self.sessions,
                 "mirrorWaiting":self.mirror_waiting,"windows":self.windows,"selectedSession":self.selected_session,"staleSession":self.stale_session,
+                "awaitingPaneSelection":self.awaiting_pane_selection,
                 "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"paneCatalog":self.pane_catalog,"paneCatalogLoading":self.pane_catalog_task.is_some(),"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
@@ -721,6 +724,7 @@ impl Actor {
     }
     async fn disconnect(&mut self) {
         self.close_retained_floating().await;
+        self.awaiting_pane_selection = false;
         self.mirror=Default::default();
         self.stale_session.clear();
         self.commands.clear();self.input_acks.clear();
@@ -782,6 +786,7 @@ impl Actor {
         self.stale_session = session;
         self.selected_session.clear();
         self.selected_block.clear();
+        self.awaiting_pane_selection = false;
         self.windows = json!([]);
         self.mirror = Default::default();
         self.retained_floating = None;
@@ -839,6 +844,7 @@ impl Actor {
             .to_owned();
         self.control = Some(control);
         self.phase = "connected".into();self.connection_epoch=self.connection_epoch.wrapping_add(1);
+        self.awaiting_pane_selection = false;
         self.activity_full=true;self.activity_refresh=tokio::time::Instant::now();
         self.error.clear();
         self.backoff = 1;
@@ -993,7 +999,8 @@ impl Actor {
             return Ok(());
         }
         let mut handoff = false;
-        loop {
+        const MAX_VIEW_ATTEMPTS: usize = 3;
+        for attempt in 1..=MAX_VIEW_ATTEMPTS {
             let view = self.control.as_mut().context("not connected")?
                 .call("session.view", json!({"session_id":self.selected_session})).await?;
             self.set_view(&view);
@@ -1001,8 +1008,16 @@ impl Actor {
                 self.close_retained_floating().await;
             }
             if minimized_pane(&self.windows, &self.selected_block).is_none() { break; }
+            if attempt == MAX_VIEW_ATTEMPTS {
+                self.open_block_stream(String::new(), false).await?;
+                self.awaiting_pane_selection = true;
+                self.error = "Floating panes are changing on another client. Choose a pane to continue.".into();
+                handoff = false;
+                break;
+            }
             let block = visible_target(&self.windows, self.selected_block.clone());
-            handoff = self.open_block_stream(block, false).await?;
+            handoff = self.open_block_stream(block, true).await?;
+            if self.selected_block.is_empty() { break; }
         }
         self.publish();
         if handoff && self.controlled {
@@ -1401,6 +1416,7 @@ impl Actor {
                 let attached = self.control.as_mut().unwrap().attach(&id).await?;
                 self.selected_session = id;
                 self.selected_block.clear();
+                self.awaiting_pane_selection = false;
                 self.set_view(&attached["view"]);
                 self.sessions = self
                     .control
@@ -1513,6 +1529,7 @@ impl Actor {
                     Err(error) => return Err(error),
                 };
                 self.selected_session = session;
+                self.awaiting_pane_selection = false;
                 self.set_view(&attached["view"]);
                 self.error.clear();
                 if let Some(block)=value["block"].as_str() {
@@ -1849,10 +1866,16 @@ impl Actor {
     }
     async fn restore_minimized(&mut self, block: &str) -> Result<()> {
         if let Some((_, pane)) = minimized_pane(&self.windows, block) {
-            let layer = pane["layerId"].as_str().context("Floating layer is unavailable")?;
+            let layer = pane["layerId"].as_str().context("Floating layer is unavailable")?.to_owned();
             let args = json!({"session_id":self.selected_session,"layer_id":layer,"state":"normal"});
             self.control.as_mut().context("not connected")?.call("session.set_layer_state",args).await?;
-            self.refresh_view().await?;
+            // Rex acknowledged the whole layer. Start opening the stream now;
+            // the normal post-open refresh reconciles any later desktop changes.
+            for window in self.windows.as_array_mut().into_iter().flatten() {
+                for pane in window["layout"].as_array_mut().into_iter().flatten() {
+                    if pane["layerId"] == layer { pane["minimized"] = json!(false); }
+                }
+            }
         }
         Ok(())
     }
@@ -1863,9 +1886,9 @@ impl Actor {
             self.publish();
             return Ok(());
         }
-        let handoff = self.open_block_stream(block, keep_tiled).await?;
+        let handoff = self.open_block_stream(block.clone(), keep_tiled).await?;
         self.refresh_view().await?;
-        if handoff && self.controlled {
+        if handoff && self.controlled && self.selected_block == block {
             // A mirror may already own the PTY. Still deliver focus-in to the program.
             self.focus_selected().await?;
         }
@@ -1905,7 +1928,8 @@ impl Actor {
                 block: block.clone(), data, replica,
             })
         } else {
-            if !opens_overlay {
+            // Giving up on focus should leave the other visible panes streaming.
+            if !opens_overlay && !block.is_empty() {
                 self.mirror.request("", Vec::new());
                 if let Some(control) = self.control.as_mut() {
                     self.mirror.start(control).await;
@@ -1945,6 +1969,7 @@ impl Actor {
             self.replica = Some(Replica::new(data.nonce));
             self.data = Some(data);
         }
+        self.awaiting_pane_selection = false;
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
         Ok(handoff)
@@ -1968,6 +1993,7 @@ impl Actor {
         self.focus_selected().await
     }
     async fn focus_selected(&mut self) -> Result<()> {
+        if self.selected_block.is_empty() { return Ok(()); }
         self.apply_theme().await?;
         // A focus notification makes programs re-query even if set_theme was
         // deduplicated because the canonical terminal already had these colors.

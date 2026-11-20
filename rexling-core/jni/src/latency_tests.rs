@@ -41,6 +41,10 @@ impl Peer {
         Self::with_options(delay, reject, drop_first, floating, slow_snapshot, false).await
     }
     async fn with_options(delay: Duration,reject: bool,drop_first: bool,floating: bool,slow_snapshot: bool,tiled: bool) -> Self {
+        Self::with_views(delay, reject, drop_first, floating, slow_snapshot, tiled, Vec::new()).await
+    }
+    async fn with_views(delay: Duration, reject: bool, drop_first: bool, floating: bool,
+        slow_snapshot: bool, tiled: bool, views: Vec<Value>) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let endpoint = Endpoint::new(
             &format!("http://{}", listener.local_addr().unwrap()),
@@ -66,6 +70,7 @@ impl Peer {
             methods.clone(),
         );
         let output=output_tx.clone();
+        let views = Arc::new(Mutex::new(std::collections::VecDeque::from(views)));
         let task = tokio::spawn(async move {
             let mut peers = tokio::task::JoinSet::new();
             loop {
@@ -84,6 +89,7 @@ impl Peer {
                 let history_gate=history_gate.clone();
                 let ticket_gate=ticket_gate.clone();
                 let close_mirror=close_mirror.clone();
+                let views = views.clone();
                 peers.spawn(async move {
                     let mut ws=accept_hdr_async(socket,|request:&Request,mut response:Response|{
                         response.headers_mut().insert("Sec-WebSocket-Protocol",request.headers()["Sec-WebSocket-Protocol"].clone());Ok(response)
@@ -153,7 +159,8 @@ impl Peer {
                                         layer["layout"]=json!({"rect":[0,0,1,1],"split":{"split_id":"split:test","direction":"horizontal","ratio":0.5,
                                             "before":{"rect":[0,0,0.5,1],"block_id":"block:test"},"after":{"rect":[0.5,0,0.5,1],"block_id":"block:mirror"}}});
                                     }
-                                    response["payload"]=if method=="session.attach" {json!({"view":view})} else {view};
+                                    response["payload"]=if method=="session.attach" {json!({"view":view})}
+                                        else {views.lock().unwrap().pop_front().unwrap_or(view)};
                                 }
                                 let gate=gate.clone();
                                 let ticket_gate=ticket_gate.clone();
@@ -240,6 +247,53 @@ async fn input(tx: &mpsc::Sender<Value>, text: &str) {
 }
 async fn shutdown(tx: &mpsc::Sender<Value>) {
     tx.send(json!({"type":"shutdown"})).await.unwrap();
+}
+
+fn floating_view(minimized: &str) -> Value {
+    let layers: Vec<_> = ["block:tiled", "block:test", "block:floating"].into_iter().map(|id| {
+        json!({"kind":if id=="block:tiled" {"tiled"} else {"floating"},"layer_id":format!("layer:{id}"),"bounds":[0,0,1,1],
+            "state":if id == minimized {"minimized"} else {"normal"},
+            "layout":{"block_id":id,"rect":[0,0,1,1]},
+            "blocks":[{"block_id":id,"creator_name":"com.superlogical.terminal"}]})
+    }).collect();
+    let focused = if minimized == "block:test" { "block:floating" } else { "block:test" };
+    json!({"windows":[{"window_id":"window:test","focused_block_id":focused,"layers":layers}]})
+}
+
+#[tokio::test]
+async fn refresh_stops_when_all_three_views_minimize_the_selected_pane() {
+    let views = ["block:test", "block:floating", "block:test", ""].map(floating_view).to_vec();
+    let peer = Peer::with_views(Duration::ZERO, false, false, false, false, false, views).await;
+    let (mut actor, shared) = peer.actor(1, false).await;
+    actor.mirror.request("session:test", vec![crate::mirror::Wanted {
+        block: "block:tiled".into(), columns: 80, rows: 24,
+    }]);
+    actor.refresh_view().await.unwrap();
+    assert_eq!(peer.methods.lock().unwrap().iter().filter(|method| *method == "session.view").count(), 3);
+    assert!(actor.selected_block.is_empty() && actor.data.is_none() && !actor.controlled);
+    assert!(actor.mirror.wants("session:test", "block:tiled"));
+    assert!(actor.error.contains("Floating panes are changing"));
+    let awaiting_selection = || {
+        serde_json::from_str::<Value>(&shared.lock().unwrap().json).unwrap()["awaitingPaneSelection"] == true
+    };
+    assert!(awaiting_selection());
+    actor.command(json!({"type":"block","id":"block:tiled"})).await.unwrap();
+    assert_eq!(actor.selected_block, "block:tiled");
+    assert!(!awaiting_selection());
+}
+
+#[tokio::test]
+async fn acknowledged_restore_opens_the_stream_before_fetching_the_view() {
+    let peer = Peer::with_views(Duration::ZERO, false, false, false, false, false, vec![floating_view("")]).await;
+    let (mut actor, _) = peer.actor(1, false).await;
+    actor.set_view(&floating_view("block:floating"));
+    peer.methods.lock().unwrap().clear();
+    actor.command(json!({"type":"block","id":"block:floating","restoreMinimized":true})).await.unwrap();
+    let methods = peer.methods.lock().unwrap();
+    let relevant: Vec<_> = methods.iter().map(String::as_str)
+        .filter(|method| matches!(*method, "session.set_layer_state" | "data.connect" | "session.view")).collect();
+    assert_eq!(relevant, ["session.set_layer_state", "data.connect", "session.view"]);
+    assert_eq!(actor.selected_block, "block:floating");
 }
 
 #[tokio::test]
