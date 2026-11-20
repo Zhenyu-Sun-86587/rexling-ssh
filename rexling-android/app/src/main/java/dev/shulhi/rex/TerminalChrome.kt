@@ -74,7 +74,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, CHECK, PLAY, STOP, ZOOM, UNZOOM }
+internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, CHECK, PLAY, STOP, ZOOM, UNZOOM, MOVE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -94,6 +94,14 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.STOP -> {box(6f,6f,12f,12f,1.5f)}
             ChromeIcon.FLOAT -> {box(3f,7f,14f,14f);box(10f,3f,11f,10f)}
             ChromeIcon.SPLIT -> { box(3f,4f,18f,16f);line(12f,4f,12f,20f) }
+            ChromeIcon.SPLIT_RIGHT, ChromeIcon.SPLIT_BELOW -> {
+                val right=icon==ChromeIcon.SPLIT_RIGHT
+                val fillOrigin=if(right) Offset(12f*u,5f*u) else Offset(4f*u,12f*u)
+                val fillSize=if(right) Size(8f*u,14f*u) else Size(16f*u,7f*u)
+                drawRoundRect(color.copy(alpha=color.alpha*.23f),fillOrigin,fillSize,CornerRadius(u))
+                box(3f,4f,18f,16f)
+                if(right) line(12f,4f,12f,20f) else line(3f,12f,21f,12f)
+            }
             ChromeIcon.SEARCH -> { drawCircle(color,6f*u,Offset(10f*u,10f*u),style=Stroke(width));line(15f,15f,21f,21f) }
             ChromeIcon.CHEVRON -> {line(7f,10f,12f,15f);line(12f,15f,17f,10f)}
             ChromeIcon.SESSIONS -> { box(4f,8f,13f,12f); line(8f,4f,20f,4f); line(20f,4f,20f,16f); line(7f,12f,11f,12f); line(7f,16f,13f,16f) }
@@ -105,6 +113,13 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             }
             ChromeIcon.UNPLUG -> {box(7f,7f,10f,7f);line(9f,3f,9f,7f);line(15f,3f,15f,7f);line(12f,14f,12f,20f);line(12f,20f,18f,20f);line(3f,3f,21f,21f)}
             ChromeIcon.DELETE -> {box(7f,8f,10f,13f,1f);line(5f,6f,19f,6f);box(9f,3f,6f,3f,1f);line(10f,11f,10f,17f);line(14f,11f,14f,17f)}
+            ChromeIcon.MOVE -> {
+                line(4f,12f,20f,12f);line(12f,4f,12f,20f)
+                line(4f,12f,7f,9f);line(4f,12f,7f,15f)
+                line(20f,12f,17f,9f);line(20f,12f,17f,15f)
+                line(12f,4f,9f,7f);line(12f,4f,15f,7f)
+                line(12f,20f,9f,17f);line(12f,20f,15f,17f)
+            }
             // Arrows out to opposite corners, and back in toward the middle.
             ChromeIcon.ZOOM -> {line(13f,11f,20f,4f);line(15f,4f,20f,4f);line(20f,4f,20f,9f);line(11f,13f,4f,20f);line(4f,15f,4f,20f);line(4f,20f,9f,20f)}
             ChromeIcon.UNZOOM -> {line(20f,4f,13f,11f);line(13f,6f,13f,11f);line(13f,11f,18f,11f);line(4f,20f,11f,13f);line(6f,13f,11f,13f);line(11f,13f,11f,18f)}

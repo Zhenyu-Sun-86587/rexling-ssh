@@ -388,7 +388,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             tapOpensKeyboard=model.toolbarWithKeyboardOnly,keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
                             bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,
-                            splits=window.splits,zoomed=window.zoomed,
+                            splits=window.splits,zoomed=window.zoomed,paneActionsEnabled=ready,
                         )
                         else LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},onView,

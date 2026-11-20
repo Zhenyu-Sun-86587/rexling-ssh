@@ -164,6 +164,18 @@ fn split_anchor<'a>(windows: &Value,command: &'a Value)->Result<&'a str> {
 }
 fn pane_reorder_swaps(windows: &Value,command: &Value)->Result<Vec<(String,String)>> {
     let window=windows.as_array().into_iter().flatten().find(|w|w["id"]==command["window"] && w["id"].is_string()).context("That tab is no longer available")?;
+    if let Some(other) = command["swapWith"].as_str() {
+        let block = command["id"].as_str().context("pane ID required")?;
+        let tiled: Vec<_> = window["layout"].as_array().into_iter().flatten()
+            .filter(|pane| pane["floating"] == false)
+            .filter_map(|pane| pane["id"].as_str())
+            .collect();
+        ensure!(window["zoomed"].as_str().is_none_or(str::is_empty)
+            && command["tiled"] == json!(tiled), "The pane layout changed; try again");
+        ensure!(block != other && tiled.contains(&block) && tiled.contains(&other),
+            "Choose two different tiled panes");
+        return Ok(vec![(block.to_owned(), other.to_owned())]);
+    }
     let mut ids:Vec<String>=window["blocks"].as_array().into_iter().flatten().filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
     ensure!(!ids.is_empty() && ids.len()<=256 && ids.iter().collect::<BTreeSet<_>>().len()==ids.len(),"Invalid pane order");
     ensure!(command["blocks"]==json!(ids),"The pane layout changed; try again");

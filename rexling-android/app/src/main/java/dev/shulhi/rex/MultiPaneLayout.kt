@@ -3,22 +3,31 @@ package dev.shulhi.rex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -27,6 +36,8 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.sp
+
+private data class PaneMove(val source: String,val target: String?=null)
 
 /** Server layout with one mounted terminal view per visible pane. */
 @Composable
@@ -40,6 +51,11 @@ internal fun MultiPaneLayout(
     bottomPaddingDp: Int = 6, bottomMargin: Boolean = true,
     splits: List<PaneSplitLine> = emptyList(), zoomed: String = "",
     ime: WindowInsets = WindowInsets.ime, navigation: WindowInsets = WindowInsets.navigationBars,
+    paneActionsEnabled: Boolean = true,
+    onSplit: (String,PaneSplit)->Unit = {id,split->client.createPane(split,id)},
+    onSwap: (String,String)->Unit = {source,target->
+        client.swapPanePositions(session,window,source,target,placements.map {it.id})
+    },
 ) {
     val palette=LocalTerminalPalette.current
     val scheme=MaterialTheme.colorScheme
@@ -67,9 +83,22 @@ internal fun MultiPaneLayout(
         ?: (placements to splits)
     val shownPanes=zoomedPane?.let {listOf(it.copy(x=left,y=top,width=spanX,height=spanY))} ?: laidOut
     val shownSplits=if(zoomedPane!=null) emptyList() else laidOutSplits
-    // The pane whose corner menu is open; it closes by itself after a few seconds.
-    var menuFor by remember {mutableStateOf<String?>(null)}
-    LaunchedEffect(menuFor) {if(menuFor!=null) {kotlinx.coroutines.delay(4000);menuFor=null}}
+    // Keep the controls visible for as long as the move handle is held.
+    var menuFor by remember(session,window) {mutableStateOf<String?>(null)}
+    var move by remember(session,window,placements,zoomed,paneActionsEnabled) {mutableStateOf<PaneMove?>(null)}
+    val moving=move!=null
+    LaunchedEffect(menuFor,moving) {
+        if(menuFor!=null && !moving) {
+            kotlinx.coroutines.delay(4000)
+            menuFor=null
+        }
+    }
+    val paneCoordinates=remember(session,window) {mutableMapOf<String,LayoutCoordinates>()}
+    val swap by rememberUpdatedState(onSwap)
+    fun completeMove(source: String,target: String) {
+        menuFor=null
+        swap(source,target)
+    }
     DisposableEffect(client,session,window) {onDispose {client.mirror(session,window,emptyList())}}
     // Like the desktop: each pane a rounded card on the window background, with room between them and
     // a thin accent outline on the focused one.
@@ -85,12 +114,22 @@ internal fun MultiPaneLayout(
             val heightFraction=pane.height/spanY
             val height=visibleHeight*heightFraction
             val active=pane.id==focused
+            val dropTarget=move?.target==pane.id
+            val moveSource=move?.source==pane.id
             val lastRow=!bottomMargin && pane.y+pane.height>=top+spanY-.001f
             val trim=if(lastRow) gap/2 else gap
             Box(Modifier.offset(x+gap/2,y+gap/2).size((width-gap).coerceAtLeast(0.dp),(height-trim).coerceAtLeast(0.dp))
+                .onGloballyPositioned {paneCoordinates[pane.id]=it}
                 .clip(shape).background(Color(palette.background))
-                // Same border width and padding focused or not, so focusing never changes a pane's grid.
-                .border(1.5.dp,if(active) scheme.primary else scheme.outline.copy(alpha=.25f),shape)
+                .drawWithContent {
+                    drawContent()
+                    if(dropTarget) drawRect(scheme.primary.copy(alpha=.16f))
+                }
+                // Keep the border and padding fixed while moving so the PTY grid stays the same.
+                .border(1.5.dp,when {
+                    moveSource || dropTarget || active -> scheme.primary
+                    else -> scheme.outline.copy(alpha=.25f)
+                },shape)
                 .padding(1.5.dp)) {
                 val live=active && pane.id==liveBlock
                 val paneFrame by remember(client,pane.id) {
@@ -165,17 +204,72 @@ internal fun MultiPaneLayout(
                             fontFamily=MonoUi,fontSize=12.sp,color=scheme.onSurfaceVariant)
                     }
                 }
-                // Pane actions, like the desktop's: tap the top-right corner to show them. A zoomed
-                // pane always shows its way back.
                 val isZoomed=pane.id==zoomed
-                if(isZoomed || menuFor==pane.id) PaneActions(isZoomed,Modifier.align(androidx.compose.ui.Alignment.TopEnd).padding(6.dp)) {
-                    // Zooming a pane also focuses it, so typing goes to the pane on screen.
-                    menuFor=null
-                    if(!isZoomed && !active) onFocus(pane.id,sizes[pane.id])
-                    client.zoom(pane.id,!isZoomed)
+                val showActions=menuFor==pane.id
+                if(isZoomed || showActions) {
+                    val splitPane: (PaneSplit)->Unit={split->
+                        menuFor=null
+                        onSplit(pane.id,split)
+                    }
+                    val zoomPane: ()->Unit={
+                        menuFor=null
+                        if(!isZoomed && !active) onFocus(pane.id,sizes[pane.id])
+                        client.zoom(pane.id,!isZoomed)
+                    }
+                    PaneCornerActions(
+                        Modifier.align(Alignment.TopEnd).padding(6.dp),
+                        zoomed=isZoomed,compact=width-gap<174.dp,
+                        enabled=paneActionsEnabled && !moving,
+                        onSplit=splitPane,onZoom=zoomPane,
+                    )
+                    if(!isZoomed && paneActionsEnabled) {
+                        val handleCoordinates=remember {arrayOfNulls<LayoutCoordinates>(1)}
+                        val otherPanes=shownPanes.filter {it.id!=pane.id}
+                        val targetActions=otherPanes.map {other->
+                            CustomAccessibilityAction("Swap with pane ${shownPanes.indexOf(other)+1}") {
+                                completeMove(pane.id,other.id)
+                                true
+                            }
+                        }
+                        PaneActionPill(Modifier.align(Alignment.TopStart).padding(6.dp),active=moveSource) {
+                            Box(Modifier.size(36.dp)
+                                .onGloballyPositioned {handleCoordinates[0]=it}
+                                .semantics {
+                                    contentDescription="Move pane"
+                                    if(moveSource) stateDescription="Moving"
+                                    customActions=targetActions
+                                }
+                                .pointerInput(session,window,placements,pane.id) {
+                                    detectDragGestures(
+                                        onDragStart={move=PaneMove(pane.id)},
+                                        onDragCancel={move=null},
+                                        onDragEnd={
+                                            val target=move?.target
+                                            move=null
+                                            if(target!=null) completeMove(pane.id,target)
+                                        },
+                                    ) {change,_->
+                                        change.consume()
+                                        val point=handleCoordinates[0]?.takeIf {it.isAttached}?.localToWindow(change.position)
+                                        val target=otherPanes.firstOrNull {other->
+                                            point!=null && paneCoordinates[other.id]?.takeIf {it.isAttached}
+                                                ?.boundsInWindow()?.contains(point)==true
+                                        }?.id
+                                        move=PaneMove(pane.id,target)
+                                    }
+                                },contentAlignment=Alignment.Center) {
+                                ChromeSymbol(ChromeIcon.MOVE)
+                            }
+                        }
+                    }
+                } else {
+                    for(corner in listOf(Alignment.TopStart,Alignment.TopEnd)) {
+                        Box(Modifier.align(corner).size(44.dp)
+                            .semantics {contentDescription=if(corner==Alignment.TopStart) "Pane actions, top left" else "Pane actions"}
+                            .clickable(enabled=!moving,interactionSource=remember {MutableInteractionSource()},
+                                indication=null,role=Role.Button) {menuFor=pane.id})
+                    }
                 }
-                else Box(Modifier.align(androidx.compose.ui.Alignment.TopEnd).size(44.dp).semantics {contentDescription="Pane actions"}
-                    .clickable(interactionSource=remember {MutableInteractionSource()},indication=null,role=Role.Button) {menuFor=pane.id})
             }
         }
         // Pane borders: drag the grip in the gap and the panes reflow with it; on release Rex moves the
@@ -211,14 +305,45 @@ internal fun MultiPaneLayout(
     }
 }
 
-/** The floating pill of pane actions shown at a pane's top-right corner. For now: zoom, or restore. */
-@Composable private fun PaneActions(zoomed: Boolean,modifier: Modifier,onZoom: ()->Unit) {
+@Composable
+private fun PaneCornerActions(
+    modifier: Modifier,zoomed: Boolean,compact: Boolean,enabled: Boolean,
+    onSplit: (PaneSplit)->Unit,onZoom: ()->Unit,
+) {
+    val splitActions=listOf(PaneSplit.RIGHT to ChromeIcon.SPLIT_RIGHT,PaneSplit.BELOW to ChromeIcon.SPLIT_BELOW)
+    if(compact && !zoomed) {
+        // Leave room for the move handle on narrow tiles.
+        var expanded by remember {mutableStateOf(false)}
+        Box(modifier) {
+            PaneActionPill(Modifier) {
+                ChromeButton(ChromeIcon.MORE,"More pane actions",enabled=enabled) {expanded=true}
+            }
+            DropdownMenu(expanded=expanded && enabled,onDismissRequest={expanded=false}) {
+                for((split,icon) in splitActions) {
+                    TerminalMenuItem(split.label,icon,onClick={expanded=false;onSplit(split)})
+                }
+                TerminalMenuItem("Zoom pane",ChromeIcon.ZOOM,onClick={expanded=false;onZoom()})
+            }
+        }
+    } else {
+        PaneActionPill(modifier) {
+            if(!zoomed) for((split,icon) in splitActions) {
+                ChromeButton(icon,split.label,enabled=enabled) {onSplit(split)}
+            }
+            ChromeButton(if(zoomed) ChromeIcon.UNZOOM else ChromeIcon.ZOOM,
+                if(zoomed) "Restore pane layout" else "Zoom pane",enabled=enabled,onClick=onZoom)
+        }
+    }
+}
+
+/** Pane controls float over the terminal without changing its grid. */
+@Composable private fun PaneActionPill(modifier: Modifier,active: Boolean=false,content: @Composable RowScope.()->Unit) {
     val scheme=MaterialTheme.colorScheme
     val pill=androidx.compose.foundation.shape.RoundedCornerShape(50)
-    Row(modifier.clip(pill).background(scheme.surface.copy(alpha=.92f)).border(1.dp,scheme.outline.copy(alpha=.3f),pill).padding(horizontal=4.dp,vertical=2.dp),
-        verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
-        ChromeButton(if(zoomed) ChromeIcon.UNZOOM else ChromeIcon.ZOOM,if(zoomed) "Restore pane layout" else "Zoom pane",onClick=onZoom)
-    }
+    val surface=if(active) scheme.primaryContainer else scheme.surface
+    Row(modifier.clip(pill).background(surface.copy(alpha=.92f))
+        .border(1.dp,scheme.outline.copy(alpha=.3f),pill).padding(horizontal=4.dp,vertical=2.dp),
+        verticalAlignment=Alignment.CenterVertically,content=content)
 }
 
 /**
