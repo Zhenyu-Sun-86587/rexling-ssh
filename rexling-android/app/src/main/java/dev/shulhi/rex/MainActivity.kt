@@ -75,24 +75,8 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable internal fun RexTheme(dark: Boolean,theme: AppTheme,content: @Composable ()->Unit) {
-    val base=if(dark) darkColorScheme(primary=Color(0xff315cf4),onPrimary=Color.White,
-        background=Color(0xff090c11),surface=Color(0xff141922),onSurface=Color(0xffe5e9f2),
-        surfaceVariant=Color(0xff232934),onSurfaceVariant=Color(0xff969fb1),outline=Color(0xff2b3341))
-    else lightColorScheme(primary=Color(0xff3156f4),onPrimary=Color.White,
-        background=Color(0xfff3f4f9),surface=Color(0xfffdfdff),onSurface=Color(0xff171b26),
-        surfaceVariant=Color(0xffe9ebf2),onSurfaceVariant=Color(0xff62697c),outline=Color(0xffd8dce8))
-    val container = if(dark) Color(0xff1b212c) else Color(0xffeceef5)
-    val primaryContainer = if(dark) Color(0xff17254d) else Color(0xffe4eaff)
-    val onPrimaryContainer = if(dark) Color(0xffbed0ff) else Color(0xff193dba)
-    val scheme = base.copy(surfaceTint=Color.Transparent,
-        surfaceDim=base.background,surfaceBright=base.surfaceVariant,
-        surfaceContainerLowest=base.background,surfaceContainerLow=base.surface,
-        surfaceContainer=container,surfaceContainerHigh=container,surfaceContainerHighest=base.surfaceVariant,
-        primaryContainer=primaryContainer,onPrimaryContainer=onPrimaryContainer,
-        secondary=base.primary,onSecondary=base.onPrimary,secondaryContainer=primaryContainer,onSecondaryContainer=onPrimaryContainer,
-        tertiary=base.primary,onTertiary=base.onPrimary,tertiaryContainer=primaryContainer,onTertiaryContainer=onPrimaryContainer)
     CompositionLocalProvider(LocalTerminalPalette provides theme.terminal) {
-        MaterialTheme(colorScheme=scheme.withPreset(theme),content=content)
+        MaterialTheme(colorScheme=rexColorScheme(dark,theme.ui),content=content)
     }
 }
 
