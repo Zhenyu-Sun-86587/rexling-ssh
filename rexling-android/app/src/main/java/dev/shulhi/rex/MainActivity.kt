@@ -112,9 +112,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val windows=if(changingSession) emptyList() else client.orderedWindows(state)
     val window=windows.firstOrNull {w->w.blocks.any {it.id==displayedBlock}} ?: windows.firstOrNull {it.blocks.isNotEmpty()}
     val activeWindowId=window?.id.orEmpty()
-    val activityBadges=remember(model.activitySources,model.activeServer,displayedSession,windows) {
-        ActivityBadgePolicy.route(model.activitySources,model.activeServer,displayedSession,windows)
-    }
     val ready=state.connected && !navigation.pending && !state.creating
     val keyTarget=client.keyTarget()
     val terminalHaze=remember {HazeState()}
@@ -190,7 +187,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         filePicker.launch(arrayOf("*/*"))
     }
 
-    DisposableEffect(client) {onDispose {model.setPaneObscured(true)}}
+    DisposableEffect(client) {onDispose {model.setVisibleActivityPanes(null)}}
     val keyboardDensity=LocalDensity.current
     val keyboardInsets=WindowInsets.ime
     val keyboardVisible by remember(keyboardInsets,keyboardDensity) {derivedStateOf {keyboardInsets.getBottom(keyboardDensity)>0}}
@@ -243,7 +240,27 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         else emptyList()
     var dockFloatingPane by remember(displayedSession,window?.id) {mutableStateOf<String?>(null)}
     val controlled=state.controlled && ready && client.hasScreen
-    SideEffect {model.setPaneObscured(menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null || dockFloatingPane!=null)}
+    val paneObscured=menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null || dockFloatingPane!=null
+    val zoomed=window?.zoomed.orEmpty()
+    val activityPaneIds=remember(chosen,tiles,floatingOverlay,zoomed) {activityPaneCandidates(chosen,tiles,floatingOverlay,zoomed)}
+    val display=client.displayLayout.collectAsState()
+    // Frame contents change far more often than which panes have something on screen.
+    val visibleActivityBlocks by remember(client,display,activityPaneIds,ready,paneObscured,state.selectedBlock) {
+        derivedStateOf<Set<String>>(structuralEqualityPolicy()) {
+            if(!ready || paneObscured) emptySet() else activityPaneIds.filterTo(mutableSetOf()) {id->
+                id==state.selectedBlock && display.value.hasScreen || id in client.paneFrames
+            }
+        }
+    }
+    val activityServer=model.activeServer
+    val activityBadges=remember(model.activitySources,activityServer,displayedSession,windows,visibleActivityBlocks) {
+        ActivityBadgePolicy.route(model.activitySources,activityServer,displayedSession,windows,visibleActivityBlocks)
+    }
+    SideEffect {
+        model.setVisibleActivityPanes(visibleActivityBlocks.takeIf {it.isNotEmpty()}?.let {
+            WatchedPanes(activityServer.id,activityServer.endpoint,displayedSession,state.selectedBlock,it)
+        })
+    }
     fun openPane(id: String) {
         client.selectBlock(id,null,keepTiled=tiles!=null,restoreMinimized=true)
     }

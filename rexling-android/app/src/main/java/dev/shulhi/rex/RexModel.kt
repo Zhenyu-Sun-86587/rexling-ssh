@@ -29,20 +29,22 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     internal var networkAvailable by mutableStateOf<Boolean?>(null)
         private set
-    private var paneObscured=true
-    internal fun setPaneObscured(value: Boolean) {paneObscured=value;updateActivity()}
-    private fun watchedPane(): WatchedPane? {
-        val client=connections[activeServerId] ?: return null
-        val state=client.state.value
-        val app=getApplication<Application>()
-        return ActivityFocusPolicy.watched(activeServer,state,foreground && windowFocused,paneObscured || activityVisible,client.hasScreen && state.screen!=null,client.navigationRequest.pending,
-            app.getSystemService(android.os.PowerManager::class.java).isInteractive,app.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+    private var visibleActivityPanes: WatchedPanes?=null
+    internal fun setVisibleActivityPanes(panes: WatchedPanes?) {
+        if(visibleActivityPanes==panes) return
+        visibleActivityPanes=panes
+        updateActivity()
     }
     private fun updateActivity() {
-        val watched=watchedPane()
-        if(watched!=null) connections[watched.server]?.let {client->
-            val profile=servers.firstOrNull {it.id==watched.server}
-            if(profile!=null) ActivityFocusPolicy.acknowledge(profile,client.state.value.activity,watched,client::isActivitySeen).takeIf {it.isNotEmpty()}?.let(client::markActivitySeen)
+        val visible=visibleActivityPanes
+        val active=connections[activeServerId]
+        if(visible!=null && active!=null) {
+            val app=getApplication<Application>()
+            val state=active.state.value
+            val profile=activeServer
+            val watched=ActivityFocusPolicy.watched(profile,state,visible,foreground && windowFocused && !activityVisible,active.navigationRequest.pending,
+                app.getSystemService(android.os.PowerManager::class.java).isInteractive,app.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+            ActivityFocusPolicy.acknowledge(profile,state.activity,watched,active::isActivitySeen).takeIf {it.isNotEmpty()}?.let(active::markActivitySeen)
         }
         attentionCount=connections.values.sumOf {client->if(client.state.value.connected) ActivityFocusPolicy.unread(client.state.value.activity,client::isActivitySeen) else 0}
         activitySources=servers.mapNotNull {server->connections[server.id]?.state?.value?.let {state->
