@@ -88,7 +88,7 @@ class TerminalView(context: Context) : View(context) {
     internal var onInputConnectionReady: ()->Unit = {}
     var onScroll: (Int) -> Unit = {}
     var onWheel: (Int,Int,Int,Int,Int) -> Unit = {lines,_,_,_,_->onScroll(lines)}
-    var onActivate: () -> Unit = {}
+    var onActivate: (Boolean) -> Unit = {}
     var onMouseClick: (Int,Int,Int,Int) -> Unit = {_,_,_,_->}
     internal var onSemanticCopy: ((TerminalScreen,Int,Int,Boolean)->Boolean)?=null
     internal var onCursorTap: ()->Unit = {}
@@ -135,11 +135,6 @@ class TerminalView(context: Context) : View(context) {
     var keyboardSuggestions: Boolean = true
     /** The on-screen keyboard's Enter submits (CR) instead of inserting a newline (LF). */
     var imeEnterSubmits: Boolean = false
-    /** Any tap on a controlled pane opens the keyboard; set while the key toolbar hides without it. */
-    var tapOpensKeyboard: Boolean = false
-        set(value) {
-            if(field!=value) {field=value;if(controlled && hasFocus()) (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)}
-        }
     var controlled: Boolean = false
         set(value) {
             if (field != value) {
@@ -685,32 +680,25 @@ class TerminalView(context: Context) : View(context) {
     private fun terminalTap(x: Float,y: Float,showKeyboard: Boolean) {
         val frame=screen
         if(pressedMouse && pressedControlled && !controlled) return
+        val col=floor((x-insetHorizontal)/cellWidth).toInt()
+        val row=floor((y-insetTop)/cellHeight).toInt()
+        val hit=frame?.takeIf {
+            pressedMouseGrid==(it.columns to it.rows) &&
+                x>=insetHorizontal && x<width-insetHorizontal && y>=insetTop && y<height-insetBottom &&
+                col in 0 until it.columns && row in 0 until it.rows
+        }
         if(controlled && (pressedMouse || frame?.mouseTracking==true)) {
-            if(frame?.mouseTracking!=true || !pressedMouse || !pressedControlled || frame.scroll.below>0 ||
-                pressedMouseTarget!=mouseTarget() || pressedMouseGrid!=(frame.columns to frame.rows)) return
-            val col=floor((x-insetHorizontal)/cellWidth).toInt()
-            val row=floor((y-insetTop)/cellHeight).toInt()
-            if(x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom ||
-                col !in 0 until frame.columns || row !in 0 until frame.rows) return
-            super.performClick()
+            if(hit?.mouseTracking!=true || !pressedMouse || !pressedControlled || hit.scroll.below>0) return
             onMouseClick(col,row,cellWidth.roundToInt().coerceAtLeast(1),cellHeight.roundToInt().coerceAtLeast(1))
-            // Mouse-reporting programs (pi's fullscreen mode) still get the click; with no toolbar
-            // keyboard button showing, the tap must also be able to open the keyboard.
-            if(showKeyboard) {
-                if(frame.isSemanticInputRow(row) || tapOpensKeyboard) keyboard()
-                else if(row==inputCursorRow(frame)) onCursorTap()
-            }
-        } else if(controlled && frame?.hasSemanticPrompt==true) {
-            val row=floor((y-insetTop)/cellHeight).toInt()
-            if(pressedMouseTarget!=mouseTarget() || pressedMouseGrid!=(frame.columns to frame.rows) ||
-                x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom) return
-            super.performClick()
-            // Prompt-marked shells otherwise open it only from the prompt line.
-            if(showKeyboard) {
-                if(frame.isSemanticInputRow(row) || tapOpensKeyboard) keyboard()
-                else if(frame.scroll.below==0L && row==inputCursorRow(frame)) onCursorTap()
-            }
-        } else if(showKeyboard || !controlled) performClick() else super.performClick()
+        }
+        super.performClick()
+        val input=hit?.takeIf {showKeyboard && it.scroll.below==0L}
+        val cursorTap=input!=null && row==inputCursorRow(input)
+        val promptTap=input!=null && (input.isSemanticInputRow(row) ||
+            cursorTap && !input.hasSemanticPrompt && !input.mouseTracking && !input.alternateScreen)
+        if(!controlled) onActivate(promptTap || cursorTap && allowHiddenCursorInput)
+        else if(promptTap) keyboard()
+        else if(cursorTap) onCursorTap()
     }
     internal fun copySemanticSelection(output: Boolean): Boolean {
         val selected=selection ?: return false
@@ -839,7 +827,7 @@ class TerminalView(context: Context) : View(context) {
             (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
         }
     }
-    override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate()};return true }
+    override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate(true)};return true }
     override fun onCheckIsTextEditor() = controlled
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         if (!controlled) return null

@@ -396,7 +396,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             client,displayedSession,window.id,tiles,chosen,liveBlock,controlled,state.programs,state.mirrorWaiting,
                             fontSize.toFloat(),onFocus={id,grid->client.selectBlock(id,grid,keepTiled=true)},
                             onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
-                            tapOpensKeyboard=model.toolbarWithKeyboardOnly,keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
+                            keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
                             bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,sideRail=tabLayout.position,
                             splits=window.splits,zoomed=window.zoomed,paneActionsEnabled=ready,
@@ -407,13 +407,13 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         else LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},onView,
                             Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,
-                            hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,tapOpensKeyboard=model.toolbarWithKeyboardOnly,
+                            hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             squareCorners=tabLayout.side,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
                         ConnectionNotice(state.phase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp),hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
-                        OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,client::takeControl,Modifier.align(Alignment.TopEnd).padding(10.dp),hazeState=terminalHaze,onVisibleChange={ownerBackdrop=it})
+                        OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,{client.takeControl()},Modifier.align(Alignment.TopEnd).padding(10.dp),hazeState=terminalHaze,onVisibleChange={ownerBackdrop=it})
                         if(model.neovimShortcutsEnabled && ready && chosen==liveBlock && chosen !in state.cachedPrograms && state.programs[chosen]?.kind==ProgramKind.NEOVIM && model.neovimShortcuts.isNotEmpty()) {
                             NeovimShortcutButton(model.neovimShortcuts,keyTarget,controlled,
                                 onChoose={item,target->client.neovimShortcut(item,target)},onCustomize={neovimSettings=true},layout=model.neovimShortcutLayout,effect=model.neovimShortcutEffect,hapticsEnabled=model.neovimShortcutHaptics,hazeState=terminalHaze,onExpandedChange={wheelBackdrop=it},
@@ -670,14 +670,14 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
 
 @Composable private fun LiveTerminal(client: RexConnection,blocks: List<BlockItem>,chosen: String,liveBlock: String,
     programs: Map<String,ProgramIdentity>,controlled: Boolean,fontSize: Float,
-    onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: ()->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
+    onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: (Boolean)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
-    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,tapOpensKeyboard: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
+    floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
     navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,{client.paneFrames[it]},programs,controlled,fontSize,
-        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,tapOpensKeyboard=tapOpensKeyboard,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
+        onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
         navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset)
 }
 

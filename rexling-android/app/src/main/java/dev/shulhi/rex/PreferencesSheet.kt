@@ -83,7 +83,7 @@ import androidx.compose.ui.unit.dp
                     .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                         Text("Show toolbar only with keyboard",style=SettingsType.row)
-                        Text(if(toolbarWithKeyboardOnly) "More room for the terminal. Tap the terminal or the keyboard button beside Tabs to type." else "The toolbar stays visible when the keyboard is closed",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(if(toolbarWithKeyboardOnly) "More room for the terminal. Tap the input line or the keyboard button beside Tabs to type." else "The toolbar stays visible when the keyboard is closed",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked=toolbarWithKeyboardOnly,onCheckedChange=null)
                 }
