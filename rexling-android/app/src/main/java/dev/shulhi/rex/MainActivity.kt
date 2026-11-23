@@ -101,6 +101,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun RexWorkspace(model: RexModel,client: RexConnection) {
     val state by client.chromeState.collectAsState()
+    val connectionRequested=model.activeConnectionRequested
+    val connectionPhase=if(connectionRequested && state.phase in listOf("disconnected","paused")) {
+        if(client.hasScreen) "reconnecting" else "connecting"
+    } else state.phase
     val navigation=client.navigationRequest
     val displayedSession=navigation.session ?: state.selectedSession
     val currentSessionKey=sessionKey(model.activeServerId,displayedSession)
@@ -122,7 +126,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     var ownerBackdrop by remember {mutableStateOf(false)}
     val palette=LocalTerminalPalette.current
     var endpoint by rememberSaveable {mutableStateOf(client.savedEndpoint)}
-    var showServer by rememberSaveable {mutableStateOf(true)}
     var servers by remember {mutableStateOf(false)}
     var addServer by remember {mutableStateOf(false)}
     var forwards by remember {mutableStateOf(false)}
@@ -285,7 +288,6 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     }
     LaunchedEffect(state.selectedSession) {closeTarget=null}
     LaunchedEffect(palette) { model.updateTerminalTheme(palette) }
-    LaunchedEffect(state.phase) {if(state.connected || state.phase=="preview") showServer=false}
     LaunchedEffect(state.connected,state.selectedSession,state.selectedBlock,state.windows,navigation.pending) {
         client.openPreferredTerminal();client.rememberCurrentTerminal()
     }
@@ -333,7 +335,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                 })
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize()) {
-                    if(showServer || (state.phase=="disconnected"&&!client.hasScreen)) {
+                    if(model.servers.isEmpty() || (!connectionRequested && state.phase=="disconnected" && !client.hasScreen)) {
                         Surface(Modifier.padding(12.dp),shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
                             if(model.servers.isEmpty()) EmptyServerContent(onAdd={addServer=true}) else Column(Modifier.padding(15.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                 Text(stringResource(R.string.app_name),fontWeight=FontWeight.Bold,fontSize=20.sp)
@@ -343,16 +345,14 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                     keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri),shape=RoundedCornerShape(12.dp))
                                 connectionError?.let {Text(it,color=MaterialTheme.colorScheme.error,fontSize=11.sp)}
                                 Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                    Button(onClick={connectionError=model.connect(endpoint)},enabled=state.phase!="connecting" && endpoint.isNotBlank()){Text("Connect")}
+                                    Button(onClick={connectionError=model.connect(endpoint)},enabled=endpoint.isNotBlank()){Text("Connect")}
                                     TextButton(onClick={servers=true}) {Text("Servers")}
-                                    if(state.connected || state.phase=="reconnecting") TextButton(onClick={model.disconnectServer(model.activeServerId)}){Text("Disconnect")}
-                                    else TextButton(onClick={model.previewServer(model.activeServerId)}){Text("Try preview")}
-                                    if(client.hasScreen) TextButton(onClick={showServer=false}){Text("Hide")}
+                                    TextButton(onClick={model.previewServer(model.activeServerId)}){Text("Try preview")}
                                 }
                             }
                         }
                     }
-                    if(blocks.isEmpty() && model.servers.isNotEmpty()) ConnectionNotice(state.phase,model.networkAvailable,client::retryNow)
+                    if(blocks.isEmpty() && model.servers.isNotEmpty()) ConnectionNotice(connectionPhase,model.networkAvailable,client::retryNow)
                     if(blocks.isEmpty() && state.connected && !state.creating && state.sessions.isEmpty()) {
                         EmptySessionContent(model.activeServer.label,ready,{newSession=true},Modifier.weight(1f).fillMaxWidth())
                     }
@@ -411,7 +411,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             squareCorners=tabLayout.side,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
-                        ConnectionNotice(state.phase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
+                        ConnectionNotice(connectionPhase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp),hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
                         OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,{client.takeControl()},Modifier.align(Alignment.TopEnd).padding(10.dp),hazeState=terminalHaze,onVisibleChange={ownerBackdrop=it})
                         if(model.neovimShortcutsEnabled && ready && chosen==liveBlock && chosen !in state.cachedPrograms && state.programs[chosen]?.kind==ProgramKind.NEOVIM && model.neovimShortcuts.isNotEmpty()) {
@@ -424,7 +424,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         }
                         if(tabLayout.position==TabBarPosition.RIGHT) tabRail()
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
-                        Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
+                        if(state.connected || !connectionRequested) Text(if(state.connected) "Choose a session, or start a new one." else "Your terminals, anywhere.",
                             fontFamily=MonoUi,fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if(state.connected || state.phase=="preview" || client.hasScreen) {
@@ -439,7 +439,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                 model.images.state?.let {status->ImageUploadOverlay(status,model.images::retry,model.images::cancel,
                     modifier=Modifier.align(Alignment.BottomEnd).padding(horizontal=16.dp).padding(bottom=if(state.connected) if(floating.isNotEmpty()) 152.dp else 112.dp else 16.dp),retryable=model.images.retryable,hazeState=terminalHaze)}
                 // Loading feedback must not resize the terminal grid during navigation.
-                if(state.creating || navigation.pending || state.phase=="connecting" || state.phase=="reconnecting")
+                if(state.creating || navigation.pending)
                     LinearProgressIndicator(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp))
 
             }

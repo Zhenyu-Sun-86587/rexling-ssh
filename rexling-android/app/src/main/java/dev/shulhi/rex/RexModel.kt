@@ -237,7 +237,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private var closingSessionId=""
     private val connections=mutableMapOf<String,RexConnection>()
     private val observers=mutableMapOf<String,Job>()
-    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet()
+    private var desired by mutableStateOf(preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id}}.toSet())
     private var palette: TerminalPalette?=null
     private var windowFocused=false
     internal fun windowFocusChanged(focused: Boolean) {windowFocused=focused;updateActivity()}
@@ -255,6 +255,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var activeClient by mutableStateOf(connection(activeServer))
         private set
     val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
+    internal val activeConnectionRequested: Boolean get()=activeServerId in desired
     val connectedCount: Int get()=serverStatuses.values.count {it.connected}
 
     init {viewModelScope.launch {NetworkSettings.revision.drop(1).collect {connections.filterKeys {it in desired}.values.forEach {it.retryNow()}}};preferences.registerOnSharedPreferenceChangeListener(alertsListener);desired.toList().forEach {id->connectServer(id,select=false)}}
