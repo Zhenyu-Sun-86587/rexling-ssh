@@ -340,6 +340,7 @@ struct Actor {
     tab_move_id: u64,
     pane_move_id: u64,
     controlled: bool,
+    owned_blocks: BTreeSet<String>,
     theme: Option<Value>,
     creating: bool,
     paused: bool,
@@ -413,6 +414,7 @@ impl Actor {
             tab_move_id: 0,
             pane_move_id: 0,
             controlled: false,
+            owned_blocks: BTreeSet::new(),
             theme: None,
             creating: false,
             paused: false,
@@ -521,12 +523,7 @@ impl Actor {
                         if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
                         else {
                             self.commands.clear();
-                            // Backgrounded: give the mirrored panes back too. Android asks again when visible.
-                            self.mirror.request("", Vec::new());
-                            if let Some(control) = self.control.as_mut() {
-                                self.mirror.start(control).await;
-                            }
-                            if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();
+                            if let Err(error)=self.release_session_panes().await {self.recover(error);}self.publish();
                         }
                         continue;
                     }
@@ -723,6 +720,7 @@ impl Actor {
         }
     }
     async fn disconnect(&mut self) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.release_session_panes()).await;
         self.close_retained_floating().await;
         self.awaiting_pane_selection = false;
         self.mirror=Default::default();
@@ -749,8 +747,10 @@ impl Actor {
             let _ = tokio::time::timeout(Duration::from_secs(2), c.close()).await;
         }
         self.controlled = false;
+        self.owned_blocks.clear();
     }
     fn lose_connections(&mut self) {
+        self.owned_blocks.clear();
         self.retained_floating=None;
         self.mirror.clear();
         self.progress_reports.clear();self.activity_dirty=true;
@@ -783,6 +783,7 @@ impl Actor {
         self.publish();
     }
     fn clear_ended_session(&mut self, session: String) {
+        self.owned_blocks.clear();
         self.stale_session = session;
         self.selected_session.clear();
         self.selected_block.clear();
@@ -860,6 +861,9 @@ impl Actor {
                 Err(error) => return Err(error),
             };
             self.set_view(&attached["view"]);
+            if !self.visible && !self.owned_blocks.is_empty() {
+                self.release_session_panes().await?;
+            }
             if minimized_pane(&self.windows, &self.selected_block).is_some() {
                 self.release_selected().await?;
                 self.selected_block = visible_target(&self.windows, std::mem::take(&mut self.selected_block));
@@ -911,6 +915,7 @@ impl Actor {
             .unwrap_or("");
         let mut windows = Vec::new();
         let mut selected_exists = false;
+        self.owned_blocks.clear();
         let mut minimized = BTreeSet::new();
         for window in view["windows"].as_array().into_iter().flatten() {
             let mut blocks = Vec::new();
@@ -938,6 +943,9 @@ impl Actor {
                         continue;
                     }
                     let id = block["block_id"].as_str().unwrap_or("");
+                    if !id.is_empty() && !client.is_empty() && block["owner"].as_str() == Some(client) {
+                        self.owned_blocks.insert(id.to_owned());
+                    }
                     if id == self.selected_block {
                         selected_exists = true;
                         self.controlled = block["owner"].as_str() == Some(client);
@@ -998,7 +1006,7 @@ impl Actor {
         if self.selected_session.is_empty() {
             return Ok(());
         }
-        let mut handoff = false;
+        let mut switched_pane = false;
         const MAX_VIEW_ATTEMPTS: usize = 3;
         for attempt in 1..=MAX_VIEW_ATTEMPTS {
             let view = self.control.as_mut().context("not connected")?
@@ -1012,15 +1020,16 @@ impl Actor {
                 self.open_block_stream(String::new(), false).await?;
                 self.awaiting_pane_selection = true;
                 self.error = "Floating panes are changing on another client. Choose a pane to continue.".into();
-                handoff = false;
+                switched_pane = false;
                 break;
             }
             let block = visible_target(&self.windows, self.selected_block.clone());
-            handoff = self.open_block_stream(block, true).await?;
+            self.open_block_stream(block, true).await?;
+            switched_pane = true;
             if self.selected_block.is_empty() { break; }
         }
         self.publish();
-        if handoff && self.controlled {
+        if switched_pane && self.controlled {
             self.focus_selected().await?;
         }
         Ok(())
@@ -1435,11 +1444,7 @@ impl Actor {
                     .as_str()
                     .context("No shell block")?
                     .to_owned();
-                self.mirror.request("", Vec::new());
-                if let Some(control) = self.control.as_mut() {
-                    self.mirror.start(control).await;
-                }
-                self.release_selected().await?;
+                self.release_session_panes().await?;
                 if let Some(mut data) = self.data.take() {
                     let _ = data.close().await;
                 }
@@ -1523,40 +1528,31 @@ impl Actor {
                 self.refresh_view().await?;
             }
             "session" => {
-                self.preview_task = None;
-                self.summary_task = None;
-                self.program_task = None;
-                self.programs = json!({});
-                self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
-                self.program_refresh = tokio::time::Instant::now();
-                self.preview_updates.clear();
                 let session = value["id"]
                     .as_str()
                     .context("session ID required")?
                     .to_owned();
-                self.mirror.request("", Vec::new());
-                if let Some(control) = self.control.as_mut() {
-                    self.mirror.start(control).await;
-                }
-                self.release_selected().await?;
-                if let Some(mut data) = self.data.take() {
-                    let _ = data.close().await;
-                }
-                self.close_retained_floating().await;
-                self.data_resume = None;
-                self.replica = None;
-                self.screen = None;
-                self.selected_block.clear();
-                self.controlled = false;
-                if !self.selected_session.is_empty() && self.selected_session != session {
-                    self.control
-                        .as_mut()
-                        .context("not connected")?
-                        .call(
-                            "session.detach",
-                            json!({"session_id":self.selected_session}),
-                        )
-                        .await?;
+                if self.selected_session != session {
+                    self.preview_task = None;
+                    self.summary_task = None;
+                    self.program_task = None;
+                    self.programs = json!({});
+                    self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
+                    self.program_refresh = tokio::time::Instant::now();
+                    self.preview_updates.clear();
+                    self.release_session_panes().await?;
+                    if let Some(mut data) = self.data.take() {
+                        let _ = data.close().await;
+                    }
+                    self.close_retained_floating().await;
+                    self.data_resume = None;
+                    self.replica = None;
+                    self.screen = None;
+                    self.selected_block.clear();
+                    if !self.selected_session.is_empty() {
+                        self.control.as_mut().context("not connected")?
+                            .call("session.detach", json!({"session_id":self.selected_session})).await?;
+                    }
                 }
                 self.navigation_id = value["navigationId"].as_u64().unwrap_or(0);
                 let attached = match self.control.as_mut().context("not connected")?.attach(&session).await {
@@ -1723,10 +1719,8 @@ impl Actor {
                 self.publish_mirror_status();
             }
             "release" => {
-                if let Some(c) = &mut self.control {
-                    c.call("session.disown_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block]})).await?;
-                }
-                self.controlled = false;self.other_owner=false;
+                self.release_selected().await?;
+                self.other_owner=false;
                 self.notice = "Viewing terminal".into();
                 self.publish();
             }
@@ -1808,7 +1802,7 @@ impl Actor {
             }
             "pause" => {
                 // Always drop connections after this bounded explicit-release attempt.
-                let _=tokio::time::timeout(Duration::from_secs(2),self.release_selected()).await;
+                let _=tokio::time::timeout(Duration::from_secs(2),self.release_session_panes()).await;
                 self.paused = true;
                 self.retry = None;
                 self.lose_connections();
@@ -1893,28 +1887,30 @@ impl Actor {
             self.publish();
             return Ok(());
         }
-        let handoff = self.open_block_stream(block.clone(), keep_tiled).await?;
+        self.open_block_stream(block.clone(), keep_tiled).await?;
         self.refresh_view().await?;
-        if handoff && self.controlled && self.selected_block == block {
-            // A mirror may already own the PTY. Still deliver focus-in to the program.
+        if self.controlled && self.selected_block == block {
+            // Returning to an owned pane skips take_selected, so restore its keyboard focus here.
             self.focus_selected().await?;
         }
         Ok(())
     }
 
-    async fn open_block_stream(&mut self, block: String, keep_tiled: bool) -> Result<bool> {
+    async fn open_block_stream(&mut self, block: String, keep_tiled: bool) -> Result<()> {
         let minimized = minimized_pane(&self.windows, &self.selected_block).is_some();
         let window=pane_window(&self.windows,&self.selected_block);
         let floating=window.is_some_and(|w|pane_layout(w).any(|p|p["id"]==self.selected_block && p["floating"]==true));
+        let same_tab = window.is_some_and(|w| w["blocks"].as_array().into_iter().flatten().any(|pane| pane["id"] == block));
         let keep_layout=keep_tiled && window.is_some_and(|w| {
             w["zoomed"].as_str().is_none_or(str::is_empty) &&
                 pane_layout(w).any(|pane|pane["id"]==block && pane["minimized"]!=true)
         });
-        let handoff = self.mirror.wants(&self.selected_session, &block);
-        let retain_as_mirror = !minimized && (keep_layout || handoff && !floating) &&
+        let handoff = same_tab && self.mirror.wants(&self.selected_session, &block);
+        let keep_claim = self.visible && !self.paused && !minimized && !block.is_empty();
+        let retain_as_mirror = keep_claim && (keep_layout || handoff && !floating) &&
             self.data.is_some() && self.replica.is_some();
         let was_controlled = self.controlled;
-        if retain_as_mirror {
+        if keep_claim {
             if was_controlled && let Some(control) = self.control.as_mut() {
                 // The phone keeps sizing the departing pane, but it no longer has keyboard focus.
                 let _ = control.start_call("block.event", json!({
@@ -1925,6 +1921,15 @@ impl Actor {
         } else {
             self.release_selected().await?;
         }
+        if !same_tab && !block.is_empty() {
+            self.close_retained_floating().await;
+            if keep_claim {
+                self.owned_blocks.extend(self.mirror.park());
+                self.mirror_waiting.clear();
+            } else {
+                self.mirror.request("", Vec::new());
+            }
+        }
         let restored = if self.retained_floating.as_ref().is_some_and(|p| p.block == block) {
             self.retained_floating.take()
         } else if handoff {
@@ -1933,7 +1938,7 @@ impl Actor {
             })
         } else {
             // Giving up on focus should leave the other visible panes streaming.
-            if !keep_layout && !block.is_empty() {
+            if same_tab && !keep_layout && !block.is_empty() {
                 self.mirror.request("", Vec::new());
                 if let Some(control) = self.control.as_mut() {
                     self.mirror.start(control).await;
@@ -1944,7 +1949,7 @@ impl Actor {
         if retain_as_mirror && let (Some(data), Some(replica)) = (self.data.take(), self.replica.take()) {
             // The departing pane stays visible even when the incoming pane was the only mirror.
             self.mirror.adopt(&self.selected_session,self.selected_block.clone(), data, replica, was_controlled);
-        } else if floating && !minimized && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+        } else if floating && same_tab && !minimized && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.close_retained_floating().await;
             self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
         } else if let Some(mut data)=self.data.take() {
@@ -1957,7 +1962,7 @@ impl Actor {
         if self.selected_block.is_empty() {
             self.replica = None;
             self.notice = "Choose a terminal".into();
-            return Ok(false);
+            return Ok(());
         }
         if let Some(pane)=restored {
             self.replica=Some(pane.replica);self.data=Some(pane.data);
@@ -1976,7 +1981,7 @@ impl Actor {
         self.awaiting_pane_selection = false;
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
-        Ok(handoff)
+        Ok(())
     }
     async fn refresh_close_view(&mut self) -> Result<bool> {
         if self.selected_session.is_empty() {return Ok(false);}
@@ -2036,6 +2041,37 @@ impl Actor {
                 )
                 .await?;
         }
+        self.owned_blocks.remove(&self.selected_block);
+        self.controlled = false;
+        Ok(())
+    }
+
+    async fn release_session_panes(&mut self) -> Result<()> {
+        self.owned_blocks.extend(self.mirror.park());
+        self.mirror_waiting.clear();
+        if self.controlled && !self.selected_block.is_empty() {
+            self.owned_blocks.insert(self.selected_block.clone());
+        }
+        if let Some(control) = self.control.as_mut() {
+            self.mirror.start(control).await;
+            if !self.selected_session.is_empty() && !self.owned_blocks.is_empty() {
+                let request = json!({"session_id":self.selected_session,"block_ids":self.owned_blocks});
+                if let Err(error) = control.call("session.disown_block", request).await {
+                    if !missing_terminal(&error) { return Err(error); }
+                    // A pane closed after the last view may invalidate the batch.
+                    match control.call("session.view", json!({"session_id":self.selected_session})).await {
+                        Ok(view) => self.set_view(&view),
+                        Err(error) if missing_terminal(&error) => self.owned_blocks.clear(),
+                        Err(error) => return Err(error),
+                    }
+                    if !self.owned_blocks.is_empty() {
+                        self.control.as_mut().context("not connected")?.call("session.disown_block",
+                            json!({"session_id":self.selected_session,"block_ids":self.owned_blocks})).await?;
+                    }
+                }
+            }
+        }
+        self.owned_blocks.clear();
         self.controlled = false;
         Ok(())
     }
@@ -2697,6 +2733,97 @@ mod tests {
     }
     #[test]
     #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_tab_claims_preserve_size_allow_takeover_and_release_when_leaving() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut desktop = runtime.block_on(Control::connect(
+            Endpoint::new(&server, Duration::from_secs(10)).unwrap(), None, Trace::default(),
+        )).unwrap();
+        let desktop_id = desktop.client_id().unwrap().to_owned();
+        let window = json!({"layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}});
+        let created = runtime.block_on(desktop.call("session.create", json!({
+            "label":format!("rexling-tab-claims-test-{}", std::process::id()),"initial_windows":[window,window,window]
+        }))).unwrap();
+        let session = created["session_id"].as_str().unwrap();
+        let block = |index: usize| created["initial_windows"][index]["block_ids"][0].as_str().unwrap();
+        let (first, second, untouched) = (block(0), block(1), block(2));
+        let mut fixtures = vec![session.to_owned()];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.block_on(desktop.attach(session)).unwrap();
+            let owner = |desktop: &mut Control, target: &str| {
+                let view = runtime.block_on(desktop.call("session.view", json!({"session_id":session}))).unwrap();
+                view["windows"].as_array().unwrap().iter()
+                    .flat_map(|w| w["layers"].as_array().unwrap())
+                    .flat_map(|l| l["blocks"].as_array().unwrap())
+                    .find(|b| b["block_id"] == target).unwrap()["owner"].as_str().unwrap_or("").to_owned()
+            };
+            let app = Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":server})).unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":session,"block":first})).unwrap();
+            let select = |target: &str| {
+                app.command(json!({"type":"block","id":target})).unwrap();
+                wait(&app, |v| v["selectedBlock"] == target && v["screen"].is_object())
+            };
+            let take = |columns: u16, rows: u16| {
+                app.command(json!({"type":"take","columns":columns,"rows":rows})).unwrap();
+                wait(&app, |v| v["controlled"] == true && v["screen"]["columns"] == columns && v["screen"]["rows"] == rows);
+            };
+            wait(&app, |v| v["selectedBlock"] == first && v["screen"].is_object());
+            take(61,23);
+            let mobile_id = owner(&mut desktop, first);
+            assert!(!mobile_id.is_empty());
+            select(second);
+            take(71,27);
+            assert_eq!(owner(&mut desktop, first),mobile_id);
+            assert_eq!(owner(&mut desktop, second),mobile_id);
+            assert_eq!(owner(&mut desktop, untouched),"");
+            let returned = select(first);
+            assert_eq!(returned["controlled"],true);
+            assert_eq!(returned["screen"]["columns"],61);
+            assert_eq!(returned["screen"]["rows"],23);
+
+            select(second);
+            runtime.block_on(desktop.call("session.own_block",json!({"session_id":session,"block_ids":[first],"mode":"take"}))).unwrap();
+            runtime.block_on(desktop.terminal(session,first,"resize",json!({"columns":94,"rows":32}))).unwrap();
+            assert_eq!(owner(&mut desktop, first),desktop_id);
+            assert_eq!(owner(&mut desktop, second),mobile_id);
+            app.command(json!({"type":"session","id":session,"block":first})).unwrap();
+            let handed_over = wait(&app, |v| v["selectedBlock"] == first && v["screen"].is_object());
+            assert_eq!(handed_over["controlled"],false);
+            assert_eq!(handed_over["screen"]["columns"],94);
+            assert_eq!(owner(&mut desktop, second),mobile_id);
+
+            let other = runtime.block_on(desktop.call("session.create",json!({
+                "label":format!("rexling-tab-claims-destination-{}", std::process::id()),"initial_windows":[window]
+            }))).unwrap();
+            let other_session = other["session_id"].as_str().unwrap();
+            fixtures.push(other_session.to_owned());
+            app.command(json!({"type":"session","id":other_session})).unwrap();
+            wait(&app, |v| v["selectedSession"] == other_session);
+            assert_eq!(owner(&mut desktop, first),desktop_id);
+            assert_eq!(owner(&mut desktop, second),"");
+
+            app.command(json!({"type":"session","id":session,"block":second})).unwrap();
+            wait(&app, |v| v["selectedBlock"] == second && v["screen"].is_object());
+            take(71,27);
+            select(untouched);
+            take(72,28);
+            app.command(json!({"type":"pause"})).unwrap();
+            wait(&app, |v| v["phase"] == "paused");
+            assert_eq!(owner(&mut desktop, first),desktop_id);
+            assert_eq!(owner(&mut desktop, second),"");
+            assert_eq!(owner(&mut desktop, untouched),"");
+        }));
+        for session in fixtures {
+            runtime.block_on(desktop.attach(&session)).unwrap();
+            runtime.block_on(desktop.call("session.destroy", json!({"session_id":session}))).unwrap();
+        }
+        runtime.block_on(desktop.close()).unwrap();
+        result.unwrap();
+    }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
     fn live_actor_connects_types_and_recovers_after_lifecycle_pause() {
         let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -3150,7 +3277,7 @@ mod tests {
                 v["error"]
                     .as_str()
                     .unwrap_or("")
-                    .contains("selected pane changed")
+                    .contains("pane is no longer available")
             });
             app.command(json!({"type":"new_pane","session":id,"anchor":new_block}))
                 .unwrap();
