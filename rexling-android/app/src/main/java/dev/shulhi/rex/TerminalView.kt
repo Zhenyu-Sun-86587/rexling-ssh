@@ -159,7 +159,10 @@ class TerminalView(context: Context) : View(context) {
     private val textColors = TerminalTextColors()
     private val fonts = TerminalFonts(context)
     private val terminalImages=TerminalImages()
-    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>)
+    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>) {
+        val contentHash by lazy(LazyThreadSafetyMode.NONE) { rowContentHash(cells) }
+        fun atRow(y: Int): RecordedRow = if(links.isEmpty()) this else copy(links=links.map {it.copy(row=y)})
+    }
     /**
      * Smooth scrolling: pixels scrolled past the last whole line that the
      * canvas slides by. Positive means content moves up (scrolling forward).
@@ -168,6 +171,8 @@ class TerminalView(context: Context) : View(context) {
      */
     private val scrollMotion=TerminalScrollMotion()
     private var recordedOffset: Long?=null
+    private var recordedApplicationLines: List<List<TerminalCell>>?=null
+    private var reuseApplicationRowsUntil=0L
     private var suppressScrollTap=false
     private val linkIndex=TerminalLinks.Index()
     private var recorded= arrayOfNulls<RecordedRow>(0)
@@ -176,7 +181,7 @@ class TerminalView(context: Context) : View(context) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int,String>,Float>?)=size>4096
     }
     internal var recordedRowCount=0;private set
-    private fun clearRows() {recordedOffset=null;recorded.forEach {it?.recording?.release()};recorded=arrayOfNulls(0);rowGeometry=""}
+    private fun clearRows() {recordedOffset=null;recordedApplicationLines=null;recorded.forEach {it?.recording?.release()};recorded=arrayOfNulls(0);rowGeometry=""}
     private fun advance(text: String,style: Int): Float=advances.getOrPut(style to text){paint.measureText(text)}
     private var cellWidth = 1f
     private var cellHeight = 1f
@@ -362,21 +367,68 @@ class TerminalView(context: Context) : View(context) {
      */
     private fun reuseShiftedRows(frame: TerminalScreen,visibleRows: Int) {
         val previous=recordedOffset
+        val previousApplicationLines=recordedApplicationLines
         recordedOffset=frame.scroll.offset
+        recordedApplicationLines=frame.lines.takeIf {frame.applicationScroll && frame.scroll.below==0L && frame.images.isEmpty()}
         if(previous==null || recorded.size!=visibleRows || visibleRows<4) return
         val distance=frame.scroll.offset-previous
-        if(distance==0L || kotlin.math.abs(distance)>=visibleRows-2) return
+        if(distance==0L) {
+            if(recordedApplicationLines!=null && previousApplicationLines!==frame.lines &&
+                android.os.SystemClock.uptimeMillis()<reuseApplicationRowsUntil) reuseApplicationRows(frame,visibleRows)
+            return
+        }
+        if(kotlin.math.abs(distance)>=visibleRows-2) return
         val shift=distance.toInt()
         val next=arrayOfNulls<RecordedRow>(visibleRows)
         val used=BooleanArray(visibleRows)
         for(y in 1 until visibleRows-1) {
             val from=y+shift
-            if(from in 1 until visibleRows-1) {next[y]=recorded[from]?.let {it.copy(links=it.links.map {link->link.copy(row=y)})};used[from]=true}
+            if(from in 1 until visibleRows-1) {next[y]=recorded[from]?.atRow(y);used[from]=true}
         }
         // Keep edge rows in place; release recordings that fell off.
         next[0]=recorded[0];next[visibleRows-1]=recorded[visibleRows-1];used[0]=true;used[visibleRows-1]=true
         for(y in recorded.indices) if(!used[y]) recorded[y]?.recording?.release()
         recorded=next
+    }
+    /** A full-screen program moves content without changing Ghostty's history offset. */
+    private fun reuseApplicationRows(frame: TerminalScreen,visibleRows: Int) {
+        val interior=1 until visibleRows-1
+        var displaced: Array<RecordedRow?>?=null
+        for(y in interior) {
+            val row=recorded[y] ?: continue
+            if(!sameCells(row.cells,frame.lines[y])) {
+                val rows=displaced ?: arrayOfNulls<RecordedRow>(visibleRows).also {displaced=it}
+                rows[y]=row
+                recorded[y]=null
+            }
+        }
+        val spare=displaced ?: return
+        val candidates=HashMap<Int,MutableList<Int>>()
+        for(y in interior) spare[y]?.takeIf {it.recording.valid}?.let {row->
+            candidates.getOrPut(row.contentHash) {mutableListOf()}.add(y)
+        }
+        for(y in interior) {
+            if(recorded[y]!=null || candidates.isEmpty()) continue
+            val cells=frame.lines[y]
+            val hash=rowContentHash(cells)
+            val matches=candidates[hash] ?: continue
+            val match=matches.indexOfFirst {from->sameCells(spare[from]!!.cells,cells)}
+            if(match<0) continue
+            val from=matches.removeAt(match)
+            recorded[y]=spare[from]!!.atRow(y)
+            spare[from]=null
+            if(matches.isEmpty()) candidates.remove(hash)
+        }
+        // Reuse remaining recording objects for new content, keeping each object in one row.
+        for(y in interior) {
+            if(recorded[y]==null && spare[y]!=null) {
+                recorded[y]=spare[y]
+                spare[y]=null
+            }
+        }
+        val remaining=spare.asSequence().filterNotNull().iterator()
+        for(y in interior) if(recorded[y]==null && remaining.hasNext()) recorded[y]=remaining.next()
+        while(remaining.hasNext()) remaining.next().recording.release()
     }
     /** An overscan row, drawn directly (it only shows mid-scroll). */
     private fun drawLooseRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,origin: Float) {
@@ -439,13 +491,18 @@ class TerminalView(context: Context) : View(context) {
         }
         canvas.restore()
     }
+    private fun sendWheel(lines: Int,col: Int,row: Int) {
+        // The program may return several frames over the network for one gesture.
+        reuseApplicationRowsUntil=android.os.SystemClock.uptimeMillis()+500
+        onWheel(lines,col,row,desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())
+    }
     internal fun scrollByPixels(pixels: Float) {
         val frame=screen ?: return
         if(frame.applicationScroll && frame.scroll.below==0L) {
             scrollMotion.reset()
             scrollPixels+=pixels
             val lines=(scrollPixels/cellHeight).toInt()
-            if(lines!=0) {scrollPixels-=lines*cellHeight;onWheel(lines,wheelCol,wheelRow,desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())}
+            if(lines!=0) {scrollPixels-=lines*cellHeight;sendWheel(lines,wheelCol,wheelRow)}
         } else {
             val lines=scrollMotion.drag(pixels,frame.scroll,cellHeight)
             if(lines!=0) onScroll(lines)
@@ -523,7 +580,7 @@ class TerminalView(context: Context) : View(context) {
             if(lines!=0) {
                 scrollMotion.reset()
                 if(screen?.applicationScroll==true && screen?.scroll?.below==0L && event.metaState and KeyEvent.META_SHIFT_ON==0)
-                    onWheel(lines,((event.x-insetHorizontal)/desiredCellWidth).toInt(),((event.y-insetTop)/desiredCellHeight).toInt(),desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())
+                    sendWheel(lines,((event.x-insetHorizontal)/desiredCellWidth).toInt(),((event.y-insetTop)/desiredCellHeight).toInt())
                 else onScroll(lines)
                 return true
             }
@@ -957,3 +1014,17 @@ class TerminalView(context: Context) : View(context) {
     }
 }
 private object KeyCharacterMapCompat { const val COMBINING_ACCENT: Int = Int.MIN_VALUE }
+
+private fun rowContentHash(cells: List<TerminalCell>): Int {
+    var hash=cells.size
+    for(cell in cells) {
+        hash=31*hash+cell.x
+        hash=31*hash+cell.width
+        hash=31*hash+cell.attributes
+        hash=31*hash+cell.foreground
+        hash=31*hash+cell.background
+        hash=31*hash+cell.text.hashCode()
+        hash=31*hash+(cell.hyperlink?.hashCode() ?: 0)
+    }
+    return hash
+}
