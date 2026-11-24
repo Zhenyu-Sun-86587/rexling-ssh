@@ -597,7 +597,7 @@ private val workingPhase by lazy {
                     val progress=paneProgress(w)
                     val indicatorColor=terminalProgressColor(progress)
                     val busy=paneWorking(w) || progress?.busy==true
-                    val breathe=animateWorking && if(progress!=null) progress.busy && progress.percent==null else active && busy
+                    val breathe=active && animateWorking && if(progress!=null) progress.busy && progress.percent==null else busy
                     val workPhase=rememberWorkingPhase(breathe)
                     val programs=panePrograms(w)
                     val pane=selectedPane(w)
@@ -612,7 +612,7 @@ private val workingPhase by lazy {
                     Column(Modifier.height(45.dp).width(width)
                         .drawWithContent {
                             drawContent()
-                            if(active || progress!=null) {
+                            if(active) {
                                 val end=5.dp.toPx()
                                 // A label makes the slot's invisible leading padding asymmetric.
                                 val start=end+if(showTitle) iconInset.toPx() else 0f

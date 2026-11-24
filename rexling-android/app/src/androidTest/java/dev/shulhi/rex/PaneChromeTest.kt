@@ -186,7 +186,11 @@ class PaneChromeTest {
     }
 
     @Test fun flushSideTabsKeepTheIconStackAndFooterActionsVisible() {
-        val windows=listOf(WindowItem("tab","PDF preview",listOf(BlockItem("a","shell"),BlockItem("b","shell"))))
+        val windows=listOf(
+            WindowItem("tab","PDF preview",listOf(BlockItem("a","shell"),BlockItem("b","shell"))),
+            WindowItem("other","Other work",listOf(BlockItem("c","shell"))),
+            WindowItem("progress","Reported progress",listOf(BlockItem("d","shell"))),
+        )
         val programs=listOf(ProgramIdentity.resolve(listOf("codex")),ProgramIdentity.resolve(listOf("fish")))
         val actions=mutableListOf<String>()
         val unread=mutableIntStateOf(0)
@@ -194,7 +198,8 @@ class PaneChromeTest {
             var style by remember {mutableStateOf(TabRailStyle.TITLES)}
             Row(Modifier.size(440.dp,380.dp).background(MaterialTheme.colorScheme.background).testTag("Side tabs fixture")) {
                 TerminalTabRail(windows,"tab",true,{actions+=it},{programs},{0},TabBarPosition.LEFT,style,
-                    paneWorking={true},tabAttention={unread.intValue},onStyle={style=it},animateWorking=false) {
+                    paneWorking={true},paneProgress={if(it.id=="progress") TerminalProgress("indeterminate",null) else null},
+                    tabAttention={if(it.id=="tab") unread.intValue else 0},onStyle={style=it},animateWorking=false) {
                     TerminalActions(true,true,{actions+="activity"},{actions+="switcher"},
                         keyboardLabel="Show keyboard",onKeyboard={actions+="keyboard"},vertical=style==TabRailStyle.ICONS)
                 }
@@ -215,6 +220,10 @@ class PaneChromeTest {
             val rowCenter=pixels.height/2
             assertNotEquals("The selected tab should have an inset marker",pixels[1,rowCenter],pixels[markerX,rowCenter])
             assertEquals("The outside edge should be clear of the marker",pixels[1,pixels.height-3],pixels[1,rowCenter])
+            for(title in listOf("Other work","Reported progress")) {
+                val inactive=ui.onNodeWithContentDescription("Tab $title,",substring=true).captureToImage().toPixelMap()
+                assertEquals("Only the active tab should have a marker",inactive[1,rowCenter],inactive[markerX,rowCenter])
+            }
             val dot=ui.onNodeWithTag("Tab unread dot tab",useUnmergedTree=true).assertIsDisplayed()
                 .assertWidthIsEqualTo(10.dp).fetchSemanticsNode().boundsInRoot
             val icon=ui.onNodeWithTag("Tab program icon tab",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot

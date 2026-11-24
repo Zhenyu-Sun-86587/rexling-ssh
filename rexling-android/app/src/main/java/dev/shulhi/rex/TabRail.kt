@@ -152,21 +152,20 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
                 val progress=paneProgress(w)
                 val busy=paneWorking(w) || progress?.busy==true
                 val indicator=terminalProgressColor(progress)
-                val breathe=animateWorking && if(progress!=null) progress.busy && progress.percent==null else active && busy
+                val breathe=active && animateWorking && if(progress!=null) progress.busy && progress.percent==null else busy
                 val workPhase=rememberWorkingPhase(breathe)
                 Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null)) {
                     Row(Modifier.fillMaxWidth().height(48.dp)
                         .background(if(active) scheme.surfaceVariant else Color.Transparent)
                         .drawWithContent {
                             drawContent()
-                            if(active || busy || progress!=null) {
+                            if(active) {
                                 val bar=Size(3.dp.toPx(),22.dp.toPx())
                                 val inset=5.dp.toPx()
                                 val x=if(layoutDirection==LayoutDirection.Ltr) inset else size.width-inset-bar.width
                                 val origin=Offset(x,(size.height-bar.height)/2)
                                 val brightness=if(breathe) workingBarBrightness(workPhase.value) else 1f
-                                val opacity=if(active || progress!=null) brightness else .45f*brightness
-                                drawTabMarker(indicator,origin,bar,progress?.percent,opacity,vertical=true)
+                                drawTabMarker(indicator,origin,bar,progress?.percent,brightness,vertical=true)
                             }
                         }
                         .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(progress?.let {", ${it.description}"} ?: if(busy) ", working" else "")}

@@ -30,12 +30,12 @@ class AdaptiveTabsTest {
     private val names=mutableStateOf(listOf("Investigate Rex protocol","Claude","fish","nvim","Five","Six","Seven","Eight"))
     private val stacked=mutableStateOf(false)
     private val programs=listOf("codex","claude","fish","nvim").map {ProgramIdentity.resolve(listOf(it))}
-    private fun show(dark: Boolean=false,programOrder: List<ProgramIdentity> = programs,working: Boolean=false) {
+    private fun show(dark: Boolean=false,programOrder: List<ProgramIdentity> = programs,working: Boolean=false,progress: TerminalProgress?=null) {
         ui.setContent {RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
             Box(Modifier.width(width.floatValue.dp).background(MaterialTheme.colorScheme.surface).testTag("Test dock")) {
                 TerminalTabs(List(count.intValue) {WindowItem(it.toString(),names.value[it],listOf(BlockItem("pane-$it","Terminal")))},selected.value,true,
                     onSelect={selected.value=it},panePrograms={tab->val i=tab.id.toInt();List(if(i==0 && stacked.value) 3 else 1) {offset->programOrder[(i+offset)%programOrder.size]}},selectedPane={0},
-                    paneWorking={working},actions={TerminalActions(true,true,{},{})})
+                    paneWorking={working},paneProgress={if(it.id=="0") progress else null},actions={TerminalActions(true,true,{},{})})
             }
         }}
     }
@@ -151,7 +151,7 @@ class AdaptiveTabsTest {
     }
     @Test fun theBottomWorkingMarkerIsInsetRoundedAndPulsesUniformly() {
         count.intValue=2
-        show(working=true)
+        show(working=true,progress=TerminalProgress("indeterminate",null))
         val leadingInset=with(ui.density) {12.dp.roundToPx()}
         val centerOffset=with(ui.density) {6.5.dp.roundToPx()}
         val topOffset=with(ui.density) {8.dp.roundToPx()}
@@ -167,6 +167,10 @@ class AdaptiveTabsTest {
         }
         val first=sample()
         ui.waitUntil(2500) {sample()!=first}
+        tab(1).performClick().assertIsSelected()
+        val inactive=tab(0).captureToImage().toPixelMap()
+        val y=inactive.height-centerOffset
+        assertEquals("The previous tab should lose its marker even with ongoing progress",inactive[0,y],inactive[inactive.width/2,y])
     }
     @Test fun theBottomTabBarDrawsAnEdgeToEdgeTopDivider() {
         show()
