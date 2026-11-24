@@ -98,9 +98,13 @@ import kotlinx.coroutines.launch
     var networkOpen by remember {mutableStateOf(false)}
     var busy by remember {mutableStateOf(false)}
     val scope=rememberCoroutineScope()
-    if(networkOpen) NetworkSheet(onClose={networkOpen=false})
+    val scroll=rememberScrollState()
+    if(networkOpen) {
+        NetworkSheet(onClose={networkOpen=false})
+        return
+    }
     AlertDialog(onDismissRequest={if(!busy) onClose()},title={Text(if(server==null) "Add server" else "Edit server",style=SettingsType.title)},text={
-        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.verticalScroll(scroll),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
                 ServerIconPicker(icon,compact=true) {icon=it}
                 OutlinedTextField(name,{name=it;error=null},Modifier.weight(1f),label={Text("Name")},singleLine=true,textStyle=SettingsType.body)

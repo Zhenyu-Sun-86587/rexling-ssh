@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.runBlocking
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import org.junit.Assert.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -80,11 +82,30 @@ class NetworkUiTest {
         }
     }
     @Test fun serverEditorOffersPerServerNetworkAndSetup() {
-        compose.setContent {MaterialTheme {ServerEditor(null,{}, {_,_,_->null})}}
+        var dark by mutableStateOf(false)
+        var editor by mutableStateOf(false)
+        compose.setContent {RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
+            EmptyServerContent {editor=true}
+            if(editor) ServerEditor(null,{editor=false}, {_,_,_->null})
+        }}
+        compose.onNodeWithText("Add server").performClick()
         compose.onNodeWithText("Connection network").assertDoesNotExist()
+        compose.onNodeWithText("Name").performTextInput("Shipyard")
         compose.onNodeWithText("Server URL").performTextInput("https://shipyard")
         compose.onNodeWithText("Phone network / VPN").performScrollTo().performClick()
         compose.onNodeWithText("Built-in Tailscale").performClick()
+        compose.onNodeWithText("Set up / sign in").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Control server (optional)").assertIsDisplayed()
+        compose.onNodeWithText("Save & connect").assertDoesNotExist()
+        for(isDark in listOf(false,true)) {
+            compose.runOnIdle {dark=isDark}
+            val sheet=compose.onNodeWithTag("Frosted overlay").captureToImage().toPixelMap()
+            val surface=rexColorScheme(isDark,ThemeCatalog.defaults[if(isDark) 0 else 1].ui).surface
+            assertEquals(surface,sheet[sheet.width/4,6])
+        }
+        compose.onNodeWithContentDescription("Close network settings").performClick()
+        compose.onNodeWithText("Shipyard").assertIsDisplayed()
+        compose.onNodeWithText("https://shipyard").assertIsDisplayed()
         compose.onNodeWithText("Set up / sign in").assertIsDisplayed()
         compose.onNodeWithText("Built-in Tailscale").performClick()
         compose.onNodeWithText("Phone network / VPN").performClick()

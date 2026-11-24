@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -63,7 +64,8 @@ import kotlinx.coroutines.withTimeoutOrNull
             finally {busy=false}
         }
     }
-    SettingsDrawer("Network","Close network settings",onClose,hazeState) {
+    val surface=if(hazeState==null) MaterialTheme.colorScheme.surface else Color.Transparent
+    SettingsDrawer("Network","Close network settings",onClose,hazeState,surfaceColor=surface) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             if(server!=null && server.endpoint.isNotBlank()) ServerNetworkStatusCard(server.label,NetworkSettings.route(server.endpoint),serverConnected)
             Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
