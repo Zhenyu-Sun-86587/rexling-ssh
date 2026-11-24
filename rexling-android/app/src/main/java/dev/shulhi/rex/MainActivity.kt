@@ -40,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -270,6 +272,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val bottomOverlayInset=if(keyboardShown) 0.dp else singlePaneNavigationClearance
     val floatingOverlay=if(allowFloatingOverlay && tiles!=null) window?.visibleFloatingPlacements().orEmpty()
         else emptyList()
+    val floatingMotion=remember(client,displayedSession,window?.id) {FloatingPaneMotion()}
+    LaunchedEffect(floatingMotion,floatingMotion.restoring) {
+        val id=floatingMotion.restoring ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(3000)
+        if(floatingMotion.restoring==id) floatingMotion.restoring=null
+    }
     var dockFloatingPane by remember(displayedSession,window?.id) {mutableStateOf<String?>(null)}
     val controlled=state.controlled && ready && client.hasScreen
     val paneObscured=menu || model.activityVisible || picker.isNotEmpty() || preferencesOpen || networkSettings || sshKeysSettings || servers || addServer || forwards || newSession || appearance || about || neovimSettings || toolbarSettings || controlSettings || alerts || fontPicker || closeTarget!=null || dockFloatingPane!=null
@@ -296,10 +304,14 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     fun openPane(id: String) {
         client.selectBlock(id,null,keepTiled=tiles!=null,restoreMinimized=true)
     }
+    fun restoreFloating(id: String) {
+        if(window?.layout?.any {it.id==id && it.floating && (it.minimized || tiles==null)}==true) floatingMotion.restoring=id
+        openPane(id)
+    }
     fun minimizeFloating(id: String) {
         val tab=window ?: return
         val pane=tab.layout.firstOrNull {it.id==id && it.floating && !it.minimized} ?: return
-        client.minimizeFloating(displayedSession,tab.id,pane)
+        if(client.minimizeFloating(displayedSession,tab.id,pane)) floatingMotion.capture(id)
     }
     LaunchedEffect(model.minimizeFloatingPanes) {
         if(model.minimizeFloatingPanes && activeFloating!=null && tiles==null)
@@ -422,6 +434,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                         val rightCorner=LocalLayoutDirection.current==LayoutDirection.Ltr
                         Box(Modifier.weight(1f).fillMaxHeight()
                             .windowInsetsPadding(WindowInsets(bottom=tiledNavigationClearance))
+                            .onPlaced {floatingMotion.workspaceOrigin=it.positionInWindow()}
                             .then(if(singlePane==null) Modifier else Modifier.onGloballyPositioned {paneCoordinates[0]=it}
                                 .semantics {
                                     if(!showSinglePaneActions) customActions=listOf(CustomAccessibilityAction("Show pane actions") {
@@ -466,6 +479,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             floatingPanes=floatingOverlay,allowFloat=allowFloatingOverlay && tiles.size>1,
                             onMinimizeFloating=::minimizeFloating,onDockFloating={dockFloatingPane=it},
                             onClosePane={id->blocks.firstOrNull {it.id==id}?.let {closeTarget=closePaneTarget(it)}},
+                            floatingMotion=floatingMotion,
                         )
                         else LiveTerminal(client,carouselBlocks,chosen,liveBlock,state.programs,controlled,fontSize.toFloat(),
                             client::type,client::scroll,client::wheel,client::takeControl,client::scrollToBottom,client::resize,::openPane,{picker="panes"},onView,
@@ -474,7 +488,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
                             squareCorners=squarePaneCorners,extendsUnderNavigation=extendUnderNav,
-                            navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
+                            navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset,floatingMotion=floatingMotion)
                         if(showSinglePaneActions && window!=null && singlePane!=null) {
                             val placement=window.layout.firstOrNull {it.id==singlePane.id}
                             val tiledCount=window.layout.count {!it.floating}
@@ -502,8 +516,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                                 onChoose={item,target->client.neovimShortcut(item,target)},onCustomize={neovimSettings=true},layout=model.neovimShortcutLayout,effect=model.neovimShortcutEffect,hapticsEnabled=model.neovimShortcutHaptics,hazeState=terminalHaze,onExpandedChange={wheelBackdrop=it},
                                 modifier=Modifier.fillMaxSize(),position=model.neovimShortcutPosition,onPosition=model::moveNeovimShortcut,bottomInset=bottomOverlayInset+(if(floating.isNotEmpty() || carouselBlocks.size>1) 64.dp else 10.dp))
                         }
+                        val minimizingId=floatingMotion.minimizing?.id
+                        MinimizingFloatingPane(floatingMotion,window?.layout?.any {it.id==minimizingId && it.minimized}==true)
                         if(floating.isNotEmpty()) FloatingPaneDock(floating,activeFloating?.id,state.programs,state.titles,ready,
-                            ::openPane,{activeFloating?.let {minimizeFloating(it.id)}},Modifier.align(Alignment.BottomEnd).padding(end=6.dp,bottom=bottomOverlayInset),directories=state.directories,hazeState=terminalHaze,onExpandedChange={floatingBackdrop=it})
+                            ::restoreFloating,{activeFloating?.let {minimizeFloating(it.id)}},Modifier.matchParentSize().padding(bottom=bottomOverlayInset),
+                            directories=state.directories,hazeState=terminalHaze,onExpandedChange={floatingBackdrop=it},onDockBounds={floatingMotion.dockBounds=it},
+                            position=model.floatingDockPosition,onMove=model::moveFloatingDock,unread=activityBadges.panes,topOcclusion=currentHeaderOverlap)
                         }
                         if(tabLayout.position==TabBarPosition.RIGHT) tabRail()
                     } else Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center) {
@@ -774,12 +792,12 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: (Boolean)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
     floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
-    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0}) {
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0},floatingMotion: FloatingPaneMotion?=null) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,{client.paneFrames[it]},programs,controlled,fontSize,
         onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
-        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset,headerHeightSaved=headerHeightSaved,headerOverlap=headerOverlap)
+        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset,headerHeightSaved=headerHeightSaved,headerOverlap=headerOverlap,floatingMotion=floatingMotion)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,hazeState: HazeState?=null,onClose: ()->Unit) {

@@ -680,6 +680,8 @@ private val workingPhase by lazy {
     }
 }
 
+internal val activityButtonDiameter=41.dp
+
 @Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,
     onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0,keyboardLabel: String="",onKeyboard: (()->Unit)?=null,vertical: Boolean=false) {
     // Stacked at the foot of a side tab rail, in a row beside the bottom tab bar.
@@ -690,7 +692,7 @@ private val workingPhase by lazy {
         // Stands in for the key toolbar's keyboard button while the toolbar is hidden.
         if(onKeyboard!=null) ChromeButton(ChromeIcon.KEYBOARD,keyboardLabel,enabled,onClick=onKeyboard)
         ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)
-        Box(Modifier.size(41.dp),contentAlignment=Alignment.Center) {
+        Box(Modifier.size(activityButtonDiameter),contentAlignment=Alignment.Center) {
             Box(Modifier.matchParentSize().clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
             Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled=activityEnabled,role=Role.Button,onClick=onActivity)
                 .semantics {contentDescription="Activity";stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},contentAlignment=Alignment.Center) {

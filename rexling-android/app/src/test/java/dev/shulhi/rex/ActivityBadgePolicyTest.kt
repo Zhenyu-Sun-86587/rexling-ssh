@@ -21,8 +21,10 @@ class ActivityBadgePolicyTest {
         val visibleOnly=ActivityBadgePolicy.route(listOf(source(listOf(completion))),server,"s",windows,setOf("a1"))
         assertEquals(ActivityBadges(),visibleOnly)
         val items=listOf(source(listOf(completion,hidden,otherTab)))
-        assertEquals(ActivityBadges(mapOf("a" to 1,"b" to 1)),ActivityBadgePolicy.route(items,server,"s",windows,setOf("a1")))
-        assertEquals(ActivityBadges(mapOf("b" to 1)),ActivityBadgePolicy.route(items,server,"s",windows,setOf("a1","a2")))
+        assertEquals(ActivityBadges(mapOf("a" to 1,"b" to 1),panes=mapOf("a2" to 1,"b1" to 1)),
+            ActivityBadgePolicy.route(items,server,"s",windows,setOf("a1")))
+        assertEquals(ActivityBadges(mapOf("b" to 1),panes=mapOf("b1" to 1)),
+            ActivityBadgePolicy.route(items,server,"s",windows,setOf("a1","a2")))
     }
     @Test fun otherSessionsAndOtherServersStayOnTheEyeEvenWhenIdsMatch() {
         val remote=server.copy(id="remote",endpoint="https://remote.example")

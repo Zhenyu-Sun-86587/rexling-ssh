@@ -39,7 +39,7 @@ import dev.chrisbanes.haze.hazeSource
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: (Boolean)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
     onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""},onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imageTarget: ()->String=mouseTarget,bottomControlsInset: androidx.compose.ui.unit.Dp=0.dp,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,imeEnterSubmits: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
-    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0}) {
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0},floatingMotion: FloatingPaneMotion?=null) {
     val switchLayout=remember(paneLayout,blocks) {paneLayout.filter {p->blocks.any {it.id==p.id}}.sortedBy {it.layer}}
     val hasMinimap=blocks.all {b->switchLayout.any {it.id==b.id}}
     val localHaze=remember {HazeState()}
@@ -117,13 +117,15 @@ import dev.chrisbanes.haze.hazeSource
             val preferredFrame=if(retiring) retained!!.frame else liveScreen.takeIf {block.id==liveBlock}
             val pageOffset=offset*stride
             key(block.id) {
-                DisposableEffect(block.id) {onDispose {imeHandoff.remove(block.id)}}
+                DisposableEffect(block.id,floatingMotion) {onDispose {imeHandoff.remove(block.id);floatingMotion?.forget(block.id)}}
+                val trackFloating=center && paneLayout.any {it.id==block.id && it.floating}
                 var keyboardFocus by remember {mutableStateOf<TerminalKeyboardFocus?>(null)}
                 Box(Modifier.width(cardWidth).fillMaxHeight().graphicsLayer {
                     val position=pageOffset+drag
                     translationX=kotlin.math.round(leftPx+position)
                     alpha=if(retiring) 0f else 1f
-                }.clip(if(squareCorners) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(21.dp)).background(Color(palette.background))
+                }.then(if(trackFloating) Modifier.floatingPaneViewport(block.id,floatingMotion) else Modifier)
+                    .clip(if(squareCorners) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(21.dp)).background(Color(palette.background))
                     .paneScrim(backdrop) {(abs(pageOffset+drag)/stride).coerceIn(0f,1f)*.48f}
                     .then(if(center || retiring) Modifier else Modifier.clickable(role=Role.Button){latestSelect(block.id)})) {
                     CarouselPageFrame(block.id,preferredFrame,previewFrame,imeHandoff) {frame->
@@ -133,6 +135,7 @@ import dev.chrisbanes.haze.hazeSource
                                     extendsUnderNavigation,headerHeightSaved,headerOverlap) {keyboardFocus}.clipToBounds(),
                                 update={view ->
                                     view.keepAwakeMode=if(center) keepAwake else KeepScreenAwake.SYSTEM
+                                    if(trackFloating) floatingMotion?.trackView(block.id,view)
                                     imeHandoff.mount(block,view)
                                     view.onInputConnectionReady={if(center) imeHandoff.served(block.id,view)}
                                     view.onKeyboardFocus={keyboardFocus=it}
@@ -182,7 +185,7 @@ import dev.chrisbanes.haze.hazeSource
         }
         }
         if(blocks.size>1) {
-            Box(Modifier.align(Alignment.BottomCenter).padding(bottom=bottomOverlayInset).fillMaxWidth().height(28.dp)
+            Box(Modifier.align(Alignment.BottomCenter).padding(bottom=bottomOverlayInset).fillMaxWidth().height(paneIndicatorStripHeight)
                 .clickable(role=Role.Button,onClick=onPanes)
                 .semantics {contentDescription="Pane position indicator";stateDescription="Pane ${candidate+1} of ${blocks.size}"},contentAlignment=Alignment.Center) {
                 PanePositionIndicator(index,blocks.size,offset={-drag/stride})

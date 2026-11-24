@@ -121,9 +121,10 @@ private fun uploadTextTransition() =
 
 /** Shared compact blue surface used by upload and forwarding notices. */
 @Composable internal fun TransferNoticeSurface(modifier: Modifier,hazeState: dev.chrisbanes.haze.HazeState?,
-    container: Color=Color(0xffe5edff),ink: Color=Color(0xff202a3c),title: String,
+    container: Color=Color(0xffe5edff),ink: Color=Color(0xff202a3c),title: String?,
     content: @Composable ()->Unit) {
     val localHaze=remember {dev.chrisbanes.haze.HazeState()}
-    Surface(modifier.widthIn(max=280.dp).paneFrost(hazeState ?: localHaze,RoundedCornerShape(20.dp),edge=false,tint=container).semantics {paneTitle=title},
+    Surface(modifier.widthIn(max=280.dp).paneFrost(hazeState ?: localHaze,RoundedCornerShape(20.dp),edge=false,tint=container)
+        .then(if(title!=null) Modifier.semantics {paneTitle=title} else Modifier),
         shape=RoundedCornerShape(20.dp),color=Color.Transparent,contentColor=ink,content=content)
 }

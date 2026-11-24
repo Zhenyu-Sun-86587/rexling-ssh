@@ -105,6 +105,7 @@ internal fun MultiPaneLayout(
     onDrop: (String,String,PaneDropPosition)->Unit = {source,target,position->
         client.dropPane(session,window,source,target,position,placements.map {it.id})
     },
+    floatingMotion: FloatingPaneMotion?=null,
 ) {
     val palette=LocalTerminalPalette.current
     val scheme=MaterialTheme.colorScheme
@@ -211,12 +212,13 @@ internal fun MultiPaneLayout(
         }
         if(zoomedFloat==null) for((layer,panes) in floatingLayers) key(layer) {
             val bounds=if(layer==selectedFloat?.layer) layerBounds else panes.first().layerBounds
-            if(bounds!=null) Box(Modifier.offset(maxWidth*bounds.x,visibleHeight*bounds.y)
+            val restoringSinglePane=floatingMotion?.restoring?.let {it==panes.singleOrNull()?.id}==true
+            if(bounds!=null && !restoringSinglePane) Box(Modifier.offset(maxWidth*bounds.x,visibleHeight*bounds.y)
                 .size(maxWidth*bounds.width,visibleHeight*bounds.height).zIndex(layerZ(layer))
                 .shadow(16.dp,shape,clip=false).background(scheme.background,shape))
         }
         for(pane in mountedPanes) key(pane.id) {
-            DisposableEffect(pane.id) {onDispose {imeHandoff.remove(pane.id)}}
+            DisposableEffect(pane.id,floatingMotion) {onDispose {imeHandoff.remove(pane.id);floatingMotion?.forget(pane.id)}}
             val retiring=outgoingEditor?.pane?.id==pane.id
             val floating=pane.floating
             val inset=if(floating && floatingLayers[pane.layer]?.size==1) 0.dp else paneInset
@@ -230,8 +232,9 @@ internal fun MultiPaneLayout(
             val moveSource=move?.source==pane.id
             val trim=inset*2
             Box(Modifier.offset(x+inset,y+inset).size((width-inset*2).coerceAtLeast(0.dp),(height-trim).coerceAtLeast(0.dp))
+                .then(if(floating && !retiring) Modifier.floatingPaneViewport(pane.id,floatingMotion) else Modifier)
                 .then(if(retiring) Modifier.alpha(0f) else if(floating) Modifier.zIndex(layerZ(pane.layer)+1f)
-                    .then(if(pane.layerBounds==null && zoomedFloat==null) Modifier.shadow(16.dp,shape,clip=false) else Modifier)
+                    .then(if((pane.layerBounds==null || floatingMotion?.restoring==pane.id) && zoomedFloat==null) Modifier.shadow(16.dp,shape,clip=false) else Modifier)
                     .testTag("Floating terminal pane") else Modifier)
                 .onGloballyPositioned {if(!retiring) paneCoordinates[pane.id]=it}
                 .clip(shape).background(Color(palette.background))
@@ -281,6 +284,7 @@ internal fun MultiPaneLayout(
                             (height-trim).coerceAtLeast(0.dp).roundToPx()
                     },topOcclusion={headerOverlap()-(paneInset+y+inset+1.5.dp).roundToPx()}) {keyboardFocus.takeIf {live}},
                     update={view->
+                        if(floating && !retiring) floatingMotion?.trackView(pane.id,view)
                         imeHandoff.mount(pane,view)
                         view.onInputConnectionReady={if(live) imeHandoff.served(pane.id,view)}
                         view.importantForAccessibility=if(retiring) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
