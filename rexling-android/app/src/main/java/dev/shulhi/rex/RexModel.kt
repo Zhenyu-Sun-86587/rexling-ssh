@@ -121,6 +121,12 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var keepScreenAwake by mutableStateOf(runCatching {KeepScreenAwake.valueOf(preferences.getString("keep_screen_awake","SYSTEM")!!)}.getOrDefault(KeepScreenAwake.SYSTEM))
         private set
     internal fun changeKeepScreenAwake(value: KeepScreenAwake) {keepScreenAwake=value;preferences.edit {putString("keep_screen_awake",value.name)}}
+    internal var immersiveStatusBar by mutableStateOf(preferences.getBoolean("immersive_status_bar",false))
+        private set
+    internal fun changeImmersiveStatusBar(value: Boolean) {
+        immersiveStatusBar=value
+        preferences.edit {putBoolean("immersive_status_bar",value)}
+    }
     var fontSize by mutableIntStateOf(preferences.getInt("font_size",10).coerceIn(8,20))
         private set
     internal fun theme(dark: Boolean): AppTheme {
@@ -178,6 +184,17 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var toolbarWithKeyboardOnly by mutableStateOf(preferences.getBoolean("keyboard_toolbar_auto_hide",false))
         private set
     internal fun changeToolbarWithKeyboardOnly(value: Boolean) {toolbarWithKeyboardOnly=value;preferences.edit {putBoolean("keyboard_toolbar_auto_hide",value)}}
+    internal var toolbarSystemColors by mutableStateOf(preferences.getBoolean("keyboard_toolbar_system_colors",false))
+        private set
+    internal fun changeToolbarSystemColors(value: Boolean) {toolbarSystemColors=value;preferences.edit {putBoolean("keyboard_toolbar_system_colors",value)}}
+    internal var compactHeaderMode by mutableStateOf(
+        preferences.getString("compact_header_mode",null)?.let {saved->CompactHeaderMode.entries.firstOrNull {it.name==saved}}
+            ?: if(preferences.getBoolean("compact_header_with_keyboard",false)) CompactHeaderMode.WITH_KEYBOARD else CompactHeaderMode.NEVER)
+        private set
+    internal fun changeCompactHeaderMode(value: CompactHeaderMode) {
+        compactHeaderMode=value
+        preferences.edit {putString("compact_header_mode",value.name)}
+    }
     internal var enterSubmits by mutableStateOf(preferences.getBoolean("keyboard_enter_submits",false))
         private set
     internal fun changeEnterSubmits(value: Boolean) {enterSubmits=value;preferences.edit {putBoolean("keyboard_enter_submits",value)}}

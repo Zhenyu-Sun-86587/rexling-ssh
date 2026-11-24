@@ -26,7 +26,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+
+internal fun programStackPaintedWidth(count: Int,framed: Boolean=false): Dp {
+    val backTiles=count.coerceIn(1,3)-1
+    return if(backTiles==0) {
+        if(framed) 34.dp else 22.dp
+    } else {
+        (if(framed) 32.dp else 21.dp)+(if(framed) 6.dp else 4.dp)*backTiles
+    }
+}
 
 @Composable internal fun ProgramStack(programs: List<ProgramIdentity>, selected: Int, framed: Boolean=false, fixedSlot: Boolean=false,floatingShadow: Boolean=false,highlighted: Boolean=false) {
     val floatingShape=RoundedCornerShape(5.dp)
@@ -39,7 +49,7 @@ import androidx.compose.ui.unit.dp
     val frontY=if(framed) 4.dp else 3.5.dp
     val step=if(framed) 6.dp else 4.dp
     val slotWidth=(if(framed) 40.dp else 28.dp)+step*if(fixedSlot) 2 else others.size
-    val paintedWidth=if(others.isEmpty()) {if(framed) 34.dp else 22.dp} else (if(framed) 32.dp else 21.dp)+step*others.size
+    val paintedWidth=programStackPaintedWidth(items.size,framed)
     val start=if(fixedSlot) (slotWidth-paintedWidth)/2 else 0.dp
     Box(Modifier.size(slotWidth,if(framed) 35.dp else 25.dp)
         .clearAndSetSemantics {contentDescription=active.label+(if(items.size>1) ", ${items.size} panes" else "")}) {

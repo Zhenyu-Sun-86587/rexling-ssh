@@ -61,7 +61,7 @@ import dev.chrisbanes.haze.HazeState
             error=onDone(it);if(error==null) keyboard?.hide()
         }.onFailure {error=it.message}
     }
-    SettingsDrawer(if(item==null) "Add Neovim shortcut" else "Edit Neovim shortcut","Cancel Neovim shortcut editing",{keyboard?.hide();onCancel()},hazeState,swipeToDismiss=false) {
+    SettingsDrawer(if(item==null) "Add Neovim shortcut" else "Edit Neovim shortcut","Cancel Neovim shortcut editing",{keyboard?.hide();onCancel()},hazeState,fixed=true) {
         Column(Modifier.fillMaxWidth().heightIn(max=600.dp).verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 FilterChip(commandMode,{commandMode=true;error=null},label={Text("Command",style=SettingsType.row)})

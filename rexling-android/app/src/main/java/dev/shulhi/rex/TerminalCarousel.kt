@@ -39,7 +39,7 @@ import dev.chrisbanes.haze.hazeSource
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: (Boolean)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,onSelect: (String)->Unit,onPanes: ()->Unit,
     onView: (TerminalView)->Unit,modifier: Modifier=Modifier,bindLiveView: ((String,TerminalView)->Boolean)?=null,
     onMouseClick: (Int,Int,Int,Int)->Unit={_,_,_,_->},mouseTarget: ()->String={""},onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imageTarget: ()->String=mouseTarget,bottomControlsInset: androidx.compose.ui.unit.Dp=0.dp,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,imeEnterSubmits: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
-    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0}) {
     val switchLayout=remember(paneLayout,blocks) {paneLayout.filter {p->blocks.any {it.id==p.id}}.sortedBy {it.layer}}
     val hasMinimap=blocks.all {b->switchLayout.any {it.id==b.id}}
     val localHaze=remember {HazeState()}
@@ -129,7 +129,8 @@ import dev.chrisbanes.haze.hazeSource
                     CarouselPageFrame(block.id,preferredFrame,previewFrame,imeHandoff) {frame->
                         Box(Modifier.fillMaxSize()) {
                             if(frame!=null) AndroidView(
-                                factory={TerminalView(it)},modifier=Modifier.fillMaxSize().terminalImeViewport(imeInsets,navigationInsets,keyboardChrome,extendsUnderNavigation) {keyboardFocus}.clipToBounds(),
+                                factory={TerminalView(it)},modifier=Modifier.fillMaxSize().terminalImeViewport(imeInsets,navigationInsets,keyboardChrome,
+                                    extendsUnderNavigation,headerHeightSaved,headerOverlap) {keyboardFocus}.clipToBounds(),
                                 update={view ->
                                     view.keepAwakeMode=if(center) keepAwake else KeepScreenAwake.SYSTEM
                                     imeHandoff.mount(block,view)

@@ -37,8 +37,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
@@ -59,10 +60,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         setContent {
             val dark=when(model.appearance) {Appearance.SYSTEM->isSystemInDarkTheme();Appearance.DARK->true;Appearance.LIGHT->false}
+            val immersive=model.immersiveStatusBar
+            LaunchedEffect(immersive) {window.applyImmersiveStatusBar(immersive)}
             SideEffect {WindowCompat.getInsetsController(window,window.decorView).apply {
                 isAppearanceLightStatusBars=!dark;isAppearanceLightNavigationBars=!dark
             }}
-            RexTheme(dark,model.theme(dark)) {RexApp(model)}
+            CompositionLocalProvider(LocalImmersiveStatusBar provides immersive) {
+                RexTheme(dark,model.theme(dark)) {RexApp(model)}
+            }
         }
     }
     private fun consumeAlert(intent: Intent?) {
@@ -121,6 +126,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val keyTarget=client.keyTarget()
     val terminalHaze=remember {HazeState()}
     val workspaceHaze=remember {HazeState()}
+    val headerHaze=remember {HazeState()}
     var readyBackdrop by remember {mutableStateOf(false)}
     var floatingBackdrop by remember {mutableStateOf(false)}
     var wheelBackdrop by remember {mutableStateOf(false)}
@@ -207,6 +213,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val hasHinge=remember(context) {context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)}
     val allowFloatingOverlay=unfoldedFullScreen && hasHinge
     val tabLayout=model.tabLayout(tabWidth.first)
+    // A foldable's cover screen can fall in the medium tab width class.
+    val squarePaneCorners=tabLayout.side || tabWidth.first==TabWidthClass.NARROW || (hasHinge && !unfoldedFullScreen)
     // From the setting, not the keyboard, so the layout keeps one mode while the keyboard animates.
     val extendUnderNav=panelShown && tabLayout.side && model.toolbarWithKeyboardOnly
     // Keep text and controls clear of the navigation area when the workspace extends under it.
@@ -222,22 +230,28 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     // measurement and read by the terminal's, so it is a plain holder rather than snapshot state.
     val toolbarHeight=remember(keyboardDensity) {intArrayOf(with(keyboardDensity) {1.dp.roundToPx()+45.dp.roundToPx()})}
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
+    val compactHeaderMode=model.compactHeaderMode
+    val keyboardHeader=compactHeaderMode!=CompactHeaderMode.NEVER && blocks.isNotEmpty()
+    val captureHeaderBackdrop=keyboardHeader && keyboardVisible
+    // The header is measured before the weighted workspace in the same layout pass.
+    val headerHeightSaved=remember {intArrayOf(0)}
+    val headerOverlap=remember {intArrayOf(0)}
+    val currentHeaderSavings: ()->Int={if(keyboardHeader) headerHeightSaved[0] else 0}
+    val currentHeaderOverlap: ()->Int={if(keyboardHeader) headerOverlap[0] else 0}
     val requested=window?.layout?.firstOrNull {it.id==displayedBlock}
     val visibleBlocks=window?.visiblePanes() ?: blocks
     val chosen=displayedBlock.takeUnless {it.isBlank() || requested?.minimized==true}
         ?: visibleBlocks.firstOrNull {it.id==state.selectedBlock}?.id.orEmpty().ifBlank {visibleBlocks.firstOrNull()?.id.orEmpty()}
     val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen,allowFloatingOverlay) else null
+    val alignHeaderToRail=tabLayout.position==TabBarPosition.LEFT && blocks.isNotEmpty()
+    val headerIconSlot=if(alignHeaderToRail) tabRailWidth(TabRailStyle.ICONS) else HeaderIconSlotWidth
     val showAllFloating=model.minimizeFloatingPanes || (allowFloatingOverlay && tiles!=null)
     val floating=window?.floatingPanes(minimizedOnly=!showAllFloating).orEmpty()
     val carouselBlocks=window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
     val activeFloating=window?.layout?.firstOrNull {it.id==chosen && it.floating && !it.minimized}
         ?.takeIf {pane->floating.any {it.id==pane.id}}
     val flushSinglePane=tabLayout.side && tiles==null
-    val terminalBottomMargin=when {
-        flushSinglePane -> 0.dp
-        extendUnderNav -> navigationClearance
-        else -> 3.dp
-    }
+    val tiledNavigationClearance=if(tiles!=null) navigationClearance else 0.dp
     val singlePaneNavigationClearance=if(flushSinglePane) navigationClearance else 0.dp
     val bottomOverlayInset=if(keyboardShown) 0.dp else singlePaneNavigationClearance
     val floatingOverlay=if(allowFloatingOverlay && tiles!=null) window?.visibleFloatingPlacements().orEmpty()
@@ -322,19 +336,31 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         client.setMirrorObscured(true)
         onDispose {client.setMirrorObscured(false)}
     }
+    val topCutout=if(model.immersiveStatusBar) workspaceTopCutout() else null
+    val safety=WindowInsets.safeDrawing
+    val immersiveTop=immersiveTopInsets()
+    val workspaceInsets=if(model.immersiveStatusBar &&
+        (topCutout!=null || WindowInsets.displayCutout.getTop(keyboardDensity)<=immersiveTop.getTop(keyboardDensity))) {
+        safety.only(WindowInsetsSides.Horizontal).union(immersiveTop)
+    } else safety.only(WindowInsetsSides.Top+WindowInsetsSides.Horizontal)
     Surface(Modifier.fillMaxSize().then(if(workspaceBackdrop) Modifier.hazeSource(workspaceHaze) else Modifier),color=MaterialTheme.colorScheme.background) {
         // The bottom navigation inset (the gesture handle) is left to the lowest element, so it can
         // extend its background to the screen edge. imePadding consumes the keyboard first, so
         // that element's navigation padding shrinks to nothing as the keyboard opens.
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top+WindowInsetsSides.Horizontal)).imePadding()
+        Column(Modifier.fillMaxSize().windowInsetsPadding(workspaceInsets).imePadding()
             .then(if(panelShown) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))) {
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
-                blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
+                blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
                 serverIcons=model.sessionTargets.associate {it.key to it.server.icon}+(currentSessionKey to model.activeServer.icon),
-                working=chosen in state.workingBlocks,title=paneTitle,menu={
+                working=chosen in state.workingBlocks,title=paneTitle,directory=state.directories[chosen].orEmpty(),collapseForIme=keyboardInsets.takeIf {keyboardHeader},
+                alwaysCompact=compactHeaderMode==CompactHeaderMode.ALWAYS,
+                onHeaderHeightSaved={headerHeightSaved[0]=it},headerHaze=headerHaze.takeIf {captureHeaderBackdrop},onHeaderOverlap={headerOverlap[0]=it},
+                iconSlotWidth=headerIconSlot,topCutout=topCutout,modifier=Modifier.zIndex(1f),menu={
                     ChromeButton(ChromeIcon.MORE,"Terminal menu") {menu=true}
                 })
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.weight(1f).fillMaxWidth()
+                .then(if(keyboardHeader) Modifier.underWorkspaceHeader(currentHeaderOverlap) else Modifier)
+                .then(if(captureHeaderBackdrop) Modifier.hazeSource(headerHaze) else Modifier)) {
                 Column(Modifier.fillMaxSize()) {
                     if(model.servers.isEmpty() || (!connectionRequested && state.phase=="disconnected" && !client.hasScreen)) {
                         Surface(Modifier.padding(12.dp),shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
@@ -371,12 +397,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!workspaceBackdrop,
-                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
-                            island=tiles!=null,islandBottom=terminalBottomMargin+(if(extendUnderNav) 0.dp else 8.dp)) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
-                        Box(Modifier.weight(1f).fillMaxHeight().padding(bottom=terminalBottomMargin)) {
+                        Box(Modifier.weight(1f).fillMaxHeight()
+                            .windowInsetsPadding(WindowInsets(bottom=tiledNavigationClearance))) {
                         val onView: (TerminalView)->Unit={view->
                             terminalView=view
                             view.onOpenLink={url->
@@ -398,8 +424,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             fontSize.toFloat(),onFocus={id,grid->client.selectBlock(id,grid,keepTiled=true)},
                             onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
+                            headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
-                            bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,sideRail=tabLayout.position,
+                            bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,navigationClearance=tiledNavigationClearance,
                             splits=window.splits,zoomed=window.zoomed,paneActionsEnabled=ready,
                             floatingPanes=floatingOverlay,allowFloat=allowFloatingOverlay && tiles.size>1,
                             onMinimizeFloating=::minimizeFloating,onDockFloating={dockFloatingPane=it},
@@ -410,7 +437,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,
                             hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
-                            squareCorners=tabLayout.side,extendsUnderNavigation=extendUnderNav,
+                            headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
+                            squareCorners=squarePaneCorners,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
                         ConnectionNotice(connectionPhase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp),hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
@@ -498,6 +526,9 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
         enterSubmits=model.enterSubmits,onEnterSubmits=model::changeEnterSubmits,
         toolbarWithKeyboardOnly=model.toolbarWithKeyboardOnly,onToolbarWithKeyboardOnly=model::changeToolbarWithKeyboardOnly,
+        toolbarSystemColors=model.toolbarSystemColors,onToolbarSystemColors=model::changeToolbarSystemColors,
+        compactHeaderMode=model.compactHeaderMode,onCompactHeaderMode=model::changeCompactHeaderMode,
+        immersiveStatusBar=model.immersiveStatusBar,onImmersiveStatusBar=model::changeImmersiveStatusBar,
         tabLayouts=model.tabLayouts,tabWidth=tabWidth,onTabLayout=model::changeTabLayout,
         multiPaneUnfolded=model.multiPaneUnfolded,onMultiPaneUnfolded=model::changeMultiPaneUnfolded,
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
@@ -582,9 +613,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     controlled: Boolean,ready: Boolean,keyboardVisible: Boolean,keyTarget: String,toolbarHeight: IntArray,
     onCloseTab: (WindowItem)->Unit,onPaste: ()->Boolean,onKeyboard: ()->Unit,actions: @Composable ()->Unit,
 ) {
-    // Square beside a side tab rail; the bottom tab bar keeps its rounded top.
-    val shape=if(sideTabs) androidx.compose.ui.graphics.RectangleShape else RoundedCornerShape(topStart=24.dp,topEnd=24.dp)
-    Column(Modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surface)
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
         .then(if(extendUnderNav) Modifier else Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)))) {
         if(!sideTabs) TerminalTabs(windows,activeWindowId,state.connected && !state.creating && !changingSession,client::selectWindow,
             panePrograms=client::tabPrograms,selectedPane=client::tabPaneIndex,
@@ -600,15 +629,32 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             },actions=actions)
         Box(Modifier.fillMaxWidth().then(if(model.toolbarWithKeyboardOnly)
             Modifier.keyboardRevealed(WindowInsets.ime,WindowInsets.navigationBars) {toolbarHeight[0]=it} else Modifier)) {
-            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
-                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,
-                {client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut={client.controlShortcut(it,keyTarget)},
-                inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,onPaste={onPaste()},
-                onPrompt=if(client.hasSemanticPrompts && !changingSession) client::scrollPrompt else null,
-                toolbarKeys=model.toolbarKeys,controlItems=model.controlItems,onKeyboard=onKeyboard)
+            KeyboardToolbarTheme(model.toolbarSystemColors,keyboardVisible) {
+                KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
+                    client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,
+                    {client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut={client.controlShortcut(it,keyTarget)},
+                    inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,onPaste={onPaste()},
+                    onPrompt=if(client.hasSemanticPrompts && !changingSession) client::scrollPrompt else null,
+                    toolbarKeys=model.toolbarKeys,controlItems=model.controlItems,showTopDivider=sideTabs,onKeyboard=onKeyboard)
+            }
         }
     }
 }
+
+@Composable internal fun KeyboardToolbarTheme(enabled: Boolean,keyboardVisible: Boolean,content: @Composable ()->Unit) {
+    val systemColors=if(enabled && keyboardVisible && Build.VERSION.SDK_INT>=Build.VERSION_CODES.S) {
+        val context=LocalContext.current
+        val configuration=LocalConfiguration.current
+        val dark=isSystemInDarkTheme()
+        remember(context,configuration,dark) {
+            if(dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+    } else null
+    MaterialTheme(colorScheme=systemColors ?: MaterialTheme.colorScheme) {
+        Box(systemColors?.let {Modifier.background(it.surfaceContainer)} ?: Modifier) {content()}
+    }
+}
+
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
 /** Sessions grouped by server, with search, New session, rename and close. A page of [TabPaneSwitcher]. */
@@ -674,12 +720,12 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: (Boolean)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
     floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
-    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0}) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,{client.paneFrames[it]},programs,controlled,fontSize,
         onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
-        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset)
+        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset,headerHeightSaved=headerHeightSaved,headerOverlap=headerOverlap)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,hazeState: HazeState?=null,onClose: ()->Unit) {

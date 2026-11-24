@@ -24,8 +24,6 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
-import kotlin.math.PI
-import kotlin.math.cos
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -40,16 +38,15 @@ import androidx.compose.ui.unit.dp
     }
     val scheme=MaterialTheme.colorScheme
     val drawerSurface=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,
-        dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {
+    DrawerSheet(onClose) {dismiss->
         Column(drawerSurface.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
-        DrawerHandle()
+        DrawerHandle(dismiss)
         Column(Modifier.fillMaxWidth().height(panelHeight).padding(bottom=4.dp).semantics {paneTitle="Activity"}) {
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Activity",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
                 TextButton(onClick=onMarkAll,contentPadding=PaddingValues(horizontal=8.dp),enabled=sources.any {source->source.connected && source.items.any {it.notifiable && it.key !in source.seen}}) {Text("Mark seen",style=SettingsType.detail)}
                 ChromeButton(ChromeIcon.REFRESH,"Refresh activity",sources.any {it.connected},onClick=onRefresh)
-                ChromeButton(ChromeIcon.CLOSE,"Close activity",onClick=onClose)
+                ChromeButton(ChromeIcon.CLOSE,"Close activity",onClick=dismiss)
             }
             Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).height(40.dp).clip(RoundedCornerShape(12.dp))
                 .background(scheme.surfaceVariant.copy(alpha=.45f)).padding(4.dp).selectableGroup()) {
@@ -159,9 +156,8 @@ import androidx.compose.ui.unit.dp
     }
     Canvas(modifier) {
         val radius=CornerRadius(size.width/2)
-        val brightness=if(working || needsYou) (.725-.275*cos(phase.value*2*PI)).toFloat() else 1f
-        drawWorkingBar(color.copy(alpha=color.alpha*brightness),Offset.Zero,size,
-            vertical=true,radius=radius)
+        val brightness=if(working || needsYou) workingBarBrightness(phase.value) else 1f
+        drawRoundRect(color.copy(alpha=color.alpha*brightness),Offset.Zero,size,radius)
     }
 }
 

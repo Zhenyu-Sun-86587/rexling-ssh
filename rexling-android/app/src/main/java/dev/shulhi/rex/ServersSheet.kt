@@ -36,14 +36,13 @@ import kotlinx.coroutines.launch
     // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
     // sheet that host is the sheet's own window, which then redraws itself every frame while open.
     val frost=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-    ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
-        containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {
+    DrawerSheet(onDismiss) {dismiss->
         Column(frost.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
-            DrawerHandle()
+            DrawerHandle(dismiss)
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Servers",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
                 ChromeButton(ChromeIcon.ADD,"Add server") {editing=null;editor=true}
-                ChromeButton(ChromeIcon.CLOSE,"Close servers",onClick=onDismiss)
+                ChromeButton(ChromeIcon.CLOSE,"Close servers",onClick=dismiss)
             }
         Column(Modifier.fillMaxWidth().heightIn(max=560.dp).verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(bottom=12.dp)) {
             Text("${model.connectedCount} connected",Modifier.padding(top=4.dp,bottom=8.dp),style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
