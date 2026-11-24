@@ -151,14 +151,14 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                         .background(if(active) scheme.surfaceVariant else Color.Transparent)
                         .drawWithContent {
                             drawContent()
-                            // The same bottom bar as the bottom tab bar: active, progress and working.
-                            if(active || progress!=null) {
+                            if(active || busy || progress!=null) {
                                 val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
                                 if(progress!=null) {
                                     drawWorkingBar(indicator.copy(alpha=.18f),origin,bar)
                                     val fill=progress.percent?.let {bar.copy(width=bar.width*it/100f)} ?: bar
                                     drawWorkingBar(indicator,origin,fill,phase=if(progress.busy && progress.percent==null && animateWorking) workPhase.value else null)
-                                } else drawWorkingBar(indicator,origin,bar,phase=if(busy && animateWorking) workPhase.value else null)
+                                } else drawWorkingBar(if(active) indicator else indicator.copy(alpha=.45f),origin,bar,
+                                    phase=if(active && busy && animateWorking) workPhase.value else null)
                             }
                         }
                         .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(progress?.let {", ${it.description}"} ?: if(busy) ", working" else "")}
@@ -176,10 +176,10 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(titles) Arrangement.spacedBy(4.dp) else Arrangement.Center) {
                         Box(contentAlignment=Alignment.Center) {
                             ProgramStack(programs,pane,fixedSlot=true)
-                            if(unread>0 || busy) Box(Modifier.align(Alignment.TopEnd).offset(x=2.dp,y=(-2).dp).size(8.dp)
+                            if(unread>0) Box(Modifier.align(Alignment.TopEnd).offset(x=2.dp,y=(-2).dp).size(8.dp)
                                 .border(1.5.dp,scheme.background,CircleShape)
-                                .background(if(unread>0) scheme.primary else indicator,CircleShape)
-                                .semantics {testTag=if(unread>0) "Tab unread dot ${w.id}" else "Tab working dot ${w.id}"})
+                                .background(scheme.primary,CircleShape)
+                                .semantics {testTag="Tab unread dot ${w.id}"})
                         }
                         if(titles) Text(title,Modifier.weight(1f),fontSize=12.sp,lineHeight=16.sp,maxLines=2,overflow=TextOverflow.Ellipsis,
                             fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,color=if(active) scheme.onSurface else scheme.onSurfaceVariant)

@@ -189,17 +189,22 @@ class PaneChromeTest {
         val windows=listOf(WindowItem("tab","PDF preview",listOf(BlockItem("a","shell"),BlockItem("b","shell"))))
         val programs=listOf(ProgramIdentity.resolve(listOf("codex")),ProgramIdentity.resolve(listOf("fish")))
         val actions=mutableListOf<String>()
+        val unread=mutableIntStateOf(0)
         ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
             var style by remember {mutableStateOf(TabRailStyle.TITLES)}
             Row(Modifier.size(440.dp,380.dp).background(MaterialTheme.colorScheme.background).testTag("Side tabs fixture")) {
                 TerminalTabRail(windows,"tab",true,{actions+=it},{programs},{0},TabBarPosition.LEFT,style,
-                    tabAttention={1},onStyle={style=it},island=true) {
+                    paneWorking={true},tabAttention={unread.intValue},onStyle={style=it},island=true) {
                     TerminalActions(true,true,{actions+="activity"},{actions+="switcher"},
                         keyboardLabel="Show keyboard",onKeyboard={actions+="keyboard"},vertical=style==TabRailStyle.ICONS)
                 }
                 Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface))
             }
         }}
+        ui.onNodeWithContentDescription("Tab PDF preview, Codex, working").assertIsDisplayed()
+        ui.onNodeWithTag("Tab unread dot tab",useUnmergedTree=true).assertDoesNotExist()
+        ui.onNodeWithTag("Tab working dot tab",useUnmergedTree=true).assertDoesNotExist()
+        ui.runOnIdle {unread.intValue=1}
         fun check(width: androidx.compose.ui.unit.Dp,mode: String) {
             ui.onNodeWithContentDescription("Tabs").assertWidthIsEqualTo(width)
             ui.onNodeWithContentDescription("Tab PDF preview, Codex",substring=true).assertIsDisplayed().assertIsSelected()
