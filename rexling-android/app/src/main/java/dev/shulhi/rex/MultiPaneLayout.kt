@@ -360,7 +360,7 @@ internal fun MultiPaneLayout(
                             ChromeIcon.MOVE,"Move floating pane",Modifier.align(Alignment.TopStart).padding(6.dp),
                             onAdjust={adjustFloat(it,false)},onFinish={finishFloatAdjustment()},onCancel={cancelFloatAdjustment()},
                         )
-                    } else if(!floating && !isZoomed && paneActionsEnabled) {
+                    } else if(!floating && !isZoomed && paneActionsEnabled && shownTiles.size>1) {
                         val handleCoordinates=remember {arrayOfNulls<LayoutCoordinates>(1)}
                         val otherPanes=shownTiles.filter {it.id!=pane.id}
                         val targetActions=otherPanes.map {other->

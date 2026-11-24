@@ -138,6 +138,9 @@ class MultiPaneMoveTest {
             assertEquals(accent,paneOutline())
             ui.runOnIdle {singlePane.value=true}
             assertTrue(paneOutline()!=accent)
+            ui.onNodeWithContentDescription("Pane actions").performClick()
+            ui.onNodeWithContentDescription(PaneSplit.RIGHT.label).assertIsDisplayed()
+            ui.onNodeWithContentDescription("Move pane").assertDoesNotExist()
         } finally {
             ui.runOnIdle {client.close();scope.cancel()}
         }

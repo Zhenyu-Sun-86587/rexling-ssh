@@ -680,7 +680,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             },contentReady=client.hasScreen && !state.creating && !changingSession && windows.isNotEmpty() && windows.all {window->
                 val block=window.blocks.getOrNull(client.tabPaneIndex(window))
                 block!=null && state.programs[block.id]?.pending==false
-            },actions=actions)
+            },onNewTab=client::createTab,actions=actions)
         Box(Modifier.fillMaxWidth().then(if(model.toolbarWithKeyboardOnly)
             Modifier.keyboardRevealed(WindowInsets.ime,WindowInsets.navigationBars) {toolbarHeight[0]=it} else Modifier)) {
             KeyboardToolbarTheme(model.toolbarSystemColors,keyboardVisible) {

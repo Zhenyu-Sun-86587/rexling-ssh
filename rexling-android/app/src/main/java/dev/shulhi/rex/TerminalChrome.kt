@@ -490,7 +490,18 @@ private val workingPhase by lazy {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",animateWorking: Boolean=true,contentReady: Boolean=true,paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},actions: @Composable ()->Unit) {
+    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",animateWorking: Boolean=true,contentReady: Boolean=true,paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},onNewTab: (() -> Unit)?=null,actions: @Composable ()->Unit) {
+    val newTab=if(currentTabWidth().first!=TabWidthClass.NARROW) onNewTab else null
+    val markerHeight=3.dp
+    val markerBottom=5.dp
+    val markerSpace=markerHeight+markerBottom
+    val newTabButton: @Composable ()->Unit = {
+        newTab?.let {onClick->
+            Box(Modifier.fillMaxHeight().padding(bottom=markerHeight),contentAlignment=Alignment.Center) {
+                ChromeButton(ChromeIcon.ADD,"New tab",enabled=enabled,onClick=onClick)
+            }
+        }
+    }
     val divider=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.65f)
     val strip=Modifier.fillMaxWidth().height(45.dp).drawWithContent {
         drawContent()
@@ -502,6 +513,7 @@ private val workingPhase by lazy {
     if(!contentReady && !revealed) {
         // Reserve the dock's normal bounds so first-load metadata cannot resize the terminal.
         Row(strip,verticalAlignment=Alignment.CenterVertically) {
+            newTabButton()
             Spacer(Modifier.weight(1f).fillMaxHeight())
             actions()
         }
@@ -552,6 +564,7 @@ private val workingPhase by lazy {
         }
     }
     Row(strip,verticalAlignment=Alignment.CenterVertically) {
+        newTabButton()
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
             val density=LocalDensity.current.density
             val widths=remember(maxWidth,contentWidths,index,density) {tabWidths(maxWidth.value,contentWidths,index,density)}
@@ -607,8 +620,6 @@ private val workingPhase by lazy {
                     Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
                         .zIndex(if(drag.id==w.id) 1f else 0f)
                         .graphicsLayer {translationX=drag.translation(w.id,list)*sign}) {
-                    val markerHeight=3.dp
-                    val markerBottom=5.dp
                     Column(Modifier.height(45.dp).width(width)
                         .drawWithContent {
                             drawContent()
@@ -654,7 +665,7 @@ private val workingPhase by lazy {
                                 color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                         }
-                        Spacer(Modifier.height(markerHeight+markerBottom))
+                        Spacer(Modifier.height(markerSpace))
                     }
                     androidx.compose.material3.DropdownMenu(menuId==w.id,{menuId=null},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
                         TerminalMenuItem(leftLabel,ChromeIcon.LEFT,enabled=enabled && windowIndex>0,onClick={menuId=null;moveBy(-1)})

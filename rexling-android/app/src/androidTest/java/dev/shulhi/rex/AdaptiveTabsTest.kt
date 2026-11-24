@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.material3.MaterialTheme
@@ -9,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -27,17 +29,25 @@ class AdaptiveTabsTest {
     private val count=mutableIntStateOf(4)
     private val selected=mutableStateOf("0")
     private val width=mutableFloatStateOf(360f)
+    private val appWidth=mutableIntStateOf(360)
     private val names=mutableStateOf(listOf("Investigate Rex protocol","Claude","fish","nvim","Five","Six","Seven","Eight"))
     private val stacked=mutableStateOf(false)
     private val programs=listOf("codex","claude","fish","nvim").map {ProgramIdentity.resolve(listOf(it))}
-    private fun show(dark: Boolean=false,programOrder: List<ProgramIdentity> = programs,working: Boolean=false,progress: TerminalProgress?=null) {
-        ui.setContent {RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
-            Box(Modifier.width(width.floatValue.dp).background(MaterialTheme.colorScheme.surface).testTag("Test dock")) {
-                TerminalTabs(List(count.intValue) {WindowItem(it.toString(),names.value[it],listOf(BlockItem("pane-$it","Terminal")))},selected.value,true,
-                    onSelect={selected.value=it},panePrograms={tab->val i=tab.id.toInt();List(if(i==0 && stacked.value) 3 else 1) {offset->programOrder[(i+offset)%programOrder.size]}},selectedPane={0},
-                    paneWorking={working},paneProgress={if(it.id=="0") progress else null},actions={TerminalActions(true,true,{},{})})
+    private fun show(dark: Boolean=false,programOrder: List<ProgramIdentity> = programs,working: Boolean=false,progress: TerminalProgress?=null,onNewTab: (() -> Unit)?=null) {
+        ui.setContent {
+            val deviceConfiguration=LocalConfiguration.current
+            val windowWidth=appWidth.intValue
+            val configuration=remember(deviceConfiguration,windowWidth) {Configuration(deviceConfiguration).apply {screenWidthDp=windowWidth}}
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                RexTheme(dark,ThemeCatalog.defaults[if(dark) 0 else 1]) {
+                    Box(Modifier.width(width.floatValue.dp).background(MaterialTheme.colorScheme.surface).testTag("Test dock")) {
+                        TerminalTabs(List(count.intValue) {WindowItem(it.toString(),names.value[it],listOf(BlockItem("pane-$it","Terminal")))},selected.value,true,
+                            onSelect={selected.value=it},panePrograms={tab->val i=tab.id.toInt();List(if(i==0 && stacked.value) 3 else 1) {offset->programOrder[(i+offset)%programOrder.size]}},selectedPane={0},
+                            paneWorking={working},paneProgress={if(it.id=="0") progress else null},onNewTab=onNewTab,actions={TerminalActions(true,true,{},{})})
+                    }
+                }
             }
-        }}
+        }
     }
     private fun tab(index: Int)=ui.onNode(hasContentDescription("Tab ${names.value[index]},",substring=true))
     private fun bounds(index: Int)=tab(index).fetchSemanticsNode().boundsInRoot
@@ -45,6 +55,26 @@ class AdaptiveTabsTest {
         val strip=ui.onNodeWithContentDescription("Tabs").fetchSemanticsNode().boundsInRoot
         val tab=bounds(index)
         assertTrue("$tab outside $strip",tab.left>=strip.left-.5f && tab.right<=strip.right+.5f)
+    }
+    @Test fun newTabButtonLeadsTheBottomTabsAtMediumAndWideWidths() {
+        count.intValue=2
+        appWidth.intValue=439
+        var created=0
+        show(onNewTab={created++})
+        val newTab=ui.onNodeWithContentDescription("New tab")
+        newTab.assertDoesNotExist()
+        ui.runOnIdle {appWidth.intValue=440}
+        newTab.assertIsDisplayed()
+        val buttonBounds=newTab.fetchSemanticsNode().boundsInRoot
+        val tabBounds=bounds(0)
+        val markerHeight=with(ui.density) {3.dp.roundToPx()}
+        assertTrue(buttonBounds.right<=tabBounds.left)
+        assertEquals((tabBounds.top+tabBounds.bottom-markerHeight)/2f,buttonBounds.center.y,1f)
+        newTab.performClick()
+        ui.runOnIdle {assertEquals(1,created);appWidth.intValue=760}
+        newTab.assertIsDisplayed()
+        ui.runOnIdle {appWidth.intValue=439}
+        newTab.assertDoesNotExist()
     }
     @Test fun fourTabsFitAlongsideActionsAndKeepUsefulTouchTargets() {
         show()
