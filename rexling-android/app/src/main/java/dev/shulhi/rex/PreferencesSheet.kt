@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import android.os.Build
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -21,7 +22,8 @@ import androidx.compose.ui.unit.dp
     minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},onNetwork: ()->Unit={},
     keepScreenAwake: KeepScreenAwake=KeepScreenAwake.SYSTEM,onKeepScreenAwake: (KeepScreenAwake)->Unit={},onToolbar: ()->Unit={},onControlItems: ()->Unit={},onSshKeys: ()->Unit={},hazeState: dev.chrisbanes.haze.HazeState?=null,
     compactHeaderMode: CompactHeaderMode=CompactHeaderMode.NEVER,onCompactHeaderMode: (CompactHeaderMode)->Unit={},
-    immersiveStatusBar: Boolean=false,onImmersiveStatusBar: (Boolean)->Unit={}) {
+    immersiveStatusBar: Boolean=false,onImmersiveStatusBar: (Boolean)->Unit={},
+    toolbarSystemColors: Boolean=false,onToolbarSystemColors: (Boolean)->Unit={}) {
     // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
     // sheet that host is the sheet's own window, which then redraws itself every frame while open.
     val frost=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
@@ -104,6 +106,18 @@ import androidx.compose.ui.unit.dp
                         Text("Hide the key row when the keyboard closes.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked=toolbarWithKeyboardOnly,onCheckedChange=null)
+                }
+                if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S) {
+                    SettingsDivider()
+                    Row(Modifier.fillMaxWidth().toggleable(toolbarSystemColors,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onToolbarSystemColors)
+                        .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                            Text("Use system colors for toolbar",style=SettingsType.row)
+                            Text("Follow Android’s light or dark palette while the keyboard is open.",
+                                style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked=toolbarSystemColors,onCheckedChange=null)
+                    }
                 }
                 SettingsDivider()
                 Row(Modifier.fillMaxWidth().toggleable(arrowJoystickEnabled,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onArrowJoystick)

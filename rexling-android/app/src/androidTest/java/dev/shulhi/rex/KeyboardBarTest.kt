@@ -1,7 +1,13 @@
 package dev.shulhi.rex
 
+import android.content.res.Configuration
+import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -11,16 +17,21 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.Color
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
@@ -34,6 +45,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -192,9 +204,10 @@ class KeyboardBarTest {
 
     @Test fun navigationPendingKeepsTheEntireKeyRowCrispWhileInputIsDisabled() {
         val ready=mutableStateOf(true)
+        val showTopDivider=mutableStateOf(true)
         ui.setContent {MaterialTheme {Box(Modifier.width(360.dp).testTag("Keyboard test area")) {
             KeyboardBar(ready.value,ready.value,false,false,false,true,{},{},{},{},{},
-                {sent+=it},readable=true,onKeyboard={})
+                {sent+=it},readable=true,showTopDivider=showTopDivider.value,onKeyboard={})
         }}}
         val before=ui.onNodeWithTag("Keyboard test area").captureToImage().toPixelMap()
         assertEquals("The toolbar divider should reach the left edge",before[before.width/2,0],before[0,0])
@@ -209,6 +222,47 @@ class KeyboardBarTest {
         ui.runOnIdle {assertTrue(sent.isEmpty())}
         ui.runOnIdle {ready.value=true}
         ui.onNodeWithContentDescription("Escape").assertIsEnabled()
+        ui.runOnIdle {showTopDivider.value=false}
+        val seamless=ui.onNodeWithTag("Keyboard test area").captureToImage().toPixelMap()
+        assertEquals(before.height,seamless.height)
+        for(x in 0 until seamless.width) assertEquals(seamless[0,seamless.height/2],seamless[x,0])
+    }
+
+    @Test fun systemColorsApplyOnlyToTheToolbarWhileTheKeyboardIsVisible() {
+        assumeTrue(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        var enabled by mutableStateOf(false)
+        var visible by mutableStateOf(true)
+        var dark by mutableStateOf(false)
+        val appSurface=Color.Magenta
+        ui.setContent {
+            val configuration=Configuration(LocalConfiguration.current).apply {
+                uiMode=(uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if(dark) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+            }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                MaterialTheme(colorScheme=lightColorScheme(surface=appSurface)) {
+                    Column(Modifier.width(360.dp).background(MaterialTheme.colorScheme.surface)) {
+                        Spacer(Modifier.size(12.dp).testTag("Outside keyboard toolbar"))
+                        Box(Modifier.testTag("Keyboard toolbar")) {
+                            KeyboardToolbarTheme(enabled,visible) {
+                                KeyboardBar(true,true,false,false,false,visible,{},{},{},{},{},{},
+                                    showTopDivider=false,onKeyboard={})
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fun background(tag: String)=ui.onNodeWithTag(tag).captureToImage().toPixelMap()[0,0]
+        assertEquals(appSurface,background("Keyboard toolbar"))
+        ui.runOnIdle {enabled=true}
+        assertEquals(dynamicLightColorScheme(context).surfaceContainer,background("Keyboard toolbar"))
+        ui.runOnIdle {dark=true}
+        assertEquals(dynamicDarkColorScheme(context).surfaceContainer,background("Keyboard toolbar"))
+        assertEquals(appSurface,background("Outside keyboard toolbar"))
+        ui.runOnIdle {visible=false}
+        assertEquals(appSurface,background("Keyboard toolbar"))
     }
 
     @Test fun swipeRightRevealsChevronBeforeEscapeAndClosingRestoresTheRow() {

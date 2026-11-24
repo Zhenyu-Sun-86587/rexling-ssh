@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
@@ -212,6 +213,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val hasHinge=remember(context) {context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)}
     val allowFloatingOverlay=unfoldedFullScreen && hasHinge
     val tabLayout=model.tabLayout(tabWidth.first)
+    // A foldable's cover screen can fall in the medium tab width class.
+    val squarePaneCorners=tabLayout.side || tabWidth.first==TabWidthClass.NARROW || (hasHinge && !unfoldedFullScreen)
     // From the setting, not the keyboard, so the layout keeps one mode while the keyboard animates.
     val extendUnderNav=panelShown && tabLayout.side && model.toolbarWithKeyboardOnly
     // Keep text and controls clear of the navigation area when the workspace extends under it.
@@ -435,7 +438,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
                             headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
-                            squareCorners=tabLayout.side || tabWidth.first==TabWidthClass.NARROW,extendsUnderNavigation=extendUnderNav,
+                            squareCorners=squarePaneCorners,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
                         ConnectionNotice(connectionPhase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
                         ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp),hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
@@ -523,6 +526,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
         enterSubmits=model.enterSubmits,onEnterSubmits=model::changeEnterSubmits,
         toolbarWithKeyboardOnly=model.toolbarWithKeyboardOnly,onToolbarWithKeyboardOnly=model::changeToolbarWithKeyboardOnly,
+        toolbarSystemColors=model.toolbarSystemColors,onToolbarSystemColors=model::changeToolbarSystemColors,
         compactHeaderMode=model.compactHeaderMode,onCompactHeaderMode=model::changeCompactHeaderMode,
         immersiveStatusBar=model.immersiveStatusBar,onImmersiveStatusBar=model::changeImmersiveStatusBar,
         tabLayouts=model.tabLayouts,tabWidth=tabWidth,onTabLayout=model::changeTabLayout,
@@ -625,15 +629,32 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             },actions=actions)
         Box(Modifier.fillMaxWidth().then(if(model.toolbarWithKeyboardOnly)
             Modifier.keyboardRevealed(WindowInsets.ime,WindowInsets.navigationBars) {toolbarHeight[0]=it} else Modifier)) {
-            KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
-                client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,
-                {client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut={client.controlShortcut(it,keyTarget)},
-                inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,onPaste={onPaste()},
-                onPrompt=if(client.hasSemanticPrompts && !changingSession) client::scrollPrompt else null,
-                toolbarKeys=model.toolbarKeys,controlItems=model.controlItems,onKeyboard=onKeyboard)
+            KeyboardToolbarTheme(model.toolbarSystemColors,keyboardVisible) {
+                KeyboardBar(controlled,ready,client.controlModifier,client.altModifier,client.shiftModifier,keyboardVisible,
+                    client::toggleControl,client::toggleAlt,client::toggleShift,client::pressShift,client::releaseShift,
+                    {client.keyForTarget(it,keyTarget)},readable=state.connected,onControlShortcut={client.controlShortcut(it,keyTarget)},
+                    inputKey=keyTarget,shortcutGesture=model.shortcutGesture,arrowJoystickEnabled=model.arrowJoystickEnabled,onPaste={onPaste()},
+                    onPrompt=if(client.hasSemanticPrompts && !changingSession) client::scrollPrompt else null,
+                    toolbarKeys=model.toolbarKeys,controlItems=model.controlItems,showTopDivider=sideTabs,onKeyboard=onKeyboard)
+            }
         }
     }
 }
+
+@Composable internal fun KeyboardToolbarTheme(enabled: Boolean,keyboardVisible: Boolean,content: @Composable ()->Unit) {
+    val systemColors=if(enabled && keyboardVisible && Build.VERSION.SDK_INT>=Build.VERSION_CODES.S) {
+        val context=LocalContext.current
+        val configuration=LocalConfiguration.current
+        val dark=isSystemInDarkTheme()
+        remember(context,configuration,dark) {
+            if(dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+    } else null
+    MaterialTheme(colorScheme=systemColors ?: MaterialTheme.colorScheme) {
+        Box(systemColors?.let {Modifier.background(it.surfaceContainer)} ?: Modifier) {content()}
+    }
+}
+
 private fun getClipboard(context: Context)=context.getSystemService(Context.CLIPBOARD_SERVICE)
 
 /** Sessions grouped by server, with search, New session, rename and close. A page of [TabPaneSwitcher]. */

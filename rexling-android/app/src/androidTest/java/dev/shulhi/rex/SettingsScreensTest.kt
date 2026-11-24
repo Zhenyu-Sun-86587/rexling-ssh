@@ -1,6 +1,7 @@
 package dev.shulhi.rex
 
 import android.graphics.Bitmap
+import android.os.Build
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -9,6 +10,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -77,6 +79,17 @@ class SettingsScreensTest {
             ui.onNodeWithText(next.label).performScrollTo().performClick().assertIsSelected()
             ui.runOnIdle {assertEquals(next,mode)}
         }
+    }
+
+    @Test fun toolbarSystemColorsAreOptIn() {
+        assumeTrue(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S)
+        var enabled by mutableStateOf(false)
+        ui.setContent {MaterialTheme {
+            PreferencesSheet({},{},{},{},{},toolbarSystemColors=enabled,onToolbarSystemColors={enabled=it})
+        }}
+        val setting=ui.onNodeWithText("Use system colors for toolbar").performScrollTo()
+        setting.assertIsOff().performClick().assertIsOn()
+        setting.performClick().assertIsOff()
     }
 
     @Test fun scrollingTheDrawerContentCannotDismissIt() {

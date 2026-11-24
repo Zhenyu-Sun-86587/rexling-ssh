@@ -603,18 +603,22 @@ private val workingPhase by lazy {
                     val pane=selectedPane(w)
                     val program=programs.getOrNull(pane) ?: ProgramIdentity.Loading
                     val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
+                    val iconInset=(36.dp-programStackPaintedWidth(programs.size))/2
                     Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
                         .zIndex(if(drag.id==w.id) 1f else 0f)
                         .graphicsLayer {translationX=drag.translation(w.id,list)*sign}) {
                     val markerHeight=3.dp
-                    val markerBottom=2.dp
+                    val markerBottom=5.dp
                     Column(Modifier.height(45.dp).width(width)
                         .drawWithContent {
                             drawContent()
                             if(active || progress!=null) {
-                                val inset=5.dp.toPx()
-                                val bar=Size((size.width-2*inset).coerceAtLeast(0f),markerHeight.toPx())
-                                val origin=Offset(inset,size.height-bar.height-markerBottom.toPx())
+                                val end=5.dp.toPx()
+                                // A label makes the slot's invisible leading padding asymmetric.
+                                val start=end+if(showTitle) iconInset.toPx() else 0f
+                                val bar=Size((size.width-start-end).coerceAtLeast(0f),markerHeight.toPx())
+                                val origin=Offset(if(layoutDirection==LayoutDirection.Ltr) start else end,
+                                    size.height-bar.height-markerBottom.toPx())
                                 val brightness=if(breathe) workingBarBrightness(workPhase.value) else 1f
                                 drawTabMarker(indicatorColor,origin,bar,progress?.percent,brightness)
                             }
@@ -639,12 +643,7 @@ private val workingPhase by lazy {
                             Box(Modifier.semantics {testTag="Tab program icon ${w.id}"}) {
                                 ProgramStack(programs,pane,fixedSlot=true)
                                 if(unread>0) {
-                                    // Match the actual painted icon stack, including the
-                                    // centering used when its fixed slot has fewer panes.
-                                    val layers=programs.size.coerceIn(1,3)
-                                    val painted=if(layers==1) 22f else 21f+4f*(layers-1)
-                                    val right=(36f+painted)/2f
-                                    Box(Modifier.offset(x=(right-4).dp,y=(-.5).dp).size(8.dp)
+                                    Box(Modifier.offset(x=32.dp-iconInset,y=(-.5).dp).size(8.dp)
                                         .border(1.5.dp,MaterialTheme.colorScheme.background,androidx.compose.foundation.shape.CircleShape)
                                         .background(MaterialTheme.colorScheme.primary,androidx.compose.foundation.shape.CircleShape)
                                         .semantics {testTag="Tab unread dot ${w.id}"})
@@ -695,7 +694,7 @@ private val workingPhase by lazy {
 }
 
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
-    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},inputKey: String="",shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,arrowJoystickEnabled: Boolean=true,onPaste: (() ->Unit)?=null,onPrompt: ((Int)->Unit)?=null,toolbarKeys: List<ToolbarKey> = ToolbarLayout.defaults,controlItems: List<ControlShortcut> = ControlShortcutConfig.defaults,onKeyboard: ()->Unit) {
+    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},inputKey: String="",shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,arrowJoystickEnabled: Boolean=true,onPaste: (() ->Unit)?=null,onPrompt: ((Int)->Unit)?=null,toolbarKeys: List<ToolbarKey> = ToolbarLayout.defaults,controlItems: List<ControlShortcut> = ControlShortcutConfig.defaults,showTopDivider: Boolean=true,onKeyboard: ()->Unit) {
     val toolbar=ToolbarLayout.normalize(toolbarKeys)
     var expanded by remember {mutableStateOf(false)}
     // The extra-key trigger lives just before Esc, outside the initial viewport.
@@ -703,7 +702,8 @@ private val workingPhase by lazy {
     LaunchedEffect(keyboardVisible) {if(!keyboardVisible) {expanded=false;keyScroll.scrollTo(keyScroll.maxValue)}}
     LaunchedEffect(expanded,toolbar) {if(!expanded) keyScroll.scrollTo(keyScroll.maxValue)}
     Column(Modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)))
+        Spacer(Modifier.fillMaxWidth().height(1.dp).then(if(showTopDivider)
+            Modifier.background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)) else Modifier))
         Row(Modifier.fillMaxWidth().height(45.dp).padding(horizontal=8.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
             if(toolbar.isEmpty()) Box(Modifier.weight(1f).fillMaxHeight(),contentAlignment=Alignment.CenterStart) {
                 ChromeButton(ChromeIcon.CHEVRON,if(expanded) "Hide extra keys" else "Show extra keys",enabled) {expanded=!expanded}

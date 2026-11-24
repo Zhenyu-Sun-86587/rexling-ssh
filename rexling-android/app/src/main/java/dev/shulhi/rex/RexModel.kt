@@ -184,6 +184,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var toolbarWithKeyboardOnly by mutableStateOf(preferences.getBoolean("keyboard_toolbar_auto_hide",false))
         private set
     internal fun changeToolbarWithKeyboardOnly(value: Boolean) {toolbarWithKeyboardOnly=value;preferences.edit {putBoolean("keyboard_toolbar_auto_hide",value)}}
+    internal var toolbarSystemColors by mutableStateOf(preferences.getBoolean("keyboard_toolbar_system_colors",false))
+        private set
+    internal fun changeToolbarSystemColors(value: Boolean) {toolbarSystemColors=value;preferences.edit {putBoolean("keyboard_toolbar_system_colors",value)}}
     internal var compactHeaderMode by mutableStateOf(
         preferences.getString("compact_header_mode",null)?.let {saved->CompactHeaderMode.entries.firstOrNull {it.name==saved}}
             ?: if(preferences.getBoolean("compact_header_with_keyboard",false)) CompactHeaderMode.WITH_KEYBOARD else CompactHeaderMode.NEVER)

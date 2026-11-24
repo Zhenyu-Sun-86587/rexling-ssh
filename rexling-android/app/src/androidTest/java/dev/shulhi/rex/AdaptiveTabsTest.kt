@@ -90,8 +90,18 @@ class AdaptiveTabsTest {
         val title=ui.onNodeWithText(names.value[0],useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
         assertEquals(tab.center.x,(icon.left+title.right)/2f,1f)
         assertEquals(icon.center.y,title.center.y,1f)
-        val markerSpace=with(ui.density) {5.dp.roundToPx()}
+        val markerSpace=with(ui.density) {8.dp.roundToPx()}
         assertEquals((tab.top+tab.bottom-markerSpace)/2f,icon.center.y,1f)
+        for(isStacked in listOf(false,true)) {
+            ui.runOnIdle {stacked.value=isStacked}
+            val pixels=tab(0).captureToImage().toPixelMap()
+            val y=pixels.height-with(ui.density) {6.5.dp.roundToPx()}
+            val markerColor=pixels[pixels.width/2,y]
+            val markerColumns=(0 until pixels.width).filter {pixels[it,y]==markerColor}
+            val leadingIconPadding=with(ui.density) {(if(isStacked) 3.5.dp else 7.dp).toPx()}
+            val contentCenter=(icon.left+leadingIconPadding+title.right)/2f-tab.left
+            assertEquals(contentCenter,(markerColumns.first()+markerColumns.last()+1)/2f,1.5f)
+        }
     }
     @Test fun selectingAnOverflowTabBringsItsEntireExpandedRowIntoView() {
         count.intValue=8;show()
@@ -142,8 +152,9 @@ class AdaptiveTabsTest {
     @Test fun theBottomWorkingMarkerIsInsetRoundedAndPulsesUniformly() {
         count.intValue=2
         show(working=true)
-        val inset=with(ui.density) {5.dp.roundToPx()}
-        val centerOffset=with(ui.density) {3.5.dp.roundToPx()}
+        val leadingInset=with(ui.density) {12.dp.roundToPx()}
+        val centerOffset=with(ui.density) {6.5.dp.roundToPx()}
+        val topOffset=with(ui.density) {8.dp.roundToPx()}
         fun sample(): androidx.compose.ui.graphics.Color {
             val pixels=tab(0).captureToImage().toPixelMap()
             val y=pixels.height-centerOffset
@@ -151,7 +162,7 @@ class AdaptiveTabsTest {
             assertEquals(center,pixels[pixels.width/4,y])
             assertEquals(center,pixels[pixels.width*3/4,y])
             assertNotEquals("There should be space beside the marker",center,pixels[0,y])
-            assertNotEquals("The corner should be rounded",center,pixels[inset,pixels.height-inset])
+            assertNotEquals("The corner should be rounded",center,pixels[leadingInset,pixels.height-topOffset])
             return center
         }
         val first=sample()
