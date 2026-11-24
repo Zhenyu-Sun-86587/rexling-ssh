@@ -302,33 +302,45 @@ class TerminalImeViewportTest {
             WindowCompat.setDecorFitsSystemWindows(activity.window,false)
             activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
-        ui.waitForIdle();var height=0;var count=0
-        ui.runOnIdle {height=view.height;count=dimensions.size;view.keyboard()}
-        try {
+        fun waitForKeyboard(height: Int) {
             ui.waitUntil(7000) {
                 ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==true &&
                     headerOverlap>0 && visibleHeight in 1 until height
             }
             ui.waitForIdle()
+        }
+        fun hideKeyboard() {
+            ui.runOnIdle {view.hideKeyboard()}
+            ui.waitUntil(7000) {ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==false && headerOverlap==0}
+            ui.waitForIdle()
+        }
+        ui.waitForIdle();var height=0;var count=0
+        ui.runOnIdle {height=view.height;count=dimensions.size;view.keyboard()}
+        try {
+            waitForKeyboard(height)
             ui.runOnIdle {
                 assertTrue("Keyboard should reduce the visible viewport",visibleHeight<height)
                 assertTrue("The terminal should extend under the collapsed header",headerOverlap>0)
                 assertEquals(height,view.height);assertEquals(count,dimensions.size)
                 val position=IntArray(2);view.getLocationInWindow(position)
-                assertTrue("A top prompt must stay clear of the glass",position[1]+cursorBottom!!.top>=viewportTop+headerOverlap-1)
-                val grid=view.screen!!;view.screen=grid.copy(cursorY=grid.rows-4)
+                assertEquals("The first row, including output above the cursor, must stay clear of the glass",
+                    viewportTop+headerOverlap,position[1].toFloat(),1f)
             }
-            ui.waitForIdle()
+            hideKeyboard()
+            ui.runOnIdle {
+                val grid=view.screen!!;view.screen=grid.copy(cursorY=grid.rows-4)
+                view.keyboard()
+            }
+            waitForKeyboard(height)
             ui.runOnIdle {
                 assertTrue("Bottom prompt must move above the keyboard",terminalImePan(cursorBottom,visibleHeight,height-visibleHeight)>0)
                 val position=IntArray(2);view.getLocationInWindow(position)
                 assertTrue("The actual cursor must be above the controls",position[1]+cursorBottom!!.cursorBottom<=viewportTop+visibleHeight+1)
                 assertTrue("Prompt footer and status lines must also be visible",position[1]+cursorBottom!!.contentBottom<=viewportTop+visibleHeight+1)
                 assertTrue("Only enough of the pane should move",position[1]<viewportTop)
-                view.hideKeyboard()
             }
-            ui.waitUntil(7000) {ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==false}
-            ui.waitForIdle();ui.runOnIdle {assertEquals(height,view.height);assertEquals(count,dimensions.size)}
+            hideKeyboard()
+            ui.runOnIdle {assertEquals(height,view.height);assertEquals(count,dimensions.size)}
         } finally {ui.runOnIdle {view.hideKeyboard()}}
     }
     @Test fun hiddenClaudeCursorPansAboveTheKeyboardWithoutResizingTheGrid() {

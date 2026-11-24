@@ -27,10 +27,10 @@ internal class TerminalImePanState {
             previousOcclusion=topOcclusion
             offset=terminalImePan(lastFocus,visibleHeight,covered,topOcclusion)
         } else if(focus!=null && (covered>0 || topOcclusion>0)) {
-            // Once the keyboard settles, do not recenter on every cursor move.
-            // Status lines can change the prompt/content heuristic abruptly.
-            // Only reveal a cursor that actually leaves the visible viewport.
+            // Keep short output below the header. For longer output, only move when the cursor
+            // leaves the visible viewport, because status lines can change the content heuristic.
             offset=when {
+                topOcclusion>0 && focus.contentBottom<=visibleHeight-topOcclusion->-topOcclusion
                 focus.top<offset+topOcclusion->floor(focus.top).toInt()-topOcclusion
                 focus.cursorBottom>offset+visibleHeight->ceil(focus.cursorBottom-visibleHeight).toInt()
                 else->offset
@@ -82,19 +82,21 @@ internal fun Modifier.stableTerminalViewport(panToCursor: Boolean=true,coverage:
             layout(child.width,constraints.maxHeight) {
                 // Read cursor state during placement, not composition or measurement.
                 val occlusion=topOcclusion().coerceIn(0,(constraints.maxHeight-1).coerceAtLeast(0))
-                child.placeRelative(0,if(panToCursor) -pan.position(focus(),constraints.maxHeight,covered,occlusion) else 0)
+                child.placeRelative(0,if(panToCursor) -pan.position(focus(),constraints.maxHeight,covered,occlusion) else occlusion)
             }
         }
     }
 }
 
 internal fun terminalImePan(focus: TerminalKeyboardFocus?,visibleHeight: Int,covered: Int,topOcclusion: Int=0): Int {
-    if(focus==null || (covered<=0 && topOcclusion<=0)) return 0
+    if(focus==null) return -topOcclusion
+    if(covered<=0 && topOcclusion<=0) return 0
     // Include status/help lines below the prompt when they fit alongside it.
     // A distant status bar must not push a top-of-screen cursor out of view.
     val bottom=if(focus.contentBottom-focus.top<=visibleHeight-topOcclusion) focus.contentBottom else focus.cursorBottom
     val limit=minOf(covered,(floor(focus.top).toInt()-topOcclusion).coerceAtLeast(-topOcclusion))
-    return ceil((bottom-visibleHeight).coerceAtLeast(0f)).toInt().coerceAtMost(limit)
+    // Rest below the header. Only pan into the glass when the content needs the room.
+    return ceil(bottom-visibleHeight).toInt().coerceIn(-topOcclusion,limit)
 }
 
 /**
