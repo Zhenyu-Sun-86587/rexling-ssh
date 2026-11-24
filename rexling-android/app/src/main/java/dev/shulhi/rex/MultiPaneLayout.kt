@@ -475,10 +475,10 @@ internal fun MultiPaneLayout(
 }
 
 @Composable
-private fun PaneCornerActions(
-    modifier: Modifier,zoomed: Boolean,paneWidth: androidx.compose.ui.unit.Dp,enabled: Boolean,
-    onSplit: (PaneSplit)->Unit,onZoom: ()->Unit,
-    onFloat: (()->Unit)?,onDock: (()->Unit)?,onMinimize: (()->Unit)?,onClose: (()->Unit)?,
+internal fun PaneCornerActions(
+    modifier: Modifier,zoomed: Boolean=false,paneWidth: Dp?=null,enabled: Boolean,
+    onSplit: (PaneSplit)->Unit,onZoom: (()->Unit)?=null,
+    onFloat: (()->Unit)?=null,onDock: (()->Unit)?=null,onMinimize: (()->Unit)?=null,onClose: (()->Unit)?=null,
 ) {
     val actions=buildList {
         if(!zoomed) {
@@ -487,12 +487,12 @@ private fun PaneCornerActions(
             onFloat?.let {add(PaneCornerAction(ChromeIcon.FLOAT,"Float pane",it))}
             onDock?.let {add(PaneCornerAction(ChromeIcon.FLOAT,"Dock pane",it))}
         }
-        add(PaneCornerAction(if(zoomed) ChromeIcon.UNZOOM else ChromeIcon.ZOOM,
-            if(zoomed) "Restore pane layout" else "Zoom pane",onZoom))
+        onZoom?.let {add(PaneCornerAction(if(zoomed) ChromeIcon.UNZOOM else ChromeIcon.ZOOM,
+            if(zoomed) "Restore pane layout" else "Zoom pane",it))}
         onMinimize?.let {add(PaneCornerAction(ChromeIcon.MINIMIZE,"Minimize floating pane",it))}
         onClose?.let {add(PaneCornerAction(ChromeIcon.CLOSE,"Close pane",it))}
     }
-    if(!zoomed && paneWidth<60.dp+36.dp*actions.size) {
+    if(!zoomed && paneWidth!=null && paneWidth<60.dp+36.dp*actions.size) {
         // Leave room for the move handle on narrow tiles.
         var expanded by remember {mutableStateOf(false)}
         Box(modifier) {

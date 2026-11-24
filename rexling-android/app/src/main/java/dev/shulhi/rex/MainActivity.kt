@@ -37,16 +37,25 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -248,6 +257,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val showAllFloating=model.minimizeFloatingPanes || (allowFloatingOverlay && tiles!=null)
     val floating=window?.floatingPanes(minimizedOnly=!showAllFloating).orEmpty()
     val carouselBlocks=window?.carouselPanes(model.minimizeFloatingPanes,chosen) ?: blocks
+    val singlePane=if(window!=null && tiles==null && ready) carouselBlocks.firstOrNull {it.id==chosen} else null
+    var showSinglePaneActions by remember(displayedSession,window?.id,singlePane?.id) {mutableStateOf(false)}
+    LaunchedEffect(showSinglePaneActions) {
+        if(showSinglePaneActions) {kotlinx.coroutines.delay(4000);showSinglePaneActions=false}
+    }
     val activeFloating=window?.layout?.firstOrNull {it.id==chosen && it.floating && !it.minimized}
         ?.takeIf {pane->floating.any {it.id==pane.id}}
     val flushSinglePane=tabLayout.side && tiles==null
@@ -397,14 +411,35 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             onClose={closeTarget=closeTabTarget(it)},onMove=client::moveTab,reorderKey=displayedSession,
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!workspaceBackdrop,
-                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
+                            onNewTab=client::createTab) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
+                        val paneCoordinates=remember {arrayOfNulls<LayoutCoordinates>(1)}
+                        val viewLocation=remember {IntArray(2)}
+                        val cornerSize=with(keyboardDensity) {44.dp.toPx()}
+                        val rightCorner=LocalLayoutDirection.current==LayoutDirection.Ltr
                         Box(Modifier.weight(1f).fillMaxHeight()
-                            .windowInsetsPadding(WindowInsets(bottom=tiledNavigationClearance))) {
+                            .windowInsetsPadding(WindowInsets(bottom=tiledNavigationClearance))
+                            .then(if(singlePane==null) Modifier else Modifier.onGloballyPositioned {paneCoordinates[0]=it}
+                                .semantics {
+                                    if(!showSinglePaneActions) customActions=listOf(CustomAccessibilityAction("Show pane actions") {
+                                        showSinglePaneActions=true;true
+                                    })
+                                })) {
                         val onView: (TerminalView)->Unit={view->
                             terminalView=view
+                            view.onPaneControlsTap=if(singlePane==null) null else tap@{x,y->
+                                val coordinates=paneCoordinates[0]?.takeIf {it.isAttached} ?: return@tap false
+                                view.getLocationInWindow(viewLocation)
+                                val point=coordinates.windowToLocal(Offset(viewLocation[0]+x,viewLocation[1]+y))
+                                val top=currentHeaderOverlap().toFloat()
+                                val fromEnd=if(rightCorner) coordinates.size.width-point.x else point.x
+                                val inCorner=fromEnd>=0 && fromEnd<cornerSize && point.y>=top && point.y<top+cornerSize
+                                if(inCorner) showSinglePaneActions=true
+                                inCorner
+                            }
                             view.onOpenLink={url->
                                 val loopback=LoopbackLink.parse(url)
                                 if(loopback==null) PortForwards.openBrowser(context,url)
@@ -440,9 +475,28 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
                             squareCorners=squarePaneCorners,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
+                        if(showSinglePaneActions && window!=null && singlePane!=null) {
+                            val placement=window.layout.firstOrNull {it.id==singlePane.id}
+                            val tiledCount=window.layout.count {!it.floating}
+                            PaneCornerActions(
+                                Modifier.align(Alignment.TopEnd).offset {IntOffset(0,currentHeaderOverlap())}.padding(6.dp),
+                                enabled=true,onSplit={showSinglePaneActions=false;client.createPane(it,singlePane.id)},
+                                onFloat=if(placement?.floating==false && tiledCount>1) ({
+                                    showSinglePaneActions=false
+                                    client.editTerminal(displayedSession,window.id,singlePane.id,"float_pane")
+                                }) else null,
+                                onDock=if(placement?.floating==true && tiledCount>0) ({showSinglePaneActions=false;dockFloatingPane=singlePane.id}) else null,
+                                onClose={showSinglePaneActions=false;closeTarget=closePaneTarget(singlePane)},
+                            )
+                        }
                         ConnectionNotice(connectionPhase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
-                        ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).padding(8.dp),hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
-                        OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,{client.takeControl()},Modifier.align(Alignment.TopEnd).padding(10.dp),hazeState=terminalHaze,onVisibleChange={ownerBackdrop=it})
+                        val belowPaneControls=if(showSinglePaneActions) Modifier.offset {IntOffset(0,currentHeaderOverlap()+46.dp.roundToPx())} else Modifier
+                        ReadyNotice(state.connectionEpoch,controlled,ready,Modifier.align(Alignment.TopCenter).then(belowPaneControls).padding(8.dp),
+                            hazeState=terminalHaze,onVisibleChange={readyBackdrop=it})
+                        OtherOwnerNotice(chosen,state.otherOwner && !controlled,ready,client.screenDimensions,{client.takeControl()},
+                            Modifier.align(Alignment.TopEnd).then(belowPaneControls)
+                                .padding(top=10.dp,end=if(singlePane!=null && !showSinglePaneActions) 54.dp else 10.dp),
+                            hazeState=terminalHaze,onVisibleChange={ownerBackdrop=it})
                         if(model.neovimShortcutsEnabled && ready && chosen==liveBlock && chosen !in state.cachedPrograms && state.programs[chosen]?.kind==ProgramKind.NEOVIM && model.neovimShortcuts.isNotEmpty()) {
                             NeovimShortcutButton(model.neovimShortcuts,keyTarget,controlled,
                                 onChoose={item,target->client.neovimShortcut(item,target)},onCustomize={neovimSettings=true},layout=model.neovimShortcutLayout,effect=model.neovimShortcutEffect,hapticsEnabled=model.neovimShortcutHaptics,hazeState=terminalHaze,onExpandedChange={wheelBackdrop=it},
@@ -583,14 +637,14 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                 })
         },openSessions=picker=="sessions")
     dockFloatingPane?.let {id->
-        if(allowFloatingOverlay && window!=null && window.floatingPanes().any {it.id==id}) {
+        if(window!=null && window.layout.any {it.id==id && it.floating && !it.minimized}) {
             DockPaneSheet(window,state.programs,state.titles,ready,workspaceHaze,
                 onDock={anchor,split->client.editTerminal(displayedSession,window.id,id,"dock_pane",anchor=anchor,split=split)},
                 onClose={dockFloatingPane=null})
         }
     }
-    LaunchedEffect(allowFloatingOverlay,window?.layout,dockFloatingPane) {
-        if(!allowFloatingOverlay || window?.layout?.any {it.id==dockFloatingPane && it.floating}!=true) dockFloatingPane=null
+    LaunchedEffect(window?.layout,dockFloatingPane) {
+        if(window?.layout?.any {it.id==dockFloatingPane && it.floating && !it.minimized}!=true) dockFloatingPane=null
     }
     closeTarget?.let {target->
         AlertDialog(onDismissRequest={closeTarget=null},title={Text(if(target.tab) "Close tab?" else "Close pane?")},

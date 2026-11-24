@@ -72,6 +72,7 @@ class TerminalView(context: Context) : View(context) {
         set(value) { if(field != value) { field=value;clearRows();invalidate() } }
     var onPaneDrag: ((Float, Boolean) -> Unit)? = null
     var onPaneDragEnd: ((Float, Float) -> Unit)? = null
+    internal var onPaneControlsTap: ((Float,Float)->Boolean)?=null
     private var startX=0f
     private var startY=0f
     private var dragging=false
@@ -668,7 +669,10 @@ class TerminalView(context: Context) : View(context) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
             } else when (paneGesture.finish(event.x, event.y)) {
-                PaneGesture.Result.TAP -> if(!suppressScrollTap) finishTap(event.x,event.y,showKeyboard=!fromMouse)
+                PaneGesture.Result.TAP -> if(!suppressScrollTap) {
+                    val openedControls=!fromMouse && pressedLink==null && onPaneControlsTap?.invoke(event.x,event.y)==true
+                    if(!openedControls) finishTap(event.x,event.y,showKeyboard=!fromMouse)
+                }
                 PaneGesture.Result.NEXT -> onPaneSwipe(1)
                 PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
                 PaneGesture.Result.NONE -> Unit

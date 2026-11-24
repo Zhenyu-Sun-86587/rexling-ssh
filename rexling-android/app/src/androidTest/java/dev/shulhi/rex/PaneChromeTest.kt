@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -185,6 +186,33 @@ class PaneChromeTest {
         File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"pane-frosted-caption.png").outputStream().use {image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
     }
 
+    @Test fun singlePaneCornerPillShowsSplitFloatDockAndCloseInOneRow() {
+        var floating by mutableStateOf(false)
+        val actions=mutableListOf<String>()
+        ui.setContent {MaterialTheme {
+            Box(Modifier.size(320.dp,380.dp)) {
+                PaneCornerActions(Modifier.align(Alignment.TopEnd),enabled=true,
+                    onSplit={actions+=it.label},onFloat=if(!floating) ({actions+="float";floating=true}) else null,
+                    onDock=if(floating) ({actions+="dock";floating=false}) else null,onClose={actions+="close"})
+            }
+        }}
+        ui.onNodeWithContentDescription("More pane actions").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Zoom pane").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Dock pane").assertDoesNotExist()
+        val buttons=listOf(PaneSplit.RIGHT.label,PaneSplit.BELOW.label,"Float pane","Close pane")
+            .map {ui.onNodeWithContentDescription(it).assertIsDisplayed()}
+        val bounds=buttons.map {it.fetchSemanticsNode().boundsInRoot}
+        for((left,right) in bounds.zipWithNext()) {
+            assertEquals(left.center.y,right.center.y,.5f)
+            assertTrue(left.right<=right.left)
+        }
+        buttons.take(3).forEach {it.performClick()}
+        ui.onNodeWithContentDescription("Float pane").assertDoesNotExist()
+        ui.onNodeWithContentDescription("Dock pane").performClick()
+        buttons.last().performClick()
+        ui.runOnIdle {assertEquals(listOf(PaneSplit.RIGHT.label,PaneSplit.BELOW.label,"float","dock","close"),actions)}
+    }
+
     @Test fun flushSideTabsKeepTheIconStackAndFooterActionsVisible() {
         val windows=listOf(
             WindowItem("tab","PDF preview",listOf(BlockItem("a","shell"),BlockItem("b","shell"))),
@@ -199,7 +227,7 @@ class PaneChromeTest {
             Row(Modifier.size(440.dp,380.dp).background(MaterialTheme.colorScheme.background).testTag("Side tabs fixture")) {
                 TerminalTabRail(windows,"tab",true,{actions+=it},{programs},{0},TabBarPosition.LEFT,style,
                     paneWorking={true},paneProgress={if(it.id=="progress") TerminalProgress("indeterminate",null) else null},
-                    tabAttention={if(it.id=="tab") unread.intValue else 0},onStyle={style=it},animateWorking=false) {
+                    tabAttention={if(it.id=="tab") unread.intValue else 0},onStyle={style=it},animateWorking=false,onNewTab={actions+="new tab"}) {
                     TerminalActions(true,true,{actions+="activity"},{actions+="switcher"},
                         keyboardLabel="Show keyboard",onKeyboard={actions+="keyboard"},vertical=style==TabRailStyle.ICONS)
                 }
@@ -215,6 +243,9 @@ class PaneChromeTest {
             val fixture=ui.onNodeWithTag("Side tabs fixture")
             assertEquals(fixture.fetchSemanticsNode().boundsInRoot.left,rail.fetchSemanticsNode().boundsInRoot.left,1f)
             val tab=ui.onNodeWithContentDescription("Tab PDF preview, Codex",substring=true).assertIsDisplayed().assertIsSelected()
+            val newTab=ui.onNodeWithContentDescription("New tab").assertIsDisplayed()
+            assertTrue(newTab.fetchSemanticsNode().boundsInRoot.bottom<=tab.fetchSemanticsNode().boundsInRoot.top)
+            newTab.performClick()
             val pixels=tab.captureToImage().toPixelMap()
             val markerX=(pixels.height*6.5f/48f).toInt()
             val rowCenter=pixels.height/2
@@ -241,6 +272,6 @@ class PaneChromeTest {
         check(152.dp,"titles")
         ui.onNodeWithContentDescription("Show icons only").performClick()
         check(52.dp,"icons")
-        ui.runOnIdle {assertEquals(List(2) {listOf("keyboard","switcher","activity")}.flatten(),actions)}
+        ui.runOnIdle {assertEquals(List(2) {listOf("new tab","keyboard","switcher","activity")}.flatten(),actions)}
     }
 }

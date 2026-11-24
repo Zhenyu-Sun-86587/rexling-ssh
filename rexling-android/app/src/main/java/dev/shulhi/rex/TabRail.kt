@@ -85,7 +85,7 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
     side: TabBarPosition,style: TabRailStyle,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},
     onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",
     paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},animateWorking: Boolean=true,
-    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,
+    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,onNewTab: (() -> Unit)?=null,
     actions: @Composable ()->Unit) {
     val titles=style==TabRailStyle.TITLES
     // Swipe across the rail toward the terminal to show titles, back toward the screen edge to hide them.
@@ -134,7 +134,9 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
         .semantics {customActions=listOf(CustomAccessibilityAction(if(titles) "Show icons only" else "Show tab titles") {
             onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES);true})}
         .padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
+        Column(Modifier.weight(1f).fillMaxWidth(),verticalArrangement=Arrangement.Bottom,horizontalAlignment=Alignment.CenterHorizontally) {
+        onNewTab?.let {ChromeButton(ChromeIcon.ADD,"New tab",enabled=enabled,onClick=it)}
+        LazyColumn(Modifier.fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
             contentPadding=PaddingValues(vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w->
                 fun moveBy(delta: Int): Boolean {
@@ -201,6 +203,7 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
                     }
                 }
             }
+        }
         }
         HorizontalDivider(Modifier.padding(horizontal=9.dp,vertical=4.dp),thickness=.5.dp,color=divider)
         // Points the way the rail will go: toward the terminal to show titles, toward the edge to hide them.
