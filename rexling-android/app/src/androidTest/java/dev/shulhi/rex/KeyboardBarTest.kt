@@ -192,13 +192,16 @@ class KeyboardBarTest {
 
     @Test fun navigationPendingKeepsTheEntireKeyRowCrispWhileInputIsDisabled() {
         val ready=mutableStateOf(true)
-        ui.setContent {MaterialTheme {Box(Modifier.width(360.dp)) {
+        ui.setContent {MaterialTheme {Box(Modifier.width(360.dp).testTag("Keyboard test area")) {
             KeyboardBar(ready.value,ready.value,false,false,false,true,{},{},{},{},{},
                 {sent+=it},readable=true,onKeyboard={})
         }}}
-        val before=ui.onRoot().captureToImage().toPixelMap()
+        val before=ui.onNodeWithTag("Keyboard test area").captureToImage().toPixelMap()
+        assertEquals("The toolbar divider should reach the left edge",before[before.width/2,0],before[0,0])
+        assertEquals("The toolbar divider should reach the right edge",before[before.width/2,0],before[before.width-1,0])
+        assertNotEquals("The divider should be distinct from the inset beneath it",before[0,0],before[0,before.height/2])
         ui.runOnIdle {ready.value=false}
-        val pending=ui.onRoot().captureToImage().toPixelMap()
+        val pending=ui.onNodeWithTag("Keyboard test area").captureToImage().toPixelMap()
         for(y in 0 until before.height) for(x in 0 until before.width)
             assertEquals("Navigation must not fade the row at $x,$y",before[x,y],pending[x,y])
         ui.onNodeWithContentDescription("Escape").assertIsNotEnabled().performTouchInput {click()}

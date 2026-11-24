@@ -143,7 +143,7 @@ class ModelsTest {
         assertEquals(listOf(left,right),multiPaneTiles(tab(left,right,floating),"f",allowFloatingOverlay=true))
         assertEquals(listOf(left),multiPaneTiles(tab(left,floating),"f",allowFloatingOverlay=true))
         assertEquals(listOf(left),multiPaneTiles(tab(left,floating),"a",allowFloatingOverlay=true))
-        assertEquals(null,multiPaneTiles(tab(left),"a"))                       // one pane: carousel
+        assertEquals(listOf(left),multiPaneTiles(tab(left),"a"))              // one pane uses the same tiled margins
         assertEquals(null,multiPaneTiles(tab(left,right,floating),"f"))        // overlay unavailable
         assertEquals(null,multiPaneTiles(tab(left,right,PanePlacement("c",0f,0f,.2f,.2f),PanePlacement("d",0f,0f,.2f,.2f),PanePlacement("e",0f,0f,.2f,.2f)),"a"))
         assertEquals(null,multiPaneTiles(null,"a"))

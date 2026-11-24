@@ -112,10 +112,10 @@ internal fun Modifier.keyboardRevealed(ime: WindowInsets,navigation: WindowInset
 
 @Composable
 internal fun KeyboardCollapsingHeader(ime: WindowInsets,navigation: WindowInsets,onHeightSaved: (Int)->Unit,
-    onOverlap: ((Int)->Unit)?=null,full: @Composable ()->Unit,compact: @Composable ()->Unit) {
-    Layout(contents=listOf(full,compact),modifier=Modifier.clipToBounds()) {children,constraints->
-        val fullHeader=children[0].single().measure(constraints)
-        val compactHeader=children[1].single().measure(constraints)
+    onOverlap: ((Int)->Unit)?=null,full: (@Composable ()->Unit)?,compact: @Composable ()->Unit) {
+    Layout(contents=if(full==null) listOf(compact) else listOf(full,compact),modifier=Modifier.clipToBounds()) {children,constraints->
+        val compactHeader=children.last().single().measure(constraints)
+        val fullHeader=if(full==null) compactHeader else children.first().single().measure(constraints)
         val difference=(fullHeader.height-compactHeader.height).coerceAtLeast(0)
         val keyboard=keyboardCover(ime,navigation)
         val saved=minOf(keyboard,difference)

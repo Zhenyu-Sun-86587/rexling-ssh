@@ -54,23 +54,28 @@ class TerminalImeViewportTest {
             ui.setContent {MaterialTheme {
                 val density=LocalDensity.current
                 val ime=WindowInsets(bottom=covered)
-                val navigation=WindowInsets(0,0,0,0)
-                Column(Modifier.width(400.dp).height(520.dp-with(density) {covered.toDp()})) {
+                val navigation=WindowInsets(bottom=24.dp)
+                val navClearance=14.dp
+                val toolbarHeight=40.dp
+                Column(Modifier.width(400.dp).height(520.dp-with(density) {covered.toDp()}).consumeWindowInsets(ime)) {
                     KeyboardCollapsingHeader(ime,navigation,{headerHeightSaved=it},onOverlap={headerOverlap=it},
                         full={Spacer(Modifier.fillMaxWidth().height(54.dp))},
                         compact={Spacer(Modifier.fillMaxWidth().height(40.dp))})
-                    Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}.onGloballyPositioned {
-                        val paneMargins=with(density) {2*4.dp.roundToPx()+1.5.dp.roundToPx()}
-                        expectedBottom=it.positionInWindow().y.toInt()+it.size.height-paneMargins
-                    }) {
+                    Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}
+                        .windowInsetsPadding(WindowInsets(bottom=navClearance)).onGloballyPositioned {
+                            val paneMargins=with(density) {4.dp.roundToPx()+1.5.dp.roundToPx()}
+                            expectedBottom=it.positionInWindow().y.toInt()+it.size.height-paneMargins
+                        }) {
                     MultiPaneLayout(client,"session","tab",
                         listOf(PanePlacement("a",0f,0f,1f,.37f),PanePlacement("b",0f,.37f,1f,.63f)),
                         focused,focused,true,emptyMap(),emptySet(),11f,
                         onFocus={id,_->focused=id},onView={views[focused]=it},onImage={_,_->false},
                         onPaste={false},imeEnterSubmits=false,
-                        keyboardChrome={0},extendsUnderNavigation=false,hazeState=remember {HazeState()},captureBackdrop=false,
+                        keyboardChrome={with(density) {toolbarHeight.roundToPx()}},extendsUnderNavigation=true,
+                        navigationClearance=navClearance,hazeState=remember {HazeState()},captureBackdrop=false,
                         ime=ime,navigation=navigation,headerHeightSaved={headerHeightSaved},headerOverlap={headerOverlap})
                     }
+                    Spacer(Modifier.fillMaxWidth().keyboardRevealed(ime,navigation) {}.height(toolbarHeight))
                 }
             }}
             ui.waitForIdle()
@@ -280,7 +285,7 @@ class TerminalImeViewportTest {
         ui.setContent {MaterialTheme {
             val ime=WindowInsets.ime;val navigation=WindowInsets.navigationBars
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-                SessionHeader(listOf(SessionItem("a","alpha · Mac")),"a",true,true,emptyList(),0,"~/Dev/rexlink",
+                SessionHeader(listOf(SessionItem("a","alpha · Mac")),"a",true,true,emptyList(),0,
                     onSessions={},onSelect={},onLast={},title="Terminal",collapseForIme=ime,
                     onHeaderHeightSaved={headerHeightSaved=it},onHeaderOverlap={headerOverlap=it},menu={})
                 Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}.clipToBounds()
@@ -300,7 +305,10 @@ class TerminalImeViewportTest {
         ui.waitForIdle();var height=0;var count=0
         ui.runOnIdle {height=view.height;count=dimensions.size;view.keyboard()}
         try {
-            ui.waitUntil(7000) {ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==true}
+            ui.waitUntil(7000) {
+                ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==true &&
+                    headerOverlap>0 && visibleHeight in 1 until height
+            }
             ui.waitForIdle()
             ui.runOnIdle {
                 assertTrue("Keyboard should reduce the visible viewport",visibleHeight<height)

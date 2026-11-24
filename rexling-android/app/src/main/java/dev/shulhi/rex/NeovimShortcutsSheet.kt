@@ -62,7 +62,7 @@ private data class NeovimEditorRow(val id: String,val node: NeovimEditNode,val c
         return
     }
     if(options) {
-        SettingsDrawer("Neovim menu","Close Neovim menu settings",{options=false},hazeState,onBack={options=false},swipeToDismiss=false,backDescription="Back to Neovim shortcuts") {
+        SettingsDrawer("Neovim menu","Close Neovim menu settings",{options=false},hazeState,onBack={options=false},fixed=true,backDescription="Back to Neovim shortcuts") {
             Column(Modifier.fillMaxWidth().heightIn(max=600.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
                 NeovimMenuOptions(layout,onLayout,effect,onEffect,hapticsEnabled,onHaptics)
             }
@@ -84,7 +84,7 @@ private data class NeovimEditorRow(val id: String,val node: NeovimEditNode,val c
         }
     }
     SettingsDrawer(current?.group ?: "Neovim shortcuts","Close Neovim shortcuts",onClose,hazeState,
-        onBack=if(current!=null) ({groupId=null}) else null,swipeToDismiss=false,backDescription="Back to Neovim shortcuts") {
+        onBack=if(current!=null) ({groupId=null}) else null,fixed=true,backDescription="Back to Neovim shortcuts") {
         Column(Modifier.fillMaxWidth().heightIn(max=620.dp).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if(current==null) {
                 Row(Modifier.fillMaxWidth().toggleable(enabled,role=Role.Switch,onValueChange=onEnabled),verticalAlignment=Alignment.CenterVertically) {

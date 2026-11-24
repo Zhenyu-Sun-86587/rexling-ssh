@@ -34,14 +34,13 @@ import dev.chrisbanes.haze.HazeState
     // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
     // sheet that host is the sheet's own window, which then redraws itself every frame while open.
     val frost=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
-        containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {
+    DrawerSheet(onClose) {dismiss->
         Column(frost.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)).padding(bottom=4.dp)) {
-            DrawerHandle()
+            DrawerHandle(dismiss)
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Port forwarding",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
                 ChromeButton(ChromeIcon.ADD,"Add port forward",enabled=canAdd) {editing=true}
-                ChromeButton(ChromeIcon.CLOSE,"Close port forwarding",onClick=onClose)
+                ChromeButton(ChromeIcon.CLOSE,"Close port forwarding",onClick=dismiss)
             }
             Text("All servers · ${PortForwards.items.count {it.running}} running",Modifier.padding(horizontal=16.dp,vertical=6.dp),style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
             PortForwards.notice?.let {notice->

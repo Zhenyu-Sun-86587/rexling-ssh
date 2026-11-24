@@ -12,12 +12,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
@@ -28,10 +28,16 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
 
 internal enum class TabBarPosition(val label: String) { BOTTOM("Bottom"), LEFT("Left"), RIGHT("Right") }
 internal enum class TabRailStyle(val label: String) { ICONS("Icons"), TITLES("Icons and titles") }
+
+internal fun tabRailWidth(style: TabRailStyle)=when(style) {
+    TabRailStyle.ICONS->52.dp
+    TabRailStyle.TITLES->152.dp
+}
 
 /** Where the tab bar sits, and how a side rail draws its tabs. Kept separately for folded and unfolded screens. */
 internal data class TabBarLayout(val position: TabBarPosition=TabBarPosition.BOTTOM,val style: TabRailStyle=TabRailStyle.ICONS) {
@@ -53,10 +59,10 @@ internal data class TabBarLayout(val position: TabBarPosition=TabBarPosition.BOT
  * On a Galaxy Z Fold: a portrait split half (~350dp) is narrow like a phone; the cover screen (~475dp)
  * and a landscape split half (~465dp) are medium; the inner screen held sideways (~933dp) is wide.
  */
-internal enum class TabWidthClass(val title: String,val detail: String,val key: String) {
-    NARROW("Narrow","Under 440dp: phones, and a split half of the upright inner screen","tab_layout_narrow"),
-    MEDIUM("Medium","440–760dp: the cover screen, a split half held sideways, and the upright inner screen","tab_layout_medium"),
-    WIDE("Wide","760dp and wider: the inner screen held sideways","tab_layout_wide");
+internal enum class TabWidthClass(val title: String,val range: String,val key: String) {
+    NARROW("Narrow","Under 440 dp","tab_layout_narrow"),
+    MEDIUM("Medium","440–759 dp","tab_layout_medium"),
+    WIDE("Wide","760 dp and up","tab_layout_wide");
     companion object {
         fun of(widthDp: Int): TabWidthClass = when {
             widthDp<440 -> NARROW
@@ -79,14 +85,12 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     side: TabBarPosition,style: TabRailStyle,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},
     onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",
     paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},animateWorking: Boolean=true,
-    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,island: Boolean=false,islandBottom: androidx.compose.ui.unit.Dp=8.dp,
+    onStyle: (TabRailStyle)->Unit={},extendUnderNav: Boolean=false,
     actions: @Composable ()->Unit) {
     val titles=style==TabRailStyle.TITLES
     // Swipe across the rail toward the terminal to show titles, back toward the screen edge to hide them.
     // Resizes are debounced, so the animated width sends the pane only its final size.
-    // Beside the multi-pane layout the rail is a floating card like the panes: rounded, inset, and
-    // ending level with them; slightly narrower so the terminal keeps about the same width.
-    val width by androidx.compose.animation.core.animateDpAsState(if(island) (if(titles) 144.dp else 48.dp) else if(titles) 152.dp else 52.dp,
+    val width by androidx.compose.animation.core.animateDpAsState(tabRailWidth(style),
         androidx.compose.animation.core.tween(180),label="Tab rail width")
     val outward=if(side==TabBarPosition.LEFT) 1f else -1f
     val threshold=with(androidx.compose.ui.platform.LocalDensity.current) {32.dp.toPx()}
@@ -97,19 +101,22 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
     val exclusion=with(androidx.compose.ui.platform.LocalDensity.current) {200.dp.toPx()}
     val haptic=androidx.compose.ui.platform.LocalHapticFeedback.current
     val scheme=MaterialTheme.colorScheme
+    val divider=scheme.outlineVariant.copy(alpha=.65f)
     val list=rememberLazyListState()
     var menuId by remember(reorderKey) {mutableStateOf<String?>(null)}
     val ids=windows.map {it.id}
     val index=ids.indexOf(selectedId)
     LaunchedEffect(ids) {menuId=null}
     LaunchedEffect(selectedId,reorderKey,index) {if(index>=0) list.animateScrollToItem(index)}
-    val islandShape=androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
-    Column(Modifier.fillMaxHeight()
-        .then(if(island) Modifier.padding(start=if(side==TabBarPosition.LEFT) 8.dp else 0.dp,end=if(side==TabBarPosition.RIGHT) 8.dp else 0.dp,top=8.dp,bottom=islandBottom)
-            .width(width).clip(islandShape).background(scheme.surface).border(1.5.dp,scheme.outline.copy(alpha=.25f),islandShape)
-        else Modifier.width(width).background(scheme.surface)
-            // Reaches the screen edge under the gesture handle; its buttons stay above it.
-            .then(if(extendUnderNav) Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) else Modifier))
+    Column(Modifier.fillMaxHeight().width(width).background(scheme.surface)
+        .drawWithContent {
+            drawContent()
+            val stroke=.5.dp.toPx()
+            val x=if(side==TabBarPosition.LEFT) size.width-stroke/2 else stroke/2
+            drawLine(divider,Offset(x,0f),Offset(x,size.height),strokeWidth=stroke)
+        }
+        // Reaches the screen edge under the gesture handle; its buttons stay above it.
+        .then(if(extendUnderNav) Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom)) else Modifier)
         .systemGestureExclusion {coordinates->
             val height=coordinates.size.height.toFloat()
             androidx.compose.ui.geometry.Rect(0f,(height-exclusion).coerceAtLeast(0f),coordinates.size.width.toFloat(),height)
@@ -128,7 +135,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
             onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES);true})}
         .padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
-            contentPadding=PaddingValues(horizontal=if(titles) 4.dp else 2.dp,vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
+            contentPadding=PaddingValues(vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
             itemsIndexed(windows,key={_,w->w.id}) {i,w->
                 fun moveBy(delta: Int): Boolean {
                     val target=i+delta
@@ -145,20 +152,21 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                 val progress=paneProgress(w)
                 val busy=paneWorking(w) || progress?.busy==true
                 val indicator=terminalProgressColor(progress)
+                val breathe=animateWorking && if(progress!=null) progress.busy && progress.percent==null else active && busy
+                val workPhase=rememberWorkingPhase(breathe)
                 Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null)) {
-                    val workPhase=rememberWorkingPhase(animateWorking && if(progress!=null) progress.busy && progress.percent==null else active && busy)
                     Row(Modifier.fillMaxWidth().height(48.dp)
                         .background(if(active) scheme.surfaceVariant else Color.Transparent)
                         .drawWithContent {
                             drawContent()
                             if(active || busy || progress!=null) {
-                                val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
-                                if(progress!=null) {
-                                    drawWorkingBar(indicator.copy(alpha=.18f),origin,bar)
-                                    val fill=progress.percent?.let {bar.copy(width=bar.width*it/100f)} ?: bar
-                                    drawWorkingBar(indicator,origin,fill,phase=if(progress.busy && progress.percent==null && animateWorking) workPhase.value else null)
-                                } else drawWorkingBar(if(active) indicator else indicator.copy(alpha=.45f),origin,bar,
-                                    phase=if(active && busy && animateWorking) workPhase.value else null)
+                                val bar=Size(3.dp.toPx(),22.dp.toPx())
+                                val inset=5.dp.toPx()
+                                val x=if(layoutDirection==LayoutDirection.Ltr) inset else size.width-inset-bar.width
+                                val origin=Offset(x,(size.height-bar.height)/2)
+                                val brightness=if(breathe) workingBarBrightness(workPhase.value) else 1f
+                                val opacity=if(active || progress!=null) brightness else .45f*brightness
+                                drawTabMarker(indicator,origin,bar,progress?.percent,opacity,vertical=true)
                             }
                         }
                         .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(progress?.let {", ${it.description}"} ?: if(busy) ", working" else "")}
@@ -172,7 +180,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                         }
                         .combinedClickable(enabled=enabled,role=Role.Tab,onLongClickLabel="Tab options",
                             onLongClick={menuId=w.id},onClick={onSelect(w.id)})
-                        .padding(horizontal=if(titles) 6.dp else 0.dp),
+                        .padding(start=if(titles) 14.dp else 5.dp,end=if(titles) 10.dp else 0.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(titles) Arrangement.spacedBy(4.dp) else Arrangement.Center) {
                         Box(contentAlignment=Alignment.Center) {
                             ProgramStack(programs,pane,fixedSlot=true)
@@ -192,6 +200,7 @@ internal enum class TabWidthClass(val title: String,val detail: String,val key: 
                 }
             }
         }
+        HorizontalDivider(Modifier.padding(horizontal=9.dp,vertical=4.dp),thickness=.5.dp,color=divider)
         // Points the way the rail will go: toward the terminal to show titles, toward the edge to hide them.
         val towardTerminal=if(side==TabBarPosition.LEFT) -90f else 90f
         ChromeButton(ChromeIcon.CHEVRON,if(titles) "Show icons only" else "Show tab titles",

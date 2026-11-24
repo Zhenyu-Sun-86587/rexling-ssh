@@ -25,13 +25,13 @@ class SessionHeaderLoopTest {
     private fun header(items: List<SessionItem>,selected: String,enabled: Boolean=true,onSelect:(String)->Unit) {
         ui.setContent {var current by remember {mutableStateOf(selected)};MaterialTheme {
             androidx.compose.foundation.layout.Box(Modifier.width(340.dp)) {
-                SessionHeader(items,current,true,enabled,listOf(ProgramIdentity(ProgramKind.TERMINAL,"fish"),ProgramIdentity(ProgramKind.CLAUDE,"Claude"),ProgramIdentity(ProgramKind.NEOVIM,"Neovim")),0,"~/Dev/rexlink",{},{selections.add(it);current=it;onSelect(it)},{},title="Investigate Rex protocol",menu={})
+                SessionHeader(items,current,true,enabled,listOf(ProgramIdentity(ProgramKind.TERMINAL,"fish"),ProgramIdentity(ProgramKind.CLAUDE,"Claude"),ProgramIdentity(ProgramKind.NEOVIM,"Neovim")),0,{},{selections.add(it);current=it;onSelect(it)},{},title="Investigate Rex protocol",menu={})
             }
         }}
     }
     @Test fun sessionStripWrapsBothWaysAndSendsOneSelectionPerSwipe() {
         header(sessions,"mac:c",onSelect={})
-        val strip=ui.onNodeWithContentDescription("Session strip")
+        val strip=ui.onNodeWithContentDescription("Session strip",useUnmergedTree=true)
         strip.performTouchInput {swipeLeft()};ui.waitForIdle()
         ui.runOnIdle {assertEquals(listOf("linux:a"),selections)}
         strip.performTouchInput {swipeRight()};ui.waitForIdle()
@@ -43,15 +43,15 @@ class SessionHeaderLoopTest {
     }
     @Test fun twoSessionsWrapBothWays() {
         header(sessions.take(2),"linux:a",onSelect={})
-        val strip=ui.onNodeWithContentDescription("Session strip")
+        val strip=ui.onNodeWithContentDescription("Session strip",useUnmergedTree=true)
         repeat(4) {strip.performTouchInput {if(it%2==0) swipeRight() else swipeLeft()};ui.waitForIdle()}
         ui.runOnIdle {assertEquals(listOf("mac:b","linux:a","mac:b","linux:a"),selections)}
     }
     @Test fun changingTheCatalogDoesNotCauseAnUnrequestedSessionSwitch() {
         val items=mutableStateOf(sessions);val current=mutableStateOf("mac:c")
-        ui.setContent {MaterialTheme {SessionHeader(items.value,current.value,true,true,emptyList(),0,"",{},{selections.add(it);current.value=it},{},menu={})}}
+        ui.setContent {MaterialTheme {SessionHeader(items.value,current.value,true,true,emptyList(),0,{},{selections.add(it);current.value=it},{},menu={})}}
         ui.runOnIdle {items.value=sessions.take(1);current.value="linux:a"};ui.waitForIdle()
-        ui.onNodeWithContentDescription("Session strip").performTouchInput {swipeRight()};ui.waitForIdle()
+        ui.onNodeWithContentDescription("Session strip",useUnmergedTree=true).performTouchInput {swipeRight()};ui.waitForIdle()
         ui.runOnIdle {assertTrue(selections.isEmpty());items.value=emptyList();current.value=""};ui.waitForIdle()
         ui.onNodeWithText("Sessions").assertIsDisplayed()
     }

@@ -74,11 +74,10 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
         return program.tabTitle(tab.label,block?.label.orEmpty(),windows.indexOf(tab)+1,titles[block?.id].orEmpty())
     }
     val drawerSurface=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-    if(dock==null) ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),containerColor=Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,
-        dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {
+    if(dock==null) DrawerSheet(onClose) {dismiss->
         BoxWithConstraints(Modifier.fillMaxWidth()) {
         Column(drawerSurface.fillMaxWidth().height(minOf(preferredHeight,maxHeight*.82f)).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
-        DrawerHandle()
+        DrawerHandle(dismiss)
         Column(Modifier.fillMaxWidth().weight(1f).padding(bottom=4.dp)) {
             Row(Modifier.fillMaxWidth().padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                 Row(Modifier.weight(1f).height(48.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f),RoundedCornerShape(12.dp)).padding(4.dp).selectableGroup()) {
@@ -94,7 +93,7 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
                     }
                 }
                 }
-                IconButton(onClick=onClose,modifier=Modifier.semantics {contentDescription="Close tab and pane switcher"}) {ChromeSymbol(ChromeIcon.CLOSE,Modifier.size(18.dp))}
+                IconButton(onClick=dismiss,modifier=Modifier.semantics {contentDescription="Close tab and pane switcher"}) {ChromeSymbol(ChromeIcon.CLOSE,Modifier.size(18.dp))}
             }
             if(error.isNotBlank()) Text(error,Modifier.padding(horizontal=16.dp,vertical=4.dp),style=SettingsType.detail,color=MaterialTheme.colorScheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
             pageState.SaveableStateProvider(page.name) {

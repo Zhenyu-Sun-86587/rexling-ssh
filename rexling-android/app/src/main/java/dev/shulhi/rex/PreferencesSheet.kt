@@ -1,34 +1,36 @@
 package dev.shulhi.rex
 
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class,ExperimentalLayoutApi::class)
 @Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
     shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={},
     arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},multiPaneUnfolded: Boolean=false,onMultiPaneUnfolded: (Boolean)->Unit={},tabLayouts: Map<TabWidthClass,TabBarLayout> = emptyMap(),tabWidth: Pair<TabWidthClass,Int> = TabWidthClass.NARROW to 0,onTabLayout: (TabWidthClass,TabBarLayout)->Unit={_,_->},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
     minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},onNetwork: ()->Unit={},
     keepScreenAwake: KeepScreenAwake=KeepScreenAwake.SYSTEM,onKeepScreenAwake: (KeepScreenAwake)->Unit={},onToolbar: ()->Unit={},onControlItems: ()->Unit={},onSshKeys: ()->Unit={},hazeState: dev.chrisbanes.haze.HazeState?=null,
-    compactHeaderWithKeyboard: Boolean=false,onCompactHeaderWithKeyboard: (Boolean)->Unit={}) {
+    compactHeaderMode: CompactHeaderMode=CompactHeaderMode.NEVER,onCompactHeaderMode: (CompactHeaderMode)->Unit={},
+    immersiveStatusBar: Boolean=false,onImmersiveStatusBar: (Boolean)->Unit={}) {
     // Built outside the sheet on purpose: the frost redraws when its host window draws, and inside the
     // sheet that host is the sheet's own window, which then redraws itself every frame while open.
     val frost=Modifier.drawerFrost(hazeState,BottomSheetDefaults.ExpandedShape)
-    ModalBottomSheet(onDismissRequest=onClose,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
-        containerColor=androidx.compose.ui.graphics.Color.Transparent,contentColor=MaterialTheme.colorScheme.onSurface,tonalElevation=0.dp,dragHandle=null,contentWindowInsets={WindowInsets.safeDrawing.only(WindowInsetsSides.Top)}) {
+    DrawerSheet(onClose) {dismiss->
         Column(frost.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
-            DrawerHandle()
+            DrawerHandle(dismiss)
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 Text("Preferences",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
-                ChromeButton(ChromeIcon.CLOSE,"Close preferences",onClick=onClose)
+                ChromeButton(ChromeIcon.CLOSE,"Close preferences",onClick=dismiss)
             }
         Column(Modifier.fillMaxWidth().heightIn(max=600.dp).verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             SettingsSection("Display",compact=true) {
@@ -36,9 +38,29 @@ import androidx.compose.ui.unit.dp
                 SettingsDivider()
                 SettingsRow("Font size","Terminal text size",SettingsGlyph.FONT,onFont)
                 SettingsDivider()
+                Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)) {
+                    Text("Compact top bar",style=SettingsType.row)
+                    FlowRow(Modifier.selectableGroup(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                        CompactHeaderMode.entries.forEach {mode->
+                            FilterChip(selected=mode==compactHeaderMode,onClick={onCompactHeaderMode(mode)},
+                                label={Text(mode.label,style=SettingsType.row)})
+                        }
+                    }
+                }
+                SettingsDivider()
+                Row(Modifier.fillMaxWidth().toggleable(immersiveStatusBar,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onImmersiveStatusBar)
+                    .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                        Text("Immersive mode",style=SettingsType.row)
+                        Text("Hide the Android status bar. Swipe down from the top to show it briefly.",
+                            style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked=immersiveStatusBar,onCheckedChange=null)
+                }
+                SettingsDivider()
                 Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp)) {
                     Text("Keep screen awake",style=SettingsType.row)
-                    Text("Only while Rexling is in the foreground. You can still lock the phone.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Applies while Rexling is in the foreground.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     KeepScreenAwake.entries.forEach {mode->
                         Row(Modifier.fillMaxWidth().selectable(mode==keepScreenAwake,role=androidx.compose.ui.semantics.Role.RadioButton,onClick={onKeepScreenAwake(mode)}).padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically) {
                             RadioButton(selected=mode==keepScreenAwake,onClick=null)
@@ -51,12 +73,7 @@ import androidx.compose.ui.unit.dp
                 }
             }
             SettingsSection("Tabs",compact=true) {
-                Text("By how wide this window is, so folding, rotating and split-screen each pick their own",
-                    Modifier.padding(horizontal=16.dp).padding(top=10.dp),style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                TabWidthClass.entries.forEachIndexed {i,each->
-                    if(i>0) SettingsDivider()
-                    TabLayoutChoice(each,tabLayouts[each] ?: TabBarLayout(),current=if(each==tabWidth.first) tabWidth.second else null) {onTabLayout(each,it)}
-                }
+                TabLayoutPreferences(tabLayouts,tabWidth,onTabLayout)
             }
             SettingsSection("Panes",compact=true) {
                 Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -84,18 +101,9 @@ import androidx.compose.ui.unit.dp
                     .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                         Text("Show toolbar only with keyboard",style=SettingsType.row)
-                        Text(if(toolbarWithKeyboardOnly) "More room for the terminal. Tap the input line or the keyboard button beside Tabs to type." else "The toolbar stays visible when the keyboard is closed",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Hide the key row when the keyboard closes.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked=toolbarWithKeyboardOnly,onCheckedChange=null)
-                }
-                SettingsDivider()
-                Row(Modifier.fillMaxWidth().toggleable(compactHeaderWithKeyboard,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onCompactHeaderWithKeyboard)
-                    .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                        Text("Compact top bar with keyboard",style=SettingsType.row)
-                        Text("Use a single-line header while typing in a terminal.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked=compactHeaderWithKeyboard,onCheckedChange=null)
                 }
                 SettingsDivider()
                 Row(Modifier.fillMaxWidth().toggleable(arrowJoystickEnabled,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onArrowJoystick)
@@ -168,22 +176,38 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-/** Tab bar position, and the side rail's style, for one screen posture. */
-@Composable private fun TabLayoutChoice(width: TabWidthClass,layout: TabBarLayout,current: Int?,onChange: (TabBarLayout)->Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text(width.title,style=SettingsType.row)
-            if(current!=null) Text("this window · ${current}dp",style=SettingsType.detail,color=MaterialTheme.colorScheme.primary)
-        }
-        Text(width.detail,style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            TabBarPosition.entries.forEach {position->
-                FilterChip(selected=layout.position==position,onClick={onChange(layout.copy(position=position))},label={Text(position.label,style=SettingsType.row)})
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun TabLayoutPreferences(layouts: Map<TabWidthClass,TabBarLayout>,window: Pair<TabWidthClass,Int>,
+    onChange: (TabWidthClass,TabBarLayout)->Unit) {
+    var editing by rememberSaveable {mutableStateOf<TabWidthClass?>(null)}
+    val (current,widthDp)=window
+    val profile=editing ?: current
+    val layout=layouts[profile] ?: TabBarLayout()
+    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)) {
+        FlowRow(Modifier.selectableGroup(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            TabWidthClass.entries.forEach {width->
+                FilterChip(selected=width==profile,onClick={editing=width},label={Text(width.title,style=SettingsType.row)})
             }
         }
-        if(layout.side) Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            TabRailStyle.entries.forEach {style->
-                FilterChip(selected=layout.style==style,onClick={onChange(layout.copy(style=style))},label={Text(style.label,style=SettingsType.row)})
+        val widthLabel=if(profile==current) "${profile.range} · Current window ($widthDp dp)" else profile.range
+        Text(widthLabel,style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    SettingsDivider()
+    Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp)) {
+        Text("Tab position",style=SettingsType.row)
+        FlowRow(Modifier.selectableGroup(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            TabBarPosition.entries.forEach {position->
+                FilterChip(selected=layout.position==position,onClick={onChange(profile,layout.copy(position=position))},
+                    label={Text(position.label,style=SettingsType.row)})
+            }
+        }
+        if(layout.side) {
+            Text("Sidebar style",style=SettingsType.row)
+            FlowRow(Modifier.selectableGroup(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                TabRailStyle.entries.forEach {style->
+                    FilterChip(selected=layout.style==style,onClick={onChange(profile,layout.copy(style=style))},
+                        label={Text(style.label,style=SettingsType.row)})
+                }
             }
         }
     }

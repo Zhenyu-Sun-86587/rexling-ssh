@@ -65,7 +65,7 @@ import kotlinx.coroutines.delay
             }
         }
     }
-    SettingsDrawer("Ctrl shortcuts","Close Ctrl shortcut settings",onClose,hazeState,swipeToDismiss=false) {
+    SettingsDrawer("Ctrl shortcuts","Close Ctrl shortcut settings",onClose,hazeState,fixed=true) {
         Column(Modifier.fillMaxWidth().heightIn(max=600.dp).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 Text("Tap to edit · hold and drag to reorder",Modifier.weight(1f),style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
@@ -131,7 +131,7 @@ import kotlinx.coroutines.delay
         val encoded=ControlKeyRecorder.encode(next)
         runCatching {ControlShortcutConfig.decode(encoded)}.onSuccess {sequence=encoded;nextControl=false;error=null}.onFailure {error=it.message}
     }
-    SettingsDrawer(if(item==null) "Add Ctrl shortcut" else "Edit Ctrl shortcut","Cancel Ctrl shortcut recording",{keyboard?.hide();onCancel()},hazeState,swipeToDismiss=false) {
+    SettingsDrawer(if(item==null) "Add Ctrl shortcut" else "Edit Ctrl shortcut","Cancel Ctrl shortcut recording",{keyboard?.hide();onCancel()},hazeState,fixed=true) {
         Column(Modifier.fillMaxWidth().heightIn(max=600.dp).verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Text("Ctrl is included for the first key. Each following key is added to the sequence.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(keys.isEmpty()) Text("No keys recorded",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant) else ControlKeyChips(keys)

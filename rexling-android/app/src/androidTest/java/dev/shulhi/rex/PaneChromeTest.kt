@@ -185,7 +185,7 @@ class PaneChromeTest {
         File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"pane-frosted-caption.png").outputStream().use {image.asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
     }
 
-    @Test fun slimmerSideTabsKeepTheIconStackAndFooterActionsVisible() {
+    @Test fun flushSideTabsKeepTheIconStackAndFooterActionsVisible() {
         val windows=listOf(WindowItem("tab","PDF preview",listOf(BlockItem("a","shell"),BlockItem("b","shell"))))
         val programs=listOf(ProgramIdentity.resolve(listOf("codex")),ProgramIdentity.resolve(listOf("fish")))
         val actions=mutableListOf<String>()
@@ -194,7 +194,7 @@ class PaneChromeTest {
             var style by remember {mutableStateOf(TabRailStyle.TITLES)}
             Row(Modifier.size(440.dp,380.dp).background(MaterialTheme.colorScheme.background).testTag("Side tabs fixture")) {
                 TerminalTabRail(windows,"tab",true,{actions+=it},{programs},{0},TabBarPosition.LEFT,style,
-                    paneWorking={true},tabAttention={unread.intValue},onStyle={style=it},island=true) {
+                    paneWorking={true},tabAttention={unread.intValue},onStyle={style=it},animateWorking=false) {
                     TerminalActions(true,true,{actions+="activity"},{actions+="switcher"},
                         keyboardLabel="Show keyboard",onKeyboard={actions+="keyboard"},vertical=style==TabRailStyle.ICONS)
                 }
@@ -206,19 +206,26 @@ class PaneChromeTest {
         ui.onNodeWithTag("Tab working dot tab",useUnmergedTree=true).assertDoesNotExist()
         ui.runOnIdle {unread.intValue=1}
         fun check(width: androidx.compose.ui.unit.Dp,mode: String) {
-            ui.onNodeWithContentDescription("Tabs").assertWidthIsEqualTo(width)
-            ui.onNodeWithContentDescription("Tab PDF preview, Codex",substring=true).assertIsDisplayed().assertIsSelected()
+            val rail=ui.onNodeWithContentDescription("Tabs").assertWidthIsEqualTo(width)
+            val fixture=ui.onNodeWithTag("Side tabs fixture")
+            assertEquals(fixture.fetchSemanticsNode().boundsInRoot.left,rail.fetchSemanticsNode().boundsInRoot.left,1f)
+            val tab=ui.onNodeWithContentDescription("Tab PDF preview, Codex",substring=true).assertIsDisplayed().assertIsSelected()
+            val pixels=tab.captureToImage().toPixelMap()
+            val markerX=(pixels.height*6.5f/48f).toInt()
+            val rowCenter=pixels.height/2
+            assertNotEquals("The selected tab should have an inset marker",pixels[1,rowCenter],pixels[markerX,rowCenter])
+            assertEquals("The outside edge should be clear of the marker",pixels[1,pixels.height-3],pixels[1,rowCenter])
             ui.onNodeWithTag("Tab unread dot tab",useUnmergedTree=true).assertIsDisplayed()
             listOf("Show keyboard","Tabs and panes","Activity").forEach {description->
                 ui.onNodeWithContentDescription(description).assertIsDisplayed().assertWidthIsEqualTo(36.dp).performClick()
             }
-            val bitmap=ui.onNodeWithTag("Side tabs fixture").captureToImage().asAndroidBitmap()
+            val bitmap=fixture.captureToImage().asAndroidBitmap()
             File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"side-tabs-$mode.png")
                 .outputStream().use {bitmap.compress(Bitmap.CompressFormat.PNG,100,it)}
         }
-        check(144.dp,"titles")
+        check(152.dp,"titles")
         ui.onNodeWithContentDescription("Show icons only").performClick()
-        check(48.dp,"icons")
+        check(52.dp,"icons")
         ui.runOnIdle {assertEquals(List(2) {listOf("keyboard","switcher","activity")}.flatten(),actions)}
     }
 }

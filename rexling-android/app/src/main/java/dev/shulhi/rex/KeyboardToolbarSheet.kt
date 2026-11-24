@@ -54,7 +54,7 @@ import dev.chrisbanes.haze.HazeState
     }
     val overToolbar=dragged!=null && toolbarBounds.contains(pointer)
     val overPalette=dragged!=null && paletteBounds.contains(pointer)
-    SettingsDrawer("Keyboard toolbar","Close keyboard toolbar",onClose,hazeState,swipeToDismiss=false) {
+    SettingsDrawer("Keyboard toolbar","Close keyboard toolbar",onClose,hazeState,fixed=true) {
         Box(Modifier.fillMaxWidth().onGloballyPositioned {origin=it.boundsInRoot().topLeft}
             .pointerInput(Unit) {
                 detectTabDrag(start={position->
