@@ -186,5 +186,7 @@ class HeaderLineLayoutTest {
         val icon=ui.onNodeWithContentDescription("Cloud",useUnmergedTree=true)
         val order=listOf(icon,text(title),text(session),text(path)).map(::bounds)
         for((left,right) in order.zipWithNext()) assertTrue(left.right<=right.left)
+        assertEquals(baseline(text(title)),baseline(text(session)),.5f)
+        assertEquals(baseline(text(title)),baseline(text(path)),.5f)
     }
 }

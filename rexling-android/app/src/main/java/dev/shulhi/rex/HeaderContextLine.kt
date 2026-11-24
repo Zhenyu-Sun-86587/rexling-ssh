@@ -47,10 +47,10 @@ import androidx.compose.ui.unit.dp
             tail.takeIf {it.isNotBlank() && width(it,contextStyle)<=pathWidth}.orEmpty()
         }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(gap),verticalAlignment=Alignment.CenterVertically) {
-            if(title!=null) Text(title,Modifier.widthIn(max=with(density) {titleLimit.toDp()}),
+            if(title!=null) Text(title,Modifier.widthIn(max=with(density) {titleLimit.toDp()}).alignByBaseline(),
                 style=headingStyle,maxLines=1,overflow=TextOverflow.Ellipsis)
-            if(label.isNotBlank()) Text(label,Modifier.weight(1f,fill=false),style=contextStyle,maxLines=1,overflow=TextOverflow.Ellipsis)
-            if(path.isNotBlank()) Text(path,style=contextStyle.copy(color=contextStyle.color.copy(alpha=.78f)),maxLines=1)
+            if(label.isNotBlank()) Text(label,Modifier.weight(1f,fill=false).alignByBaseline(),style=contextStyle,maxLines=1,overflow=TextOverflow.Ellipsis)
+            if(path.isNotBlank()) Text(path,Modifier.alignByBaseline(),style=contextStyle.copy(color=contextStyle.color.copy(alpha=.78f)),maxLines=1)
         }
     }
 }
