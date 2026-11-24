@@ -106,8 +106,15 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
     var menuId by remember(reorderKey) {mutableStateOf<String?>(null)}
     val ids=windows.map {it.id}
     val index=ids.indexOf(selectedId)
+    val tabSpacing=4.dp
+    val newTabItems=if(onNewTab==null) 0 else 1
+    val newTabClearance=if(onNewTab==null) 0 else with(androidx.compose.ui.platform.LocalDensity.current) {
+        36.dp.roundToPx()+tabSpacing.roundToPx()
+    }
     LaunchedEffect(ids) {menuId=null}
-    LaunchedEffect(selectedId,reorderKey,index) {if(index>=0) list.animateScrollToItem(index)}
+    LaunchedEffect(selectedId,reorderKey,index,newTabItems,newTabClearance) {
+        if(index>=0) list.animateScrollToItem(index+newTabItems,scrollOffset=-newTabClearance)
+    }
     Column(Modifier.fillMaxHeight().width(width).background(scheme.surface)
         .drawWithContent {
             drawContent()
@@ -134,10 +141,15 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
         .semantics {customActions=listOf(CustomAccessibilityAction(if(titles) "Show icons only" else "Show tab titles") {
             onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES);true})}
         .padding(vertical=4.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-        Column(Modifier.weight(1f).fillMaxWidth(),verticalArrangement=Arrangement.Bottom,horizontalAlignment=Alignment.CenterHorizontally) {
-        onNewTab?.let {ChromeButton(ChromeIcon.ADD,"New tab",enabled=enabled,onClick=it)}
-        LazyColumn(Modifier.fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
-            contentPadding=PaddingValues(vertical=2.dp),verticalArrangement=Arrangement.spacedBy(4.dp,Alignment.Bottom)) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics {contentDescription="Tabs"},state=list,
+            contentPadding=PaddingValues(vertical=2.dp),verticalArrangement=Arrangement.spacedBy(tabSpacing,Alignment.Bottom)) {
+            // Lay out the button with the tabs so their placement can animate as the rail resizes.
+            if(onNewTab!=null) stickyHeader(key=0) {
+                Box(Modifier.fillMaxWidth().animateItem(fadeInSpec=null,fadeOutSpec=null).background(scheme.surface),
+                    contentAlignment=Alignment.Center) {
+                    ChromeButton(ChromeIcon.ADD,"New tab",enabled=enabled,onClick=onNewTab)
+                }
+            }
             itemsIndexed(windows,key={_,w->w.id}) {i,w->
                 fun moveBy(delta: Int): Boolean {
                     val target=i+delta
@@ -203,7 +215,6 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
                     }
                 }
             }
-        }
         }
         HorizontalDivider(Modifier.padding(horizontal=9.dp,vertical=4.dp),thickness=.5.dp,color=divider)
         // Points the way the rail will go: toward the terminal to show titles, toward the edge to hide them.

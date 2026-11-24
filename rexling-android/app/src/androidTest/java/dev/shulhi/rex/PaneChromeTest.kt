@@ -274,4 +274,36 @@ class PaneChromeTest {
         check(52.dp,"icons")
         ui.runOnIdle {assertEquals(List(2) {listOf("new tab","keyboard","switcher","activity")}.flatten(),actions)}
     }
+
+    @Test fun sidebarNewTabButtonMovesWithTheTabsWhenTheKeyboardCloses() {
+        var height by mutableStateOf(240.dp)
+        var count by mutableIntStateOf(2)
+        var created=0
+        ui.setContent {MaterialTheme {
+            Box(Modifier.size(320.dp,height)) {
+                TerminalTabRail(List(count) {WindowItem("tab-$it","Shell $it",listOf(BlockItem("pane-$it","shell")))},
+                    "tab-0",true,{}, {listOf(ProgramIdentity.resolve(listOf("fish")))},{0},TabBarPosition.LEFT,TabRailStyle.ICONS,
+                    onNewTab={created++}) {}
+            }
+        }}
+        val newTab=ui.onNodeWithContentDescription("New tab")
+        val firstTab=ui.onNodeWithContentDescription("Tab Shell 0,",substring=true)
+        fun top(node: SemanticsNodeInteraction)=node.fetchSemanticsNode().boundsInRoot.top
+        val initialTab=top(firstTab)
+        val initialButton=top(newTab)
+        ui.mainClock.autoAdvance=false
+        ui.runOnIdle {height=380.dp}
+        ui.mainClock.advanceTimeBy(64)
+        val movingTab=top(firstTab)
+        val movingButton=top(newTab)
+        ui.mainClock.advanceTimeBy(1000)
+        assertTrue("The tab should animate toward its new position",movingTab>initialTab && movingTab<top(firstTab))
+        assertEquals(movingTab-initialTab,movingButton-initialButton,1f)
+        ui.mainClock.autoAdvance=true
+        ui.runOnIdle {count=12}
+        ui.onNodeWithContentDescription("Tabs").performScrollToIndex(12)
+        ui.onNodeWithContentDescription("Tab Shell 11,",substring=true).assertIsDisplayed()
+        newTab.assertIsDisplayed().performClick()
+        ui.runOnIdle {assertEquals(1,created)}
+    }
 }
