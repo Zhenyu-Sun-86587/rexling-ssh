@@ -3630,7 +3630,9 @@ while True:
             app.command(json!({"type":"session","id":ids[0],"block":blocks[0],"navigationId":7})).unwrap();
             let initial=until(&app,|v|v["selectedBlock"]==blocks[0] && text(v).contains("ACTIVITY_READY"));
             let closed=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>=2));
-            assert!(closed["activity"].is_null(),"Closed-sheet updates must carry only the attention count");
+            assert!(closed["activity"].as_array().is_some_and(|items|items.iter().any(|item|
+                item["session"]==ids[1] && item["block"]==blocks[1] && item["state"]=="done")),
+                "Tab badges need pane-scoped activity records even when the sheet is closed");
             app.command(json!({"type":"activity","open":true})).unwrap();
             let listed=until(&app,|v|v["activity"].as_array().is_some_and(|items|
                 items.iter().any(|a|a["session"]==ids[0] && a["state"]=="working") && items.iter().any(|a|a["session"]==ids[1] && a["state"]=="done") && items.iter().any(|a|a["id"]=="worker" && a["state"]=="blocked")));
@@ -3650,7 +3652,9 @@ while True:
             runtime.block_on(writer.terminal(&ids[1],&blocks[1],"write",json!({"data":"alert\n"}))).unwrap();
             let background=until(&monitor,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[1] && a["id"]=="" && a["state"]=="blocked")));
             assert!(background["screen"].is_null());assert_eq!(background["controlled"],false);
-            let alerted=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>0) && v["activity"].is_null());
+            let alerted=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>0) &&
+                v["activity"].as_array().is_some_and(|items|items.iter().any(|item|
+                    item["block"]==blocks[1] && item["id"]=="" && item["state"]=="blocked")));
             assert_eq!(alerted["controlled"],false);
             app.command(json!({"type":"activity","open":true})).unwrap();
             until(&app,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[1] && a["id"]=="" && a["state"]=="blocked")));
@@ -3660,7 +3664,8 @@ while True:
             app.command(json!({"type":"activity","open":false})).unwrap();
             app.command(json!({"type":"session","id":ids[1],"block":"missing-pane","navigationId":9})).unwrap();
             let stale=until(&app,|v|v["error"].as_str().is_some_and(|e|e.contains("no longer available")));
-            assert_eq!(stale["controlled"],false);assert_eq!(stale["selectedBlock"],"");
+            assert_eq!(stale["controlled"],false);
+            assert_eq!(stale["selectedBlock"],blocks[1],"A stale Activity link must leave the current pane selected");
         }));
         for id in &ids {runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();}
         runtime.block_on(writer.close()).unwrap();result.unwrap();
