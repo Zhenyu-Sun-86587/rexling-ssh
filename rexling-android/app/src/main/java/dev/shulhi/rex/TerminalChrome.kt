@@ -358,7 +358,7 @@ internal enum class CompactHeaderMode(val label: String) {
                         onDragEnd={settleIcon();if(abs(distance.y)>=iconSwipeDistance && abs(distance.y)>abs(distance.x)*1.5f) selectNeighbour(if(distance.y<0) 1 else -1)})
                 }
             },contentAlignment=Alignment.Center) {
-                Box(Modifier.graphicsLayer {
+                Box(Modifier.offset(x=2.dp).graphicsLayer {
                     val y=if(iconDragging) iconDragY else iconSettle.value
                     val progress=(abs(y)/iconTravel).coerceIn(0f,1f)
                     translationY=y;scaleX=1f-.06f*progress;scaleY=scaleX;alpha=1f-.25f*progress

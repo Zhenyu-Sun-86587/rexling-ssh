@@ -58,7 +58,9 @@ class HeaderLineLayoutTest {
             val original=initial.width to initial.height;val base=baseline(text(title.value))
             val stripNode=ui.onNodeWithContentDescription("Session strip",useUnmergedTree=true)
             val strip=bounds(stripNode);val root=bounds(ui.onNodeWithTag("header"))
-            ui.onNodeWithContentDescription("Session program icon").assertWidthIsEqualTo(tabRailWidth(TabRailStyle.ICONS))
+            val iconSlot=ui.onNodeWithContentDescription("Session program icon").assertWidthIsEqualTo(tabRailWidth(TabRailStyle.ICONS))
+            val icon=ui.onNodeWithContentDescription("Claude Code",useUnmergedTree=true)
+            assertEquals(with(ui.density) {2.dp.roundToPx().toFloat()},bounds(icon).left-bounds(iconSlot).left,.5f)
             val titleBottom=initial.coordinates.positionInRoot().y+initial.height
             val stripTop=stripNode.fetchSemanticsNode().layoutInfo.coordinates.positionInRoot().y
             assertTrue("Header rows overlap at font scale $fontScale: $titleBottom > $stripTop",titleBottom<=stripTop+1f)
