@@ -182,12 +182,15 @@ internal enum class TabWidthClass(val title: String,val range: String,val key: S
                             onLongClick={menuId=w.id},onClick={onSelect(w.id)})
                         .padding(start=if(titles) 14.dp else 5.dp,end=if(titles) 10.dp else 0.dp),
                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(titles) Arrangement.spacedBy(4.dp) else Arrangement.Center) {
-                        Box(contentAlignment=Alignment.Center) {
+                        Box(Modifier.semantics {testTag="Tab program icon ${w.id}"},contentAlignment=Alignment.Center) {
                             ProgramStack(programs,pane,fixedSlot=true)
-                            if(unread>0) Box(Modifier.align(Alignment.TopEnd).offset(x=2.dp,y=(-2).dp).size(8.dp)
-                                .border(1.5.dp,scheme.background,CircleShape)
-                                .background(scheme.primary,CircleShape)
-                                .semantics {testTag="Tab unread dot ${w.id}"})
+                            if(unread>0) {
+                                val iconInset=(36.dp-programStackPaintedWidth(programs.size))/2
+                                Box(Modifier.align(Alignment.TopEnd).offset(x=4.dp-iconInset,y=(-2).dp).size(10.dp)
+                                    .border(1.5.dp,if(active) scheme.surfaceVariant else scheme.surface,CircleShape)
+                                    .background(scheme.primary,CircleShape)
+                                    .semantics {testTag="Tab unread dot ${w.id}"})
+                            }
                         }
                         if(titles) Text(title,Modifier.weight(1f),fontSize=12.sp,lineHeight=16.sp,maxLines=2,overflow=TextOverflow.Ellipsis,
                             fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,color=if(active) scheme.onSurface else scheme.onSurfaceVariant)

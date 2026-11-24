@@ -215,7 +215,13 @@ class PaneChromeTest {
             val rowCenter=pixels.height/2
             assertNotEquals("The selected tab should have an inset marker",pixels[1,rowCenter],pixels[markerX,rowCenter])
             assertEquals("The outside edge should be clear of the marker",pixels[1,pixels.height-3],pixels[1,rowCenter])
-            ui.onNodeWithTag("Tab unread dot tab",useUnmergedTree=true).assertIsDisplayed()
+            val dot=ui.onNodeWithTag("Tab unread dot tab",useUnmergedTree=true).assertIsDisplayed()
+                .assertWidthIsEqualTo(10.dp).fetchSemanticsNode().boundsInRoot
+            val icon=ui.onNodeWithTag("Tab program icon tab",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
+            val paintedRight=icon.center.x+with(ui.density) {12.5.dp.toPx()}
+            val paintedTop=icon.top+with(ui.density) {3.5.dp.toPx()}
+            assertTrue("The dot should overlap the icon's top-right edge",
+                dot.left<paintedRight && dot.right>paintedRight && dot.top<paintedTop && dot.bottom>paintedTop)
             listOf("Show keyboard","Tabs and panes","Activity").forEach {description->
                 ui.onNodeWithContentDescription(description).assertIsDisplayed().assertWidthIsEqualTo(36.dp).performClick()
             }
