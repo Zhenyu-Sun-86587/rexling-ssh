@@ -92,6 +92,7 @@ internal fun MultiPaneLayout(
     sideRail: TabBarPosition = TabBarPosition.BOTTOM,
     splits: List<PaneSplitLine> = emptyList(), zoomed: String = "",
     ime: WindowInsets = WindowInsets.ime, navigation: WindowInsets = WindowInsets.navigationBars,
+    headerHeightSaved: () -> Int = {0},headerOverlap: () -> Int = {0},
     paneActionsEnabled: Boolean = true,
     floatingPanes: List<PanePlacement> = emptyList(),
     allowFloat: Boolean = false,
@@ -279,11 +280,11 @@ internal fun MultiPaneLayout(
                 AndroidView(
                     factory={TerminalView(it)},
                     modifier=Modifier.fillMaxSize().clipToBounds().stableTerminalViewport(panToCursor=live,coverage={
-                        val cover=keyboardCoverage(ime,navigation,keyboardChrome,extendsUnderNavigation)
+                        val cover=keyboardCoverage(ime,navigation,keyboardChrome,extendsUnderNavigation,headerHeightSaved)
                         val fullHeight=visibleHeight+cover.toDp()
                         (fullHeight*heightFraction-trim).coerceAtLeast(0.dp).roundToPx() -
                             (height-trim).coerceAtLeast(0.dp).roundToPx()
-                    }) {keyboardFocus.takeIf {live}},
+                    },topOcclusion={headerOverlap()-(edgeInset+y+inset+1.5.dp).roundToPx()}) {keyboardFocus.takeIf {live}},
                     update={view->
                         imeHandoff.mount(pane,view)
                         view.onInputConnectionReady={if(live) imeHandoff.served(pane.id,view)}

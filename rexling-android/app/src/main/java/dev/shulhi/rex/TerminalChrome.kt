@@ -40,6 +40,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -69,6 +71,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -226,8 +229,14 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 @Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
     connected: Boolean, enabled: Boolean,
     programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
-    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, serverIcons: Map<String,ServerIcon> = emptyMap(), menu: @Composable ()->Unit) {
+    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false,
+    serverIcons: Map<String,ServerIcon> = emptyMap(), collapseForIme: WindowInsets?=null, onHeaderHeightSaved: (Int)->Unit={},
+    headerHaze: HazeState?=null,onHeaderOverlap: ((Int)->Unit)?=null,modifier: Modifier=Modifier,menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
+    val paneTitle=title.ifBlank {program.title}
+    val scheme=MaterialTheme.colorScheme
+    val connectionStatus=if(connected) "Connected" else "Disconnected"
+    val connectionTint=if(connected) scheme.primary else scheme.outline
     val titleHeight=with(LocalDensity.current) {16.sp.toDp()}
     val directoryHeight=with(LocalDensity.current) {12.sp.toDp()}
     val sessionHeight=maxOf(17.dp,directoryHeight)
@@ -282,7 +291,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let {latestSelect(it.id)}
         }
     }
-    Row(Modifier.fillMaxWidth().heightIn(min=50.dp).padding(horizontal=9.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
+    val full: @Composable ()->Unit={Row(Modifier.fillMaxWidth().heightIn(min=50.dp).padding(horizontal=9.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
         if(!expanded) {
             Box(Modifier.height(45.dp).clipToBounds().semantics(mergeDescendants=true) {
                 contentDescription="Session program icon";stateDescription=if(working) "Working" else "Idle"
@@ -305,8 +314,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             Spacer(Modifier.width(7.dp))
         }
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.Center) {
-            if(!expanded) {
-                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,
+            if(!expanded) Column(Modifier.fillMaxWidth().combinedClickable(role=Role.Button,
+                onClickLabel="Open session drawer",onLongClick=onLast,onClick=onSessions)) {
+                Text(paneTitle,fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,
                     overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth().height(titleHeight).layout {measurable,constraints->
                         // Fallback/emoji metrics must not move the ordinary title text.
                         val text=measurable.measure(constraints.copy(minHeight=0,maxHeight=Constraints.Infinity))
@@ -332,13 +342,16 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             .combinedClickable(onClick={if(active || item==null) onSessions() else onSelect(item.id)},onLongClick=onLast)
                             .semantics { contentDescription=if(active || item==null) "Switch session" else "Session ${item.label}" },
                             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(if(expanded) 6.dp else 4.dp)) {
-                            Box(Modifier.size(if(expanded) 7.dp else 5.dp).background(if(connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
-                            serverIcons[item?.id]?.let {ServerGlyph(it,Modifier.size(if(expanded) 13.dp else 11.dp))}
+                            val serverIcon=serverIcons[item?.id] ?: ServerIcon.GLOBE
+                            ServerGlyph(serverIcon,Modifier.size(if(expanded) 14.dp else 12.dp).semantics {
+                                contentDescription=serverIcon.label
+                                if(active || item==null) stateDescription=connectionStatus
+                            },color=if(active || item==null) connectionTint else scheme.onSurfaceVariant)
                             Text(item?.label ?: if(connected) "Sessions" else "Connect",fontFamily=MonoUi,fontWeight=if(expanded) FontWeight.Bold else FontWeight.Normal,
                                 fontSize=if(expanded) 12.sp else 9.sp,lineHeight=if(expanded) 16.sp else 12.sp,
                                 style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
                                 color=if(expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier=Modifier.widthIn(max=(pageWidth-(if(expanded) 50.dp else 24.dp)-(if(serverIcons[item?.id]!=null) 15.dp else 0.dp)).coerceAtLeast(10.dp)))
+                                modifier=Modifier.widthIn(max=(pageWidth-(if(expanded) 55.dp else 31.dp)).coerceAtLeast(10.dp)))
                             ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(if(expanded) 13.dp else 11.dp),MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -346,8 +359,30 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 }
             }
         }
-        if(!expanded) {
-            menu()
+        if(!expanded) menu()
+    }}
+    Box(modifier.fillMaxWidth()) {
+        if(collapseForIme==null || expanded) full()
+        else KeyboardCollapsingHeader(collapseForIme,WindowInsets.navigationBars,onHeaderHeightSaved,onHeaderOverlap,full) {
+            val frost=headerHaze?.let {Modifier.paneFrost(it,RectangleShape,edge=false,opacity=.66f,blur=16.dp)} ?: Modifier
+            Row(frost.fillMaxWidth().testTag("Compact session header").padding(horizontal=9.dp),verticalAlignment=Alignment.CenterVertically) {
+                val session=sessions.getOrNull(selectedIndex)?.label.orEmpty()
+                val serverIcon=serverIcons[selectedId] ?: ServerIcon.GLOBE
+                Row(Modifier.weight(1f).heightIn(min=40.dp).combinedClickable(role=Role.Button,
+                    onClickLabel="Open session drawer",onLongClick=onLast,onClick=onSessions),
+                    verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text(paneTitle,Modifier.weight(1f,fill=false),fontWeight=FontWeight.Bold,fontSize=13.sp,
+                        lineHeight=16.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    ServerGlyph(serverIcon,Modifier.size(14.dp).semantics {
+                        contentDescription=serverIcon.label
+                        stateDescription=connectionStatus
+                    },color=connectionTint)
+                    if(session.isNotBlank()) Text(session,Modifier.weight(.8f,fill=false),color=scheme.onSurfaceVariant,
+                        fontSize=11.sp,lineHeight=14.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(11.dp),scheme.onSurfaceVariant)
+                }
+                menu()
+            }
         }
     }
 }

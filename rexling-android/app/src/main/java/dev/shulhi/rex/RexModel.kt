@@ -178,6 +178,12 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var toolbarWithKeyboardOnly by mutableStateOf(preferences.getBoolean("keyboard_toolbar_auto_hide",false))
         private set
     internal fun changeToolbarWithKeyboardOnly(value: Boolean) {toolbarWithKeyboardOnly=value;preferences.edit {putBoolean("keyboard_toolbar_auto_hide",value)}}
+    internal var compactHeaderWithKeyboard by mutableStateOf(preferences.getBoolean("compact_header_with_keyboard",false))
+        private set
+    internal fun changeCompactHeaderWithKeyboard(value: Boolean) {
+        compactHeaderWithKeyboard=value
+        preferences.edit {putBoolean("compact_header_with_keyboard",value)}
+    }
     internal var enterSubmits by mutableStateOf(preferences.getBoolean("keyboard_enter_submits",false))
         private set
     internal fun changeEnterSubmits(value: Boolean) {enterSubmits=value;preferences.edit {putBoolean("keyboard_enter_submits",value)}}

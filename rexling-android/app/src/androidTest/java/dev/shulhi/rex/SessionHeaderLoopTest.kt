@@ -74,7 +74,7 @@ class SessionHeaderLoopTest {
         val icon=ui.onNodeWithContentDescription("Session program icon")
         val graphic=ui.onNodeWithContentDescription("fish, 3 panes",useUnmergedTree=true)
         val before=graphic.fetchSemanticsNode().boundsInRoot
-        val title=ui.onNodeWithText("Investigate Rex protocol").fetchSemanticsNode().boundsInRoot
+        val title=ui.onNodeWithText("Investigate Rex protocol",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
         val anchor=icon.fetchSemanticsNode().boundsInRoot
         ui.mainClock.autoAdvance=false
         icon.performTouchInput {down(center);moveBy(androidx.compose.ui.geometry.Offset(0f,-height*.7f))}
@@ -82,7 +82,7 @@ class SessionHeaderLoopTest {
         val moved=graphic.fetchSemanticsNode().boundsInRoot
         assertTrue("Graphic did not follow swipe: $before -> $moved",moved.top<before.top)
         assertEquals(anchor,icon.fetchSemanticsNode().boundsInRoot)
-        assertEquals(title,ui.onNodeWithText("Investigate Rex protocol").fetchSemanticsNode().boundsInRoot)
+        assertEquals(title,ui.onNodeWithText("Investigate Rex protocol",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot)
         icon.performTouchInput {cancel()}
         ui.mainClock.advanceTimeBy(1000)
         val after=graphic.fetchSemanticsNode().boundsInRoot

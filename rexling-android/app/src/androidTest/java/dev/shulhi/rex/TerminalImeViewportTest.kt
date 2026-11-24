@@ -48,20 +48,29 @@ class TerminalImeViewportTest {
         var covered by mutableIntStateOf(0)
         var focused by mutableStateOf("a")
         var expectedBottom=0
+        var headerHeightSaved=0
+        var headerOverlap=0
         try {
             ui.setContent {MaterialTheme {
                 val density=LocalDensity.current
-                Box(Modifier.width(400.dp).height(520.dp-with(density) {covered.toDp()}).onGloballyPositioned {
-                    val paneMargins=with(density) {2*4.dp.roundToPx()+1.5.dp.roundToPx()}
-                    expectedBottom=it.positionInWindow().y.toInt()+it.size.height-paneMargins
-                }) {
+                val ime=WindowInsets(bottom=covered)
+                val navigation=WindowInsets(0,0,0,0)
+                Column(Modifier.width(400.dp).height(520.dp-with(density) {covered.toDp()})) {
+                    KeyboardCollapsingHeader(ime,navigation,{headerHeightSaved=it},onOverlap={headerOverlap=it},
+                        full={Spacer(Modifier.fillMaxWidth().height(54.dp))},
+                        compact={Spacer(Modifier.fillMaxWidth().height(40.dp))})
+                    Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}.onGloballyPositioned {
+                        val paneMargins=with(density) {2*4.dp.roundToPx()+1.5.dp.roundToPx()}
+                        expectedBottom=it.positionInWindow().y.toInt()+it.size.height-paneMargins
+                    }) {
                     MultiPaneLayout(client,"session","tab",
                         listOf(PanePlacement("a",0f,0f,1f,.37f),PanePlacement("b",0f,.37f,1f,.63f)),
                         focused,focused,true,emptyMap(),emptySet(),11f,
                         onFocus={id,_->focused=id},onView={views[focused]=it},onImage={_,_->false},
                         onPaste={false},imeEnterSubmits=false,
                         keyboardChrome={0},extendsUnderNavigation=false,hazeState=remember {HazeState()},captureBackdrop=false,
-                        ime=WindowInsets(bottom=covered),navigation=WindowInsets(0,0,0,0))
+                        ime=ime,navigation=navigation,headerHeightSaved={headerHeightSaved},headerOverlap={headerOverlap})
+                    }
                 }
             }}
             ui.waitForIdle()
@@ -266,13 +275,19 @@ class TerminalImeViewportTest {
     @Test fun realKeyboardDoesNotResizeTheTerminalAndTopPromptStaysPut() {
         val dimensions=mutableListOf<Pair<Int,Int>>();lateinit var view: TerminalView
         var visibleHeight=0;var viewportTop=0f;var cursorBottom by mutableStateOf<TerminalKeyboardFocus?>(null)
+        var headerHeightSaved=0
+        var headerOverlap=0
         ui.setContent {MaterialTheme {
             val ime=WindowInsets.ime;val navigation=WindowInsets.navigationBars
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-                Spacer(Modifier.height(48.dp))
-                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().onSizeChanged {visibleHeight=it.height}.onGloballyPositioned {viewportTop=it.positionInWindow().y}) {
+                SessionHeader(listOf(SessionItem("a","alpha · Mac")),"a",true,true,emptyList(),0,"~/Dev/rexlink",
+                    onSessions={},onSelect={},onLast={},title="Terminal",collapseForIme=ime,
+                    onHeaderHeightSaved={headerHeightSaved=it},onHeaderOverlap={headerOverlap=it},menu={})
+                Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}.clipToBounds()
+                    .onSizeChanged {visibleHeight=it.height}.onGloballyPositioned {viewportTop=it.positionInWindow().y}) {
                     AndroidView(factory={TerminalView(it).also {v->view=v;attach(v,dimensions,true);v.controlled=true;v.onKeyboardFocus={cursorBottom=it}}},
-                        modifier=Modifier.fillMaxSize().terminalImeViewport(ime,navigation) {cursorBottom},update={cursorBottom=it.keyboardFocus})
+                        modifier=Modifier.fillMaxSize().terminalImeViewport(ime,navigation,headerHeightSaved={headerHeightSaved},headerOverlap={headerOverlap}) {cursorBottom},
+                        update={cursorBottom=it.keyboardFocus})
                 }
                 Spacer(Modifier.height(48.dp))
             }
@@ -289,10 +304,10 @@ class TerminalImeViewportTest {
             ui.waitForIdle()
             ui.runOnIdle {
                 assertTrue("Keyboard should reduce the visible viewport",visibleHeight<height)
+                assertTrue("The terminal should extend under the collapsed header",headerOverlap>0)
                 assertEquals(height,view.height);assertEquals(count,dimensions.size)
-                assertEquals("A prompt near the top must not move",0,terminalImePan(cursorBottom,visibleHeight,height-visibleHeight))
                 val position=IntArray(2);view.getLocationInWindow(position)
-                assertEquals(viewportTop.toInt(),position[1])
+                assertTrue("A top prompt must stay clear of the glass",position[1]+cursorBottom!!.top>=viewportTop+headerOverlap-1)
                 val grid=view.screen!!;view.screen=grid.copy(cursorY=grid.rows-4)
             }
             ui.waitForIdle()

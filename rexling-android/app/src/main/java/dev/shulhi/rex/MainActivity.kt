@@ -37,6 +37,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -121,6 +122,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val keyTarget=client.keyTarget()
     val terminalHaze=remember {HazeState()}
     val workspaceHaze=remember {HazeState()}
+    val headerHaze=remember {HazeState()}
     var readyBackdrop by remember {mutableStateOf(false)}
     var floatingBackdrop by remember {mutableStateOf(false)}
     var wheelBackdrop by remember {mutableStateOf(false)}
@@ -222,6 +224,12 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     // measurement and read by the terminal's, so it is a plain holder rather than snapshot state.
     val toolbarHeight=remember(keyboardDensity) {intArrayOf(with(keyboardDensity) {1.dp.roundToPx()+45.dp.roundToPx()})}
     val blocks=window?.blocks ?: if(state.phase=="preview") listOf(BlockItem("preview","Terminal")) else emptyList()
+    val collapseHeader=model.compactHeaderWithKeyboard && blocks.isNotEmpty()
+    // The header is measured before the weighted workspace in the same layout pass.
+    val headerHeightSaved=remember {intArrayOf(0)}
+    val headerOverlap=remember {intArrayOf(0)}
+    val currentHeaderSavings: ()->Int={if(collapseHeader) headerHeightSaved[0] else 0}
+    val currentHeaderOverlap: ()->Int={if(collapseHeader) headerOverlap[0] else 0}
     val requested=window?.layout?.firstOrNull {it.id==displayedBlock}
     val visibleBlocks=window?.visiblePanes() ?: blocks
     val chosen=displayedBlock.takeUnless {it.isBlank() || requested?.minimized==true}
@@ -331,10 +339,14 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
             SessionHeader(sessionStrip,currentSessionKey,state.connected,model.sessionTargets.isNotEmpty(),
                 blocks.map {state.programs[it.id] ?: ProgramIdentity.Loading},blocks.indexOfFirst {it.id==chosen}.coerceAtLeast(0),state.directories[displayedBlock].orEmpty(),{picker="sessions"},model::selectSessionTarget,model::jumpLastSession,
                 serverIcons=model.sessionTargets.associate {it.key to it.server.icon}+(currentSessionKey to model.activeServer.icon),
-                working=chosen in state.workingBlocks,title=paneTitle,menu={
+                working=chosen in state.workingBlocks,title=paneTitle,collapseForIme=keyboardInsets.takeIf {collapseHeader},
+                onHeaderHeightSaved={headerHeightSaved[0]=it},headerHaze=headerHaze,onHeaderOverlap={headerOverlap[0]=it},
+                modifier=Modifier.zIndex(1f),menu={
                     ChromeButton(ChromeIcon.MORE,"Terminal menu") {menu=true}
                 })
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            Box(Modifier.weight(1f).fillMaxWidth()
+                .then(if(collapseHeader) Modifier.underWorkspaceHeader(currentHeaderOverlap) else Modifier)
+                .then(if(collapseHeader && keyboardVisible) Modifier.hazeSource(headerHaze) else Modifier)) {
                 Column(Modifier.fillMaxSize()) {
                     if(model.servers.isEmpty() || (!connectionRequested && state.phase=="disconnected" && !client.hasScreen)) {
                         Surface(Modifier.padding(12.dp),shape=RoundedCornerShape(18.dp),color=MaterialTheme.colorScheme.surface) {
@@ -398,6 +410,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             fontSize.toFloat(),onFocus={id,grid->client.selectBlock(id,grid,keepTiled=true)},
                             onView=onView,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
+                            headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
                             extendsUnderNavigation=extendUnderNav,hazeState=terminalHaze,captureBackdrop=captureTerminal,
                             bottomPaddingDp=if(floating.isNotEmpty()) 28 else 6,bottomMargin=!extendUnderNav,sideRail=tabLayout.position,
                             splits=window.splits,zoomed=window.zoomed,paneActionsEnabled=ready,
@@ -410,6 +423,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             Modifier.fillMaxSize(),floatingDock=floating.isNotEmpty(),paneLayout=window?.layout.orEmpty(),titles=state.titles,directories=state.directories,
                             hazeState=terminalHaze,captureBackdrop=captureTerminal,onImage=imageCommit,onPaste=::pasteClipboard,imeEnterSubmits=model.enterSubmits,
                             keyboardChrome={if(model.toolbarWithKeyboardOnly) toolbarHeight[0] else 0},
+                            headerHeightSaved=currentHeaderSavings,headerOverlap=currentHeaderOverlap,
                             squareCorners=tabLayout.side,extendsUnderNavigation=extendUnderNav,
                             navigationClearance=singlePaneNavigationClearance,bottomOverlayInset=bottomOverlayInset)
                         ConnectionNotice(connectionPhase,model.networkAvailable,client::retryNow,Modifier.align(Alignment.TopCenter).padding(8.dp))
@@ -498,6 +512,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         onNeovim={preferencesOpen=false;neovimSettings=true},arrowJoystickEnabled=model.arrowJoystickEnabled,onArrowJoystick=model::changeArrowJoystick,
         enterSubmits=model.enterSubmits,onEnterSubmits=model::changeEnterSubmits,
         toolbarWithKeyboardOnly=model.toolbarWithKeyboardOnly,onToolbarWithKeyboardOnly=model::changeToolbarWithKeyboardOnly,
+        compactHeaderWithKeyboard=model.compactHeaderWithKeyboard,onCompactHeaderWithKeyboard=model::changeCompactHeaderWithKeyboard,
         tabLayouts=model.tabLayouts,tabWidth=tabWidth,onTabLayout=model::changeTabLayout,
         multiPaneUnfolded=model.multiPaneUnfolded,onMultiPaneUnfolded=model::changeMultiPaneUnfolded,
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
@@ -674,12 +689,12 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
     onInput: (String)->Unit,onScroll: (Int)->Unit,onWheel: (Int,Int,Int,Int,Int)->Unit,onActivate: (Boolean)->Unit,onBottom: ()->Unit,onDimensions: (Int,Int)->Unit,
     onSelect: (String)->Unit,onPanes: ()->Unit,onView: (TerminalView)->Unit,modifier: Modifier=Modifier,
     floatingDock: Boolean=false,paneLayout: List<PanePlacement> = emptyList(),titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),hazeState: HazeState?=null,captureBackdrop: Boolean=false,onImage: (android.net.Uri,()->Unit)->Boolean={_,release->release();false},onPaste: ()->Boolean={false},imeEnterSubmits: Boolean=false,keyboardChrome: ()->Int={0},squareCorners: Boolean=false,extendsUnderNavigation: Boolean=false,
-    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp) {
+    navigationClearance: Dp=0.dp,bottomOverlayInset: Dp=0.dp,headerHeightSaved: ()->Int={0},headerOverlap: ()->Int={0}) {
     val layout by client.displayLayout.collectAsState()
     val screen=client.screenForLayout(layout)
     TerminalCarousel(blocks,chosen,liveBlock,screen,{client.paneFrames[it]},programs,controlled,fontSize,
         onInput,onScroll,onWheel,onActivate,onBottom,onDimensions,onSelect,onPanes,onView,modifier,client::bindTerminalView,onMouseClick=client::click,mouseTarget=client::keyTarget,onImage=onImage,onPaste=onPaste,imageTarget=client::imageInputTarget,bottomControlsInset=if(floatingDock) 56.dp else 0.dp,paneLayout=paneLayout,titles=titles,directories=directories,hazeState=hazeState,captureBackdrop=captureBackdrop,imeEnterSubmits=imeEnterSubmits,keyboardChrome=keyboardChrome,squareCorners=squareCorners,extendsUnderNavigation=extendsUnderNavigation,
-        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset)
+        navigationClearance=navigationClearance,bottomOverlayInset=bottomOverlayInset,headerHeightSaved=headerHeightSaved,headerOverlap=headerOverlap)
 }
 
 @Composable private fun BackgroundAlertsDialog(model: RexModel,hazeState: HazeState?=null,onClose: ()->Unit) {
