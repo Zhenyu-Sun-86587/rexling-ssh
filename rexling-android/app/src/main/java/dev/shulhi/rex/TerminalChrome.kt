@@ -704,15 +704,22 @@ internal val activityButtonDiameter=41.dp
 
 @Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,
     onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0,keyboardLabel: String="",onKeyboard: (()->Unit)?=null,vertical: Boolean=false) {
-    // Stacked at the foot of a side tab rail, in a row beside the bottom tab bar.
+    // The icon-only side rail stacks these actions.
     @Composable fun Group(content: @Composable ()->Unit)=
         if(vertical) Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {content()}
-        else Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {content()}
+        else BoxWithConstraints {
+            val buttonCount=if(onKeyboard==null) 1 else 2
+            val spacing=if(constraints.hasBoundedWidth) with(LocalDensity.current) {
+                val buttonWidth=36.dp.roundToPx()*buttonCount+activityButtonDiameter.roundToPx()
+                ((constraints.maxWidth-buttonWidth)/buttonCount).coerceIn(0,4.dp.roundToPx()).toDp()
+            } else 4.dp
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(spacing)) {content()}
+        }
     Group {
         // Stands in for the key toolbar's keyboard button while the toolbar is hidden.
         if(onKeyboard!=null) ChromeButton(ChromeIcon.KEYBOARD,keyboardLabel,enabled,onClick=onKeyboard)
         ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)
-        Box(Modifier.size(activityButtonDiameter),contentAlignment=Alignment.Center) {
+        Box(Modifier.size(activityButtonDiameter).testTag("Activity button surface"),contentAlignment=Alignment.Center) {
             Box(Modifier.matchParentSize().clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
             Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled=activityEnabled,role=Role.Button,onClick=onActivity)
                 .semantics {contentDescription="Activity";stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},contentAlignment=Alignment.Center) {

@@ -424,7 +424,11 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                             paneProgress={w->state.terminalProgress[w.blocks.getOrNull(client.tabPaneIndex(w))?.id] ?: w.blocks.mapNotNull {state.terminalProgress[it.id]}.firstOrNull()},
                             tabAttention={w->activityBadges.tabs[w.id] ?: 0},animateWorking=!workspaceBackdrop,
                             onStyle={model.changeTabLayout(tabWidth.first,tabLayout.copy(style=it))},extendUnderNav=extendUnderNav,
-                            onNewTab=client::createTab) {tabActions(tabLayout.style==TabRailStyle.ICONS)}
+                            onNewTab=client::createTab,windowWidthDp=tabWidth.second,
+                            sessions=TabRailSessions(model.sessionTargets,currentSessionKey,model::selectSessionTarget),
+                            headerOverlap=currentHeaderOverlap) {
+                            tabActions(tabLayout.style==TabRailStyle.ICONS)
+                        }
                     }
                     if(blocks.isNotEmpty()) Row(Modifier.weight(1f).fillMaxWidth()) {
                         if(tabLayout.position==TabBarPosition.LEFT) tabRail()
