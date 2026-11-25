@@ -343,13 +343,14 @@ class TerminalImeViewportTest {
             ui.runOnIdle {assertEquals(height,view.height);assertEquals(count,dimensions.size)}
         } finally {ui.runOnIdle {view.hideKeyboard()}}
     }
-    @Test fun hiddenClaudeCursorPansAboveTheKeyboardWithoutResizingTheGrid() {
+    @Test fun hiddenPiCursorPansAboveTheKeyboardWithoutResizingTheGrid() {
         val sizes=mutableListOf<Pair<Int,Int>>();lateinit var view:TerminalView
+        val program=ProgramIdentity.resolve(listOf("/opt/pi-coding-agent/pi"))
         var focus by mutableStateOf<TerminalKeyboardFocus?>(null)
         ui.setContent {MaterialTheme {
             Box(Modifier.width(320.dp).height(300.dp).clipToBounds()) {
                 AndroidView(factory={TerminalView(it).also {v->
-                    view=v;v.allowHiddenCursorInput=true;v.onKeyboardFocus={focus=it}
+                    view=v;v.allowHiddenCursorInput=program.supportsHiddenCursorInput;v.onKeyboardFocus={focus=it}
                     v.onDimensions={cols,rows->sizes+=cols to rows;v.screen=TerminalScreen(cols,rows,null,null,-1,0,emptyList(),inputFlags=7,cursorAnchorX=2,cursorAnchorY=rows-2)}
                 }},modifier=Modifier.fillMaxSize().terminalImeViewport(WindowInsets(bottom=400),WindowInsets(0,0,0,0)) {focus},update={focus=it.keyboardFocus})
             }
@@ -357,7 +358,7 @@ class TerminalImeViewportTest {
         ui.waitForIdle();var count=0
         ui.runOnIdle {
             count=sizes.size;assertNull(view.screen!!.cursorY);assertNotNull(view.keyboardFocus)
-            assertTrue("Hidden Claude prompt must pan above the keyboard",terminalImePan(view.keyboardFocus,view.height-400,400)>0)
+            assertTrue("Hidden Pi prompt must pan above the keyboard",terminalImePan(view.keyboardFocus,view.height-400,400)>0)
         }
         ui.runOnIdle {view.screen=view.screen!!.copy(cursorAnchorY=view.screen!!.rows-3)}
         ui.waitForIdle();ui.runOnIdle {assertEquals(count,sizes.size)}
