@@ -752,19 +752,19 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
         Row(Modifier.fillMaxWidth().padding(horizontal=16.dp).padding(top=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             SwitcherSearchField(search,{search=it},"Find session…",Modifier.weight(1f))
             if(allPanes!=null) TextButton(onClick={showAllPanes=true},contentPadding=PaddingValues(horizontal=6.dp)) {
-                Text("All panes",style=SettingsType.section,maxLines=1)
+                Text("All panes",style=SettingsType.paneDetail,maxLines=1)
             }
             SwitcherAddButton("New session",canCreate,onNew)
         }
         LazyColumn(Modifier.fillMaxWidth().weight(1f),contentPadding=PaddingValues(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            if(groups.isEmpty()) item {Text(if(targets.isEmpty()) "No sessions yet" else "No matching sessions",Modifier.padding(vertical=16.dp),style=SettingsType.row,color=scheme.onSurfaceVariant)}
+            if(groups.isEmpty()) item {Text(if(targets.isEmpty()) "No sessions yet" else "No matching sessions",Modifier.padding(vertical=16.dp),style=SettingsType.paneTitle,color=scheme.onSurfaceVariant)}
             groups.forEach {group->
                 item(key="server:${group.server.id}") {
                     Row(Modifier.fillMaxWidth().padding(top=6.dp),verticalAlignment=Alignment.CenterVertically) {
                         ServerGlyph(group.server.icon,Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(group.server.label,Modifier.weight(1f),style=SettingsType.section,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
-                        Text(group.sessions.size.toString(),style=SettingsType.detail,color=scheme.onSurfaceVariant)
+                        Text(group.sessions.size.toString(),style=SettingsType.paneDetail,color=scheme.onSurfaceVariant)
                     }
                 }
                 items(group.sessions,key={it.key}) {target->
@@ -776,7 +776,7 @@ private fun getClipboard(context: Context)=context.getSystemService(Context.CLIP
                 }
             }
         }
-        if(error.isNotBlank()) Text(error,Modifier.padding(horizontal=16.dp,vertical=4.dp),color=scheme.error,style=SettingsType.detail)
+        if(error.isNotBlank()) Text(error,Modifier.padding(horizontal=16.dp,vertical=4.dp),color=scheme.error,style=SettingsType.paneDetail)
     }
     renameTarget?.let {target->
         SessionRenameDialog(target,closing.isBlank(),onSave={label->if(onRenameSession(target,label)) renameTarget=null},onDismiss={renameTarget=null})

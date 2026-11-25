@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -22,18 +23,19 @@ import androidx.compose.ui.unit.dp
     query: String, onQuery: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val searchStyle = SettingsType.paneTitle.copy(fontWeight = FontWeight.Normal)
     BasicTextField(
         query, onQuery,
         modifier.heightIn(min = 40.dp).clip(RoundedCornerShape(12.dp))
             .background(colors.surfaceVariant.copy(alpha = .45f)).padding(horizontal = 12.dp, vertical = 10.dp),
-        textStyle = SettingsType.row.copy(color = colors.onSurface),
+        textStyle = searchStyle.copy(color = colors.onSurface),
         singleLine = true,
         cursorBrush = SolidColor(colors.primary),
         decorationBox = { field ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChromeSymbol(ChromeIcon.SEARCH, Modifier.size(17.dp), colors.onSurfaceVariant)
                 Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) Text(placeholder, style = SettingsType.row, color = colors.onSurfaceVariant,
+                    if (query.isEmpty()) Text(placeholder, style = searchStyle, color = colors.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     field()
                 }
@@ -77,7 +79,7 @@ import androidx.compose.ui.unit.dp
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp).height(2.dp))
         if (incomplete || missedPane) Text(
             if (missedPane) "That pane is unavailable. Refresh to update the list." else "Some pane details are unavailable. Refresh to try again.",
-            Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = SettingsType.detail, color = colors.onSurfaceVariant,
+            Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = SettingsType.paneDetail, color = colors.onSurfaceVariant,
         )
         LazyColumn(
             Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -86,7 +88,7 @@ import androidx.compose.ui.unit.dp
             if (results.isEmpty() && !loading) item {
                 Text(
                     if (sources.isEmpty()) "No servers connected" else if (search.isBlank()) "No panes available" else "No matching panes",
-                    Modifier.padding(vertical = 16.dp), style = SettingsType.row, color = colors.onSurfaceVariant,
+                    Modifier.padding(vertical = 16.dp), style = SettingsType.paneTitle, color = colors.onSurfaceVariant,
                 )
             }
             for ((server, sessions) in results) {
@@ -102,7 +104,7 @@ import androidx.compose.ui.unit.dp
                 }
                 for ((session, panes) in sessions) {
                     item(key = "pane-session:${sessionKey(server.id, session.id)}") {
-                        Text(session.label, Modifier.padding(start = 4.dp, top = 4.dp), style = SettingsType.detail,
+                        Text(session.label, Modifier.padding(start = 4.dp, top = 4.dp), style = SettingsType.paneDetail,
                             color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     items(panes, key = { "pane:${it.key}" }) { target ->
@@ -126,15 +128,15 @@ import androidx.compose.ui.unit.dp
     ) {
         PaneProgramTile(target.pane.program, Modifier.size(24.dp, 19.dp), large = false, rotation = 0f)
         Column(Modifier.weight(1f)) {
-            Text(target.title, style = SettingsType.row, color = if (current) colors.onPrimaryContainer else colors.onSurface,
+            Text(target.title, style = SettingsType.paneTitle, color = if (current) colors.onPrimaryContainer else colors.onSurface,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (target.pane.directory.isNotBlank()) Text(
-                target.pane.directory, style = SettingsType.detail, color = colors.onSurfaceVariant,
+                target.pane.directory, style = SettingsType.paneDetail, color = colors.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         target.activity?.let { status ->
-            Text(status.label, style = SettingsType.detail, color = colors.onSurfaceVariant)
+            Text(status.label, style = SettingsType.paneDetail, color = colors.onSurfaceVariant)
         }
         if (current) ChromeSymbol(ChromeIcon.CHECK, Modifier.size(16.dp), colors.onPrimaryContainer)
     }

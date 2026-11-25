@@ -309,12 +309,12 @@ internal enum class CompactHeaderMode(val label: String) {
     val scheme=MaterialTheme.colorScheme
     val connectionStatus=if(connected) "Connected" else "Disconnected"
     val connectionTint=if(connected) scheme.primary else scheme.outline
-    val titleHeight=with(LocalDensity.current) {16.sp.toDp()}
+    val titleHeight=with(LocalDensity.current) {SettingsType.paneTitle.lineHeight.toDp()}
     val sessionHeight=maxOf(17.dp,with(LocalDensity.current) {14.sp.toDp()})
     val lineStyle=androidx.compose.ui.text.TextStyle(
         platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false),
         lineHeightStyle=LineHeightStyle(LineHeightStyle.Alignment.Center,LineHeightStyle.Trim.None))
-    val headingStyle=lineStyle.copy(fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,letterSpacing=0.sp)
+    val headingStyle=lineStyle.merge(SettingsType.paneTitle).copy(fontWeight=FontWeight.Bold,letterSpacing=0.sp)
     val contextStyle=lineStyle.copy(fontSize=11.sp,lineHeight=14.sp,letterSpacing=0.sp,color=scheme.onSurfaceVariant)
     val titleBaseline=rememberTextMeasurer().measure("Ag",
         style=androidx.compose.material3.LocalTextStyle.current.merge(headingStyle),

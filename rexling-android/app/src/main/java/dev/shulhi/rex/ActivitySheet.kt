@@ -19,7 +19,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
@@ -43,8 +42,8 @@ import androidx.compose.ui.unit.dp
         DrawerHandle(dismiss)
         Column(Modifier.fillMaxWidth().height(panelHeight).padding(bottom=4.dp).semantics {paneTitle="Activity"}) {
             Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
-                Text("Activity",Modifier.weight(1f),style=SettingsType.row,fontWeight=FontWeight.Bold)
-                TextButton(onClick=onMarkAll,contentPadding=PaddingValues(horizontal=8.dp),enabled=sources.any {source->source.connected && source.items.any {it.notifiable && it.key !in source.seen}}) {Text("Mark seen",style=SettingsType.detail)}
+                Text("Activity",Modifier.weight(1f),style=SettingsType.paneTitle)
+                TextButton(onClick=onMarkAll,contentPadding=PaddingValues(horizontal=8.dp),enabled=sources.any {source->source.connected && source.items.any {it.notifiable && it.key !in source.seen}}) {Text("Mark seen",style=SettingsType.paneDetail)}
                 ChromeButton(ChromeIcon.REFRESH,"Refresh activity",sources.any {it.connected},onClick=onRefresh)
                 ChromeButton(ChromeIcon.CLOSE,"Close activity",onClick=dismiss)
             }
@@ -55,7 +54,7 @@ import androidx.compose.ui.unit.dp
                     Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(9.dp))
                         .background(if(active) scheme.primaryContainer else Color.Transparent)
                         .selectable(active,role=Role.Tab,onClick={filter=entry}),contentAlignment=Alignment.Center) {
-                        Text(entry.label,style=SettingsType.section,color=if(active) scheme.onPrimaryContainer else scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(entry.label,style=SettingsType.paneTitle,color=if(active) scheme.onPrimaryContainer else scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -70,10 +69,10 @@ import androidx.compose.ui.unit.dp
                                 ServerGlyph(source.server.icon,Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(source.server.label,Modifier.weight(1f),style=SettingsType.section,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
-                                Text(if(source.connected) "${records.size}" else "Offline",style=SettingsType.detail,color=scheme.onSurfaceVariant)
+                                Text(if(source.connected) "${records.size}" else "Offline",style=SettingsType.paneDetail,color=scheme.onSurfaceVariant)
                             }
-                            if(source.error.isNotBlank()) Text(source.error,Modifier.padding(bottom=4.dp),style=SettingsType.detail,color=scheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
-                            else if(source.partial) Text("Some activity could not be refreshed.",style=SettingsType.detail,color=scheme.onSurfaceVariant)
+                            if(source.error.isNotBlank()) Text(source.error,Modifier.padding(bottom=4.dp),style=SettingsType.paneDetail,color=scheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
+                            else if(source.partial) Text("Some activity could not be refreshed.",style=SettingsType.paneDetail,color=scheme.onSurfaceVariant)
                         }
                         items(records,key={"${source.server.id}:${it.key}"}) {record->
                             val seen=record.notifiable && record.key in source.seen
@@ -89,7 +88,7 @@ import androidx.compose.ui.unit.dp
                                         modifier=Modifier.height(36.dp).semantics {contentDescription="Mark ${record.label} seen"},
                                         shape=RoundedCornerShape(8.dp),contentPadding=PaddingValues(0.dp),
                                         colors=ButtonDefaults.textButtonColors(contentColor=scheme.onSurfaceVariant)
-                                    ) {Text("Mark seen",style=SettingsType.detail)}
+                                    ) {Text("Mark seen",style=SettingsType.paneDetail)}
                                 }
                             }
                         }
@@ -97,8 +96,8 @@ import androidx.compose.ui.unit.dp
                 }
                 if(filtered.all {it.second.isEmpty()} && sources.none {it.error.isNotBlank() || it.partial}) item {
                     Column(Modifier.fillMaxWidth().padding(vertical=20.dp,horizontal=8.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                        Text(if(sources.any {it.loading}) "Checking activity…" else "No activity to show",style=SettingsType.row)
-                        Text("Programs appear here when they report a status.",style=SettingsType.detail,color=scheme.onSurfaceVariant)
+                        Text(if(sources.any {it.loading}) "Checking activity…" else "No activity to show",style=SettingsType.paneTitle)
+                        Text("Programs appear here when they report a status.",style=SettingsType.paneDetail,color=scheme.onSurfaceVariant)
                     }
                 }
             }
@@ -116,9 +115,9 @@ import androidx.compose.ui.unit.dp
         ActivityStateBar(record.state,seen,Modifier.semantics {testTag="Activity state ${record.key}"},if(record.progressOnly) record.terminalProgress else null)
         PaneProgramTile(record.program,Modifier.semantics {testTag="Activity program ${record.key}"},large=true,rotation=0f)
         Column(verticalArrangement=Arrangement.spacedBy(1.dp)) {
-            Text(record.label,style=SettingsType.row,maxLines=1,overflow=TextOverflow.Ellipsis)
-            Text(listOf(record.message,record.terminalProgress?.description ?: record.progress?.let {"$it%"}.orEmpty(),record.context).filter {it.isNotBlank()}.distinct().joinToString(" · "),style=SettingsType.detail,
-                color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(record.label,style=SettingsType.paneTitle,maxLines=1,overflow=TextOverflow.Ellipsis)
+            Text(listOf(record.message,record.terminalProgress?.description ?: record.progress?.let {"$it%"}.orEmpty(),record.context).filter {it.isNotBlank()}.distinct().joinToString(" · "),
+                style=SettingsType.paneDetail,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
             val report=record.terminalProgress
             val progress=record.progress ?: report?.percent
             if(progress!=null) LinearProgressIndicator(progress={progress/100f},color=terminalProgressColor(report),modifier=Modifier.fillMaxWidth().height(2.dp))

@@ -73,10 +73,13 @@ class ActivitySheetTest {
         val seen=androidx.compose.runtime.mutableStateOf(setOf(older.key));var opened=0
         ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {ActivitySheet(listOf(ActivitySource(server,true,false,"",false,listOf(task,older),seen.value)),{},{opened++},{},onSeen={seen.value+=it.record.key})}}
         val rowDescription="Review, Finished, Session s, Linux"
-        fun textBounds()=ui.onNodeWithText("Review",useUnmergedTree=true).fetchSemanticsNode().boundsInRoot.let {title->
-            val context=ui.onNode(hasText("Session s · Tab") and hasAnyAncestor(hasContentDescription(rowDescription)),useUnmergedTree=true).fetchSemanticsNode().boundsInRoot
-            title.copy(bottom=context.bottom)
-        }
+        val title=ui.onNodeWithText("Review",useUnmergedTree=true)
+        val context=ui.onNode(hasText("Session s · Tab") and hasAnyAncestor(hasContentDescription(rowDescription)),useUnmergedTree=true)
+        ui.onNodeWithText("Activity",useUnmergedTree=true).assertPaneTitleTypography()
+        ui.onNodeWithText("Needs you",useUnmergedTree=true).assertPaneTitleTypography()
+        title.assertPaneTitleTypography()
+        context.assertPaneDetailTypography()
+        fun textBounds()=title.fetchSemanticsNode().boundsInRoot.copy(bottom=context.fetchSemanticsNode().boundsInRoot.bottom)
         val before=textBounds()
         val row=ui.onNodeWithContentDescription(rowDescription).fetchSemanticsNode().boundsInRoot
         assertEquals("Title and context must stay vertically centered",row.center.y,before.center.y,1f)

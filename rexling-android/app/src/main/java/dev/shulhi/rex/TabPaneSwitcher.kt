@@ -87,15 +87,15 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
                     Row(Modifier.weight(1f).fillMaxHeight().background(if(active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,RoundedCornerShape(9.dp))
                         .selectable(active,role=Role.Tab,onClick={page=section}),
                         horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
-                            Text(section.label,style=SettingsType.row,color=if(active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(section.label,style=SettingsType.paneTitle,color=if(active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(6.dp))
-                            Text(count.toString(),style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(count.toString(),style=SettingsType.paneDetail,color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 }
                 IconButton(onClick=dismiss,modifier=Modifier.semantics {contentDescription="Close tab and pane switcher"}) {ChromeSymbol(ChromeIcon.CLOSE,Modifier.size(18.dp))}
             }
-            if(error.isNotBlank()) Text(error,Modifier.padding(horizontal=16.dp,vertical=4.dp),style=SettingsType.detail,color=MaterialTheme.colorScheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
+            if(error.isNotBlank()) Text(error,Modifier.padding(horizontal=16.dp,vertical=4.dp),style=SettingsType.paneDetail,color=MaterialTheme.colorScheme.error,maxLines=2,overflow=TextOverflow.Ellipsis)
             pageState.SaveableStateProvider(page.name) {
                 if(page==SwitcherPage.SESSIONS && sessions!=null) {sessions.content();return@SaveableStateProvider}
                 val ids=if(tabs) windows.map {it.id} else panes.map {it.id}
@@ -153,7 +153,7 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
                                 showLayout=!showLayout
                                 if(showLayout) list.requestScrollToItem(0)
                             },
-                            label={Text(if(showLayout) "Hide map" else "Show map",style=SettingsType.detail)},
+                            label={Text(if(showLayout) "Hide map" else "Show map",style=SettingsType.paneDetail)},
                             leadingIcon={ChromeSymbol(ChromeIcon.SPLIT,Modifier.size(15.dp),LocalContentColor.current)},
                             shape=RoundedCornerShape(percent=50),
                             modifier=Modifier.height(40.dp),
@@ -252,8 +252,8 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
 
 @Composable private fun SwitcherEmpty(title: String,description: String) {
     Column(Modifier.fillMaxWidth().padding(vertical=24.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        Text(title,style=SettingsType.row)
-        Text(description,style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title,style=SettingsType.paneTitle)
+        Text(description,style=SettingsType.paneDetail,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -276,8 +276,8 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
             Box(Modifier.width(3.dp).height(22.dp).then(if(active) Modifier.background(scheme.primary,RoundedCornerShape(2.dp)) else Modifier))
             Box(Modifier.width(36.dp),contentAlignment=Alignment.Center) {ProgramStack(programs,focus,fixedSlot=true)}
             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(1.dp)) {
-                Text(title,style=SettingsType.row,color=if(active) scheme.primary else scheme.onSurface,maxLines=1,overflow=TextOverflow.Ellipsis)
-                Text(subtitle,style=SettingsType.detail,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(title,style=SettingsType.paneTitle,color=if(active) scheme.primary else scheme.onSurface,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(subtitle,style=SettingsType.paneDetail,color=scheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
             }
             trailing()
         }
@@ -289,7 +289,7 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
         modifier=Modifier.heightIn(min=40.dp)) {
         ChromeSymbol(ChromeIcon.ADD,Modifier.size(15.dp),LocalContentColor.current)
         Spacer(Modifier.width(4.dp))
-        Text(label,style=SettingsType.section,maxLines=1)
+        Text(label,style=SettingsType.paneDetail,maxLines=1)
     }
 }
 
@@ -298,8 +298,8 @@ private enum class SwitcherPage(val label: String) { SESSIONS("Sessions"), TABS(
     Row(modifier.clip(RoundedCornerShape(10.dp))
         .clickable(role=Role.Button,onClickLabel="Switch session",onClick=onClick).padding(horizontal=4.dp,vertical=6.dp),
         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-        Text("Session",style=SettingsType.detail,color=scheme.onSurfaceVariant)
-        Text(current.ifBlank {"None"},Modifier.weight(1f,fill=false),style=SettingsType.section,color=scheme.onSurface,maxLines=1,overflow=TextOverflow.Ellipsis)
+        Text("Session",style=SettingsType.paneDetail,color=scheme.onSurfaceVariant)
+        Text(current.ifBlank {"None"},Modifier.weight(1f,fill=false),style=SettingsType.paneTitle,color=scheme.onSurface,maxLines=1,overflow=TextOverflow.Ellipsis)
         ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(14.dp).graphicsLayer {rotationZ=-90f},scheme.onSurfaceVariant)
     }
 }

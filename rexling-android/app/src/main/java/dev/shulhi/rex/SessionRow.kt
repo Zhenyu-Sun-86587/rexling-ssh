@@ -30,13 +30,13 @@ import androidx.compose.ui.unit.dp
             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(6.dp).background(if(active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
             Column(Modifier.weight(1f)) {
-                Text(target.session.label,style=SettingsType.row,fontWeight=if(active) FontWeight.SemiBold else FontWeight.Normal,maxLines=1,overflow=TextOverflow.Ellipsis)
+                Text(target.session.label,style=SettingsType.paneTitle,maxLines=1,overflow=TextOverflow.Ellipsis)
                 Text((target.detail?.let {"${it.attachment} · ${it.tabs} tabs · ${it.panes} panes"} ?: "Details not loaded"),
-                    style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    style=SettingsType.paneDetail,color=MaterialTheme.colorScheme.onSurfaceVariant,maxLines=1,overflow=TextOverflow.Ellipsis)
             }
             when {closing->CircularProgressIndicator(Modifier.size(15.dp),strokeWidth=1.5.dp)
-                active->Text("current",color=MaterialTheme.colorScheme.primary,style=SettingsType.detail,fontWeight=FontWeight.SemiBold)
-                last->Text("previous",color=MaterialTheme.colorScheme.onSurfaceVariant,style=SettingsType.detail)}
+                active->Text("current",color=MaterialTheme.colorScheme.primary,style=SettingsType.paneDetail,fontWeight=FontWeight.SemiBold)
+                last->Text("previous",color=MaterialTheme.colorScheme.onSurfaceVariant,style=SettingsType.paneDetail)}
         }
     }
 }
