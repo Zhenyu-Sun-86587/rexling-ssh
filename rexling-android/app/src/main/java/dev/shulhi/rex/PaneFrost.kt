@@ -4,8 +4,6 @@ package dev.shulhi.rex
 
 import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.foundation.border
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -86,11 +84,4 @@ private class PopupFrostNode(haze: HazeState,style: HazeStyle,var invalidator: P
         capture=visible
     }
     return visible || capture
-}
-
-@Composable internal fun DrawerHandle() {
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(16.dp),contentAlignment=androidx.compose.ui.Alignment.Center) {
-        androidx.compose.foundation.layout.Box(Modifier.width(28.dp).height(3.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant,androidx.compose.foundation.shape.RoundedCornerShape(3.dp)))
-    }
 }

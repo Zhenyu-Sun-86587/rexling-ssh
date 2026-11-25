@@ -29,20 +29,22 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     internal var networkAvailable by mutableStateOf<Boolean?>(null)
         private set
-    private var paneObscured=true
-    internal fun setPaneObscured(value: Boolean) {paneObscured=value;updateActivity()}
-    private fun watchedPane(): WatchedPane? {
-        val client=connections[activeServerId] ?: return null
-        val state=client.state.value
-        val app=getApplication<Application>()
-        return ActivityFocusPolicy.watched(activeServer,state,foreground && windowFocused,paneObscured || activityVisible,client.hasScreen && state.screen!=null,client.navigationRequest.pending,
-            app.getSystemService(android.os.PowerManager::class.java).isInteractive,app.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+    private var visibleActivityPanes: WatchedPanes?=null
+    internal fun setVisibleActivityPanes(panes: WatchedPanes?) {
+        if(visibleActivityPanes==panes) return
+        visibleActivityPanes=panes
+        updateActivity()
     }
     private fun updateActivity() {
-        val watched=watchedPane()
-        if(watched!=null) connections[watched.server]?.let {client->
-            val profile=servers.firstOrNull {it.id==watched.server}
-            if(profile!=null) ActivityFocusPolicy.acknowledge(profile,client.state.value.activity,watched,client::isActivitySeen).takeIf {it.isNotEmpty()}?.let(client::markActivitySeen)
+        val visible=visibleActivityPanes
+        val active=connections[activeServerId]
+        if(visible!=null && active!=null) {
+            val app=getApplication<Application>()
+            val state=active.state.value
+            val profile=activeServer
+            val watched=ActivityFocusPolicy.watched(profile,state,visible,foreground && windowFocused && !activityVisible,active.navigationRequest.pending,
+                app.getSystemService(android.os.PowerManager::class.java).isInteractive,app.getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked)
+            ActivityFocusPolicy.acknowledge(profile,state.activity,watched,active::isActivitySeen).takeIf {it.isNotEmpty()}?.let(active::markActivitySeen)
         }
         attentionCount=connections.values.sumOf {client->if(client.state.value.connected) ActivityFocusPolicy.unread(client.state.value.activity,client::isActivitySeen) else 0}
         activitySources=servers.mapNotNull {server->connections[server.id]?.state?.value?.let {state->
@@ -63,7 +65,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         val profile=servers.firstOrNull {it.id==target.server.id && it.endpoint==target.server.endpoint} ?: return
         val source=activitySources.firstOrNull {it.server.id==profile.id && it.connected} ?: return
         val record=source.items.firstOrNull {it.key==target.record.key} ?: return
-        markActivitySeen(target);rememberLastSession();connectServer(profile.id);activeClient.openActivity(record.session,record.block);showActivity(false)
+        markActivitySeen(target);rememberLastSession();connectServer(profile.id);activeClient.openPane(record.session,record.block);showActivity(false)
     }
     private val preferences=application.getSharedPreferences(preferenceName,0)
     private var serverSwitchSerial=0L
@@ -111,7 +113,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         pendingAlert=null
         if(state.sessions.none {it.id==target.session}) {notificationNotice="That session is no longer available.";return}
         client.markAttentionSeen(target.attentionKey,target.attentionVersion)
-        client.openActivity(target.session,target.block);showActivity(false)
+        client.openPane(target.session,target.block);showActivity(false)
     }
     internal val themes by lazy {ThemeCatalog.load(application)}
     private var darkTheme by mutableStateOf(preferences.getString("dark_theme","rexlink-default-dark").orEmpty())
@@ -119,6 +121,12 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var keepScreenAwake by mutableStateOf(runCatching {KeepScreenAwake.valueOf(preferences.getString("keep_screen_awake","SYSTEM")!!)}.getOrDefault(KeepScreenAwake.SYSTEM))
         private set
     internal fun changeKeepScreenAwake(value: KeepScreenAwake) {keepScreenAwake=value;preferences.edit {putString("keep_screen_awake",value.name)}}
+    internal var immersiveStatusBar by mutableStateOf(preferences.getBoolean("immersive_status_bar",false))
+        private set
+    internal fun changeImmersiveStatusBar(value: Boolean) {
+        immersiveStatusBar=value
+        preferences.edit {putBoolean("immersive_status_bar",value)}
+    }
     var fontSize by mutableIntStateOf(preferences.getInt("font_size",10).coerceIn(8,20))
         private set
     internal fun theme(dark: Boolean): AppTheme {
@@ -139,6 +147,14 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         minimizeFloatingPanes=value
         preferences.edit {putBoolean("minimize_floating_panes",value)}
     }
+    internal var floatingDockPosition by mutableStateOf(androidx.compose.ui.geometry.Offset(
+        preferences.getFloat("floating_dock_x",1f).takeIf {it.isFinite()}?.coerceIn(0f,1f) ?: 1f,
+        preferences.getFloat("floating_dock_y",1f).takeIf {it.isFinite()}?.coerceIn(0f,1f) ?: 1f))
+        private set
+    internal fun moveFloatingDock(value: androidx.compose.ui.geometry.Offset) {
+        floatingDockPosition=value
+        preferences.edit {putFloat("floating_dock_x",value.x);putFloat("floating_dock_y",value.y)}
+    }
     internal var controlItems by mutableStateOf(ControlShortcutConfig.restore(preferences.getString("control_shortcut_items",null)))
         private set
     internal fun saveControlShortcuts(text: String): String? = runCatching {
@@ -154,6 +170,44 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var arrowJoystickEnabled by mutableStateOf(preferences.getBoolean("arrow_joystick_enabled",true))
         private set
     internal fun changeArrowJoystick(value: Boolean) {arrowJoystickEnabled=value;preferences.edit {putBoolean("arrow_joystick_enabled",value)}}
+    // Earlier builds on this branch saved layouts by fold posture; their choices seed the width classes
+    // they correspond to (folded is medium, unfolded landscape is wide).
+    internal val tabLayouts=androidx.compose.runtime.mutableStateMapOf<TabWidthClass,TabBarLayout>().apply {
+        val earlier=mapOf(TabWidthClass.MEDIUM to "tab_layout_folded",TabWidthClass.WIDE to "tab_layout_unfolded_landscape")
+        TabWidthClass.entries.forEach {width->
+            val fallback=TabBarLayout.decode(earlier[width]?.let {preferences.getString(it,null)},
+                if(width==TabWidthClass.WIDE) TabBarLayout(style=TabRailStyle.TITLES) else TabBarLayout())
+            put(width,TabBarLayout.decode(preferences.getString(width.key,null),fallback))
+        }
+    }
+    internal fun tabLayout(width: TabWidthClass)=tabLayouts[width] ?: TabBarLayout()
+    internal fun changeTabLayout(width: TabWidthClass,layout: TabBarLayout) {
+        tabLayouts[width]=layout
+        preferences.edit {putString(width.key,layout.encode())}
+    }
+    /** Full-screen large layouts inherit the previous choice until configured per orientation. */
+    internal var paneLayouts by mutableStateOf(PaneOrientation.entries.associateWith {orientation->
+        preferences.getBoolean(orientation.preferenceKey,preferences.getBoolean("multi_pane_unfolded",false))
+    })
+        private set
+    internal fun changePaneLayout(orientation: PaneOrientation,multiple: Boolean) {
+        paneLayouts=paneLayouts+(orientation to multiple)
+        preferences.edit {putBoolean(orientation.preferenceKey,multiple)}
+    }
+    internal var toolbarWithKeyboardOnly by mutableStateOf(preferences.getBoolean("keyboard_toolbar_auto_hide",false))
+        private set
+    internal fun changeToolbarWithKeyboardOnly(value: Boolean) {toolbarWithKeyboardOnly=value;preferences.edit {putBoolean("keyboard_toolbar_auto_hide",value)}}
+    internal var toolbarSystemColors by mutableStateOf(preferences.getBoolean("keyboard_toolbar_system_colors",false))
+        private set
+    internal fun changeToolbarSystemColors(value: Boolean) {toolbarSystemColors=value;preferences.edit {putBoolean("keyboard_toolbar_system_colors",value)}}
+    internal var compactHeaderMode by mutableStateOf(
+        preferences.getString("compact_header_mode",null)?.let {saved->CompactHeaderMode.entries.firstOrNull {it.name==saved}}
+            ?: if(preferences.getBoolean("compact_header_with_keyboard",false)) CompactHeaderMode.WITH_KEYBOARD else CompactHeaderMode.NEVER)
+        private set
+    internal fun changeCompactHeaderMode(value: CompactHeaderMode) {
+        compactHeaderMode=value
+        preferences.edit {putString("compact_header_mode",value.name)}
+    }
     internal var enterSubmits by mutableStateOf(preferences.getBoolean("keyboard_enter_submits",false))
         private set
     internal fun changeEnterSubmits(value: Boolean) {enterSubmits=value;preferences.edit {putBoolean("keyboard_enter_submits",value)}}
@@ -195,6 +249,9 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         private set
     internal var sessionTargets by mutableStateOf<List<SessionTarget>>(emptyList())
         private set
+    internal var paneCatalogSources by mutableStateOf<List<PaneCatalogSource>>(emptyList())
+        private set
+    private var paneCatalogVisible=false
     internal var lastSessionKey by mutableStateOf(preferences.getString("last_global_session","").orEmpty())
         private set
     var closingSessionKey by mutableStateOf("")
@@ -210,7 +267,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private var closingSessionId=""
     private val connections=mutableMapOf<String,RexConnection>()
     private val observers=mutableMapOf<String,Job>()
-    private var desired=preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id && it.canConnect}}.toSet()
+    private var desired by mutableStateOf(preferences.getStringSet("connected_servers",emptySet()).orEmpty().filter {id->servers.any {it.id==id && it.canConnect}}.toSet())
     private var palette: TerminalPalette?=null
     private var windowFocused=false
     internal fun windowFocusChanged(focused: Boolean) {windowFocused=focused;updateActivity()}
@@ -228,6 +285,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     internal var activeClient by mutableStateOf(connection(activeServer))
         private set
     val activeServer: ServerProfile get()=servers.firstOrNull {it.id==activeServerId} ?: ServerProfile.Empty
+    internal val activeConnectionRequested: Boolean get()=activeServerId in desired
     val connectedCount: Int get()=serverStatuses.values.count {it.connected}
 
     var secureTerminalKeyboard by mutableStateOf(preferences.getBoolean("secure_terminal_keyboard",false))
@@ -249,10 +307,15 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
             if(!foreground) client.pause()
             observers[profile.id]=viewModelScope.launch {
                 client.chromeState.collect {state->
+                    val wasConnected=serverStatuses[profile.id]?.connected==true
                     val next=ServerStatus(state.phase,state.error)
                     if(serverStatuses[profile.id]!=next) serverStatuses=serverStatuses+(profile.id to next)
 
                     updateSessionTargets()
+                    if(paneCatalogVisible) {
+                        if(state.connected && !wasConnected) client.requestPaneCatalog(true)
+                        updatePaneCatalog()
+                    }
                     if(profile.id==pendingAlert?.serverId) tryOpenAlert()
                     updateActivity()
                     if(renamingSessionKey.isNotBlank() && profile.id==renameServerId) {
@@ -275,6 +338,37 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
     private fun updateSessionTargets() {
         val next=SessionCatalog.collect(servers,connections.mapValues {it.value.state.value})
         if(next!=sessionTargets) sessionTargets=next
+    }
+    private fun updatePaneCatalog() {
+        paneCatalogSources=servers.mapNotNull {server->
+            val state=connections[server.id]?.chromeState?.value ?: return@mapNotNull null
+            if(state.connected) PaneCatalog.collect(server,state) else null
+        }
+    }
+    internal fun showPaneCatalog(visible: Boolean) {
+        if(paneCatalogVisible==visible) return
+        paneCatalogVisible=visible
+        if(visible) {
+            updatePaneCatalog()
+            refreshPaneCatalog()
+        } else {
+            connections.values.forEach {it.requestPaneCatalog(false)}
+            paneCatalogSources=emptyList()
+        }
+    }
+    internal fun refreshPaneCatalog() {
+        connections.values.filter {it.chromeState.value.connected}.forEach {it.requestPaneCatalog(true)}
+    }
+    internal fun openCatalogPane(target: PaneCatalogTarget): Boolean {
+        val client=connections[target.server.id] ?: return false
+        val state=client.chromeState.value
+        if(!state.connected || state.creating || client.savedEndpoint!=target.server.endpoint) return false
+        if(paneCatalogSources.none {source->source.server==target.server && source.panes.any {it.key==target.key}}) return false
+        val current=client.navigationRequest.session ?: state.selectedSession
+        if(activeServerId==target.server.id && current!=target.session.id) rememberLastSession()
+        connectServer(target.server.id)
+        activeClient.openPane(target.session.id,target.pane.block)
+        return true
     }
     private fun rememberLastSession() {
         val session=activeClient.navigationRequest.session ?: activeClient.state.value.selectedSession
@@ -320,7 +414,7 @@ class RexModel @JvmOverloads constructor(application: Application, preferenceNam
         else activeClient.jumpLastSession()
     }
     internal fun refreshSessionDetails() {connections.values.filter {it.state.value.connected}.forEach {it.refreshSessionDetails()}}
-    private fun persist() {updateSessionTargets();preferences.edit {
+    private fun persist() {updateSessionTargets();if(paneCatalogVisible) updatePaneCatalog();preferences.edit {
         putString("servers",SavedServers.encode(servers));putString("active_server",activeServerId)
         putStringSet("connected_servers",desired)
     };if(foreground && BackgroundAlerts.foreground.value) BackgroundAlerts.reconcile(getApplication())}

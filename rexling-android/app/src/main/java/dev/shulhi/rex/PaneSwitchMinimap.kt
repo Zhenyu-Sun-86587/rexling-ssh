@@ -20,8 +20,14 @@ import androidx.compose.ui.unit.dp
 @Composable internal fun PaneSwitchMinimap(layout: List<PanePlacement>,active: String,modifier: Modifier=Modifier,hazeState: HazeState?=null) {
     val localHaze=remember {HazeState()}
     val haze=hazeState ?: localHaze
+    PanePositionMap(layout,active,
+        modifier.paneFrost(haze,RoundedCornerShape(5.dp),edge=false).semantics {contentDescription="Pane switch layout";stateDescription=active})
+}
+
+/** Draws the window's geometry with one pane highlighted. */
+@Composable internal fun PanePositionMap(layout: List<PanePlacement>,active: String,modifier: Modifier=Modifier) {
     val scheme=MaterialTheme.colorScheme
-    Canvas(modifier.paneFrost(haze,RoundedCornerShape(5.dp),edge=false).semantics {contentDescription="Pane switch layout";stateDescription=active}) {
+    Canvas(modifier) {
         val inset=2.dp.toPx();val gap=1.dp.toPx()
         val width=(size.width-2*inset).coerceAtLeast(0f);val height=(size.height-2*inset).coerceAtLeast(0f)
         layout.forEach {pane->

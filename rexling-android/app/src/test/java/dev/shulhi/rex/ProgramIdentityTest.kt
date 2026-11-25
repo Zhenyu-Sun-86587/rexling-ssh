@@ -24,6 +24,17 @@ class ProgramIdentityTest {
         assertEquals(ProgramKind.CODEX,ProgramIdentity.resolve(listOf("C:\\tools\\codex.exe")).kind)
         assertEquals(ProgramKind.CODEX,ProgramIdentity.resolve(listOf("/usr/lib/node_modules/@openai/codex/bin/codex.js","node")).kind)
     }
+
+    @Test fun hiddenCursorInputUsesLiveAgentIdentity() {
+        val state=AppState.parse("""{"programs":{"pi-status":["pi","node"],"pi-executable":["/opt/pi-coding-agent/pi"],"claude":["claude-code"],"codex":["codex"],"editor":["nvim"],"shell":["fish"],"helper":["pi-helper"]},"titles":{"shell":"pi"}}""")
+        for(id in listOf("pi-status","pi-executable","claude","codex")) {
+            assertTrue(id,state.programs.getValue(id).supportsHiddenCursorInput)
+        }
+        for(id in listOf("editor","shell","helper")) {
+            assertFalse(id,state.programs.getValue(id).supportsHiddenCursorInput)
+        }
+    }
+
     @Test fun usesExecutableMetadataAndFallsBackWithoutGuessingFromTitles() {
         assertEquals(ProgramKind.NEOVIM,ProgramIdentity.resolve(listOf("/usr/local/bin/nvim")).kind)
         assertEquals(ProgramKind.TERMINAL,ProgramIdentity.resolve(listOf("my-nvim-helper")).kind)

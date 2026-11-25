@@ -31,12 +31,27 @@ internal class RexConnection(application: Application, private val scope: Corout
     private var paneMoveSerial=0L
     private var pendingPaneOrder by mutableStateOf<PendingPaneOrder?>(null)
     fun orderedWindows(value: AppState): List<WindowItem> = pendingPaneOrder?.apply(value,pendingTabOrder?.apply(value) ?: value.windows) ?: pendingTabOrder?.apply(value) ?: value.windows
-    fun editTerminal(session: String,window: String,id: String,type: String,label: String="",anchor: String="",split: PaneSplit=PaneSplit.RIGHT): Boolean {
+    fun editTerminal(session: String,window: String,id: String,type: String,label: String="",anchor: String="",split: PaneSplit=PaneSplit.RIGHT,focus: Boolean=false): Boolean {
         val current=state.value
         if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending || current.selectedSession!=session) return false
         val tab=current.windows.firstOrNull {it.id==window} ?: return false
         if(type=="rename_tab") {if(id!=window) return false} else if(tab.blocks.none {it.id==id}) return false
-        return command(type,"session" to session,"window" to window,"id" to id,"label" to label.trim(),"anchor" to anchor,"direction" to split.name.lowercase())
+        return command(type,"session" to session,"window" to window,"id" to id,"label" to label.trim(),"anchor" to anchor,"direction" to split.name.lowercase(),"focus" to focus)
+    }
+    internal fun resizeFloating(session: String,window: String,pane: PanePlacement,bounds: PaneBounds): Boolean {
+        val current=state.value
+        if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending || current.selectedSession!=session) return false
+        return command("resize_floating","session" to session,"window" to window,"id" to pane.id,"layerId" to pane.layerId,
+            "bounds" to org.json.JSONArray(listOf(bounds.x,bounds.y,bounds.width,bounds.height)))
+    }
+    internal fun minimizeFloating(session: String,window: String,pane: PanePlacement): Boolean {
+        val current=state.value
+        if(!visible || !foreground || !current.connected || current.creating || navigationRequest.pending ||
+            current.selectedSession!=session || pane.layerId.isBlank()) return false
+        val tab=current.windows.firstOrNull {it.id==window} ?: return false
+        if(tab.blocks.none {it.id==current.selectedBlock} ||
+            tab.layout.none {it.id==pane.id && it.floating && !it.minimized && it.layerId==pane.layerId}) return false
+        return command("minimize_floating","session" to session,"window" to window,"id" to pane.id,"layerId" to pane.layerId)
     }
     fun movePane(window: String,id: String,before: String?): Boolean {
         val current=state.value
@@ -46,6 +61,21 @@ internal class RexConnection(application: Application, private val scope: Corout
         if(order==old) return false
         pendingPaneOrder=PendingPaneOrder(current.selectedSession,window,++paneMoveSerial,order)
         return command("move_pane","session" to current.selectedSession,"window" to window,"id" to id,"before" to before.orEmpty(),"blocks" to org.json.JSONArray(old),"requestId" to paneMoveSerial)
+    }
+    internal fun dropPane(session: String,window: String,source: String,target: String,position: PaneDropPosition,tiled: List<String>) {
+        val current=state.value
+        if(handle==0L || !visible || !foreground || !current.connected || current.creating ||
+            navigationRequest.pending || current.selectedSession!=session || source==target) return
+        val tab=current.windows.firstOrNull {it.id==window} ?: return
+        if(tab.zoomed.isNotBlank() || tab.layout.filterNot {it.floating}.map {it.id}!=tiled ||
+            source !in tiled || target !in tiled || tab.blocks.none {it.id==current.selectedBlock}) return
+        val layout=org.json.JSONArray(tiled)
+        if(position==PaneDropPosition.CENTER) {
+            command("move_pane","session" to session,"window" to window,"id" to source,"swapWith" to target,"tiled" to layout)
+        } else {
+            command("place_pane","session" to session,"window" to window,"id" to source,"anchor" to target,
+                "position" to position.name.lowercase(),"tiled" to layout)
+        }
     }
     fun moveTab(id: String,before: String?): Boolean {
         val current=state.value
@@ -114,13 +144,12 @@ internal class RexConnection(application: Application, private val scope: Corout
                 "columns" to frame.columns,"rows" to frame.rows,"scrollTotal" to frame.scroll.total,
                 "scrollOffset" to frame.scroll.offset,"viewport" to frame.plainText(),"col" to col,"row" to row,"output" to output)
         }
-        view.allowHiddenCursorInput=current.programs[block]?.kind in setOf(ProgramKind.CODEX,ProgramKind.CLAUDE)
+        view.allowHiddenCursorInput=current.programs[block]?.supportsHiddenCursorInput==true
         view.onCursorTap={
             val active=state.value
             // Program identity must be live, not the last-known chrome cache.
-            val kind=active.programs[block]?.kind
             if(visible && foreground && active.connected && active.controlled && !active.creating && !navigationRequest.pending &&
-                active.selectedBlock==block && (kind==ProgramKind.CODEX || kind==ProgramKind.CLAUDE)) view.keyboard()
+                active.selectedBlock==block && active.programs[block]?.supportsHiddenCursorInput==true) view.keyboard()
         }
         boundTarget=frameTarget(current);boundView=java.lang.ref.WeakReference(view)
         val latest=mutableTerminal.value.takeIf {displayedTarget==boundTarget} ?: return false
@@ -268,7 +297,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     @Volatile private var foreground = true
     @Volatile private var closed = false
     @Volatile var visible = true
-        set(value) {if(field!=value){field=value;if(!value) {discardWaitingInput("hidden");pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value)}}
+        set(value) {if(field!=value){field=value;if(!value) {discardWaitingInput("hidden");pendingTabOrder=null;pendingPaneOrder=null;cancelDisplay();resetModifiers();cancelKeyRepeats();resizeJob?.cancel()} else {activation.navigate();queueDisplay(state.value)};command("visibility","visible" to value);if(value) sendMirror()}}
     private var pollJob: Job? = null
 
     init {
@@ -285,9 +314,17 @@ internal class RexConnection(application: Application, private val scope: Corout
                     if(update>decoder.revision) {
                         try {
                             android.os.Trace.beginSection("Rexlet.decodeUpdate")
-                            val next=try {decoder.decode(NativeBridge.readUpdate(handle,decoder.revision))} finally {android.os.Trace.endSection()}
-                            android.os.Trace.beginSection("Rexlink.ready.$handle.${next.revision}");android.os.Trace.endSection()
+                            val decoded=try {decoder.decodeUpdate(NativeBridge.readUpdate(handle,decoder.revision))} finally {android.os.Trace.endSection()}
+                            android.os.Trace.beginSection("Rexlink.ready.$handle.${decoder.revision}");android.os.Trace.endSection()
                             withContext(Dispatchers.Main.immediate) {
+                                val next=when(decoded) {
+                                    is TerminalUpdate.PaneFrames -> {
+                                        android.os.Trace.beginSection("Rexlink.previewCache")
+                                        try {paneFrames=updatePaneFrames(paneFrames,decoded.frames)} finally {android.os.Trace.endSection()}
+                                        return@withContext
+                                    }
+                                    is TerminalUpdate.Full -> decoded.state
+                                }
                                 val requested=navigationRequest
                                 if(requested.pending && next.navigationId<requested.id)
                                     DevelopLog.event("navigation","handle=$handle stale update nav=${next.navigationId} wanted=${requested.id} pane=${next.selectedBlock}")
@@ -308,8 +345,22 @@ internal class RexConnection(application: Application, private val scope: Corout
                                         if(next.connected && session.isNotBlank()) command("session","id" to session,"navigationId" to requested.id,*listOfNotNull(requested.block?.let {"block" to it}).toTypedArray())
                                     } else {navigationRequest=NavigationRequest();restoreWorkspace=true}
                                 }
+                                val endedSession=next.staleSession.takeIf {it.isNotBlank() && it!=old.staleSession}
+                                if(endedSession!=null) {
+                                    workspace.forgetSession(endedSession)
+                                    if(lastSessionId==endedSession) {
+                                        lastSessionId=""
+                                        preferences.edit {remove("last_session:${next.endpoint}")}
+                                    }
+                                    if(navigationRequest.session==endedSession ||
+                                        (navigationRequest.session==null && next.selectedSession.isBlank())) {
+                                        navigationRequest=NavigationRequest()
+                                    }
+                                }
                                 android.os.Trace.beginSection("Rexlink.previewCache")
-                                try {paneFrames=updatePaneFrames(paneFrames,old,next)} finally {android.os.Trace.endSection()}
+                                try {
+                                    paneFrames=if(endedSession==null) updatePaneFrames(paneFrames,old,next) else emptyMap()
+                                } finally {android.os.Trace.endSection()}
                                 if(!restoreWorkspace && next.selectedSession.isNotBlank() && next.selectedSession!=state.value.selectedSession &&
                                     (navigationRequest.session==null || navigationRequest.session==next.selectedSession)) {
                                     val old=state.value.selectedSession
@@ -380,6 +431,40 @@ internal class RexConnection(application: Application, private val scope: Corout
         }
         return true
     }
+    /** A pane shown beside the focused one in the multi-pane layout, and the grid that fits it. */
+    internal data class MirrorPane(val block: String,val columns: Int,val rows: Int)
+    private data class MirrorRequest(val session: String,val window: String,val panes: List<MirrorPane>)
+    private var mirrorRequest=MirrorRequest("","",emptyList())
+    internal fun mirror(session: String,window: String,panes: List<MirrorPane>) {
+        val next=MirrorRequest(session,window,panes)
+        if(next==mirrorRequest) return
+        mirrorRequest=next
+        sendMirror()
+    }
+    internal fun setMirrorObscured(obscured: Boolean) {
+        command("mirror_obscured","obscured" to obscured)
+    }
+    /** Zooms a pane to fill its window, or restores the layout, as the desktop does; Rex tells every client. */
+    internal fun zoom(block: String,zoom: Boolean) {
+        val current=state.value
+        if(!current.connected || current.selectedSession.isBlank() || block.isBlank()) return
+        command("zoom","session" to current.selectedSession,"block" to block,"zoom" to zoom)
+    }
+    /** Moves a pane border in the multi-pane layout; Rex re-lays the window out and the panes follow. */
+    internal fun resizeSplit(split: PaneSplitLine,ratio: Float) {
+        val current=state.value
+        if(!current.connected || current.selectedSession.isBlank()) return
+        command("resize_split","session" to current.selectedSession,"direction" to if(split.horizontal) "horizontal" else "vertical",
+            "before" to split.before,"after" to split.after,"ratio" to ratio.coerceIn(.1f,.9f).toDouble())
+    }
+    private fun sendMirror() {
+        if(!visible) return
+        val request=mirrorRequest
+        val session=state.value.selectedSession
+        if(request.session!=session) return
+        command("mirror","session" to session,"window" to request.window,"panes" to org.json.JSONArray(request.panes.map {
+            JSONObject().put("block",it.block).put("columns",it.columns).put("rows",it.rows)}))
+    }
     private fun resetModifiers() {controlModifier=false;altModifier=false;shiftState=ShiftKeyState()}
     fun connect(server: String) {
         restoreWorkspace=true
@@ -414,7 +499,8 @@ internal class RexConnection(application: Application, private val scope: Corout
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         command("session", "id" to id, "navigationId" to navigationRequest.id)
     }
-    fun selectBlock(id: String) {
+    fun selectBlock(id: String) = selectBlock(id,null)
+    internal fun selectBlock(id: String,grid: Pair<Int,Int>?,keepTiled: Boolean=false,restoreMinimized: Boolean=false) {
         val current = state.value
         if (navigationRequest.session != null && navigationRequest.session != current.selectedSession) return
         if (id == navigationRequest.block || (id == current.selectedBlock && !navigationRequest.pending)) return
@@ -424,9 +510,11 @@ internal class RexConnection(application: Application, private val scope: Corout
         controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""
         restoreWorkspace=false
         workspace.remember(current.selectedSession,current.windows,id)
-        command("block", "id" to id, "navigationId" to navigationRequest.id)
+        if(grid!=null) lastSize=grid
+        command("block", "id" to id, "navigationId" to navigationRequest.id,"keepTiled" to keepTiled,
+            "restoreMinimized" to restoreMinimized)
     }
-    fun openActivity(session: String,block: String) {
+    fun openPane(session: String,block: String) {
         presentation.flush()
         val current=state.value
         if(!visible || !current.connected || current.creating) return
@@ -436,14 +524,14 @@ internal class RexConnection(application: Application, private val scope: Corout
         cancelDisplay();cancelKeyRepeats();resizeJob?.cancel();activation.navigate();resetModifiers();keyboardRequest=""
         restoreWorkspace=false;workspace.request(session,block)
         navigationRequest=NavigationRequest(session=session,block=block,id=++navigationSerial)
-        command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id)
+        command("session","id" to session,"block" to block,"navigationId" to navigationRequest.id,"restoreMinimized" to true)
     }
     fun tabPrograms(window: WindowItem): List<ProgramIdentity> = window.blocks.map {chromeState.value.programs[it.id] ?: ProgramIdentity.Terminal}
     fun tabPaneIndex(window: WindowItem): Int = window.blocks.indexOfFirst {it.id==navigation.pane(state.value.selectedSession,window)}.coerceAtLeast(0)
     fun selectWindow(id: String) {
         val current = state.value
         current.windows.firstOrNull { it.id == id }?.let { window ->
-            val target=navigation.pane(current.selectedSession,window)
+            val target=navigation.pane(current.selectedSession,window.copy(blocks=window.visiblePanes()))
             val next=if(preferences.getBoolean("minimize_floating_panes",false) && window.floatingPanes().any {it.id==target})
                 floatingNavigation.returnPane(current.selectedSession,window) ?: target else target
             next?.let(::selectBlock)
@@ -469,7 +557,9 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun swipePane(step: Int) {
         val current = state.value
         val windows=orderedWindows(current).map {window->
-            if(preferences.getBoolean("minimize_floating_panes",false)) window.copy(blocks=window.tiledPanes()) else window
+            val visible=window.visiblePanes()
+            val panes=if(preferences.getBoolean("minimize_floating_panes",false)) window.tiledPanes().ifEmpty {visible} else visible
+            window.copy(blocks=panes)
         }
         if (current.connected && !current.creating) navigation.neighbour(windows, navigationRequest.block ?: current.selectedBlock, step)?.let(::selectBlock)
     }
@@ -488,6 +578,7 @@ internal class RexConnection(application: Application, private val scope: Corout
     }
     fun jumpLastSession() { if(state.value.sessions.any { it.id==lastSessionId }) selectSession(lastSessionId) }
     fun refreshSessionDetails() { if(state.value.connected) command("sessions_info") }
+    internal fun requestPaneCatalog(open: Boolean) {command("pane_catalog","open" to open)}
     fun prefetchPanes(ids: List<String>) {
         if(state.value.connected && !state.value.creating) command("peek","session" to state.value.selectedSession,"ids" to org.json.JSONArray(ids))
     }
@@ -510,9 +601,9 @@ internal class RexConnection(application: Application, private val scope: Corout
         val current = state.value
         if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank()) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_tab", "session" to current.selectedSession)}
     }
-    fun createPane(split: PaneSplit=PaneSplit.RIGHT,anchor: String=state.value.selectedBlock) {
+    fun createPane(split: PaneSplit=PaneSplit.RIGHT,anchor: String=state.value.selectedBlock,keepTiled: Boolean=false) {
         val current = state.value
-        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank() && current.windows.any {w->w.blocks.any {it.id==anchor}}) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_pane", "session" to current.selectedSession, "anchor" to anchor, "direction" to split.direction)}
+        if (current.connected && !current.creating && !navigationRequest.pending && current.selectedSession.isNotBlank() && current.windows.any {w->w.blocks.any {it.id==anchor}}) {activation.navigate();resizeJob?.cancel();cancelKeyRepeats();command("new_pane", "session" to current.selectedSession, "anchor" to anchor, "direction" to split.direction,"keepTiled" to keepTiled)}
     }
     fun closePane(session: String,id: String) {
         val current=state.value
@@ -547,10 +638,11 @@ internal class RexConnection(application: Application, private val scope: Corout
         return command("take","session" to current.selectedSession,"block" to current.selectedBlock,
             "navigationId" to current.navigationId,"columns" to lastSize.first,"rows" to lastSize.second)
     }
-    fun takeControl() {
+    fun takeControl(showKeyboard: Boolean=true) {
         val current=state.value
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.selectedBlock.isNotBlank()) {
-            keyboardRequest=current.selectedBlock;sendTake(current)
+            if(showKeyboard) keyboardRequest=current.selectedBlock
+            sendTake(current)
         }
     }
     fun keyboardShown() {keyboardRequest=""}
@@ -564,7 +656,9 @@ internal class RexConnection(application: Application, private val scope: Corout
     fun wheel(lines: Int,col: Int,row: Int,cw: Int,ch: Int) {
         val current=state.value
         if(visible && current.connected && !current.creating && !navigationRequest.pending && current.screen!=null)
-            command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,"lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
+            command("wheel","session" to current.selectedSession,"block" to current.selectedBlock,
+                "navigationId" to current.navigationId,"connectionEpoch" to current.connectionEpoch,
+                "lines" to lines,"col" to col,"row" to row,"cw" to cw,"ch" to ch,"columns" to lastSize.first,"rows" to lastSize.second)
     }
     fun releaseControl() { discardWaitingInput("released");activation.release();resizeJob?.cancel();cancelKeyRepeats();controlModifier = false; altModifier = false;shiftState=ShiftKeyState();keyboardRequest=""; if(state.value.selectedBlock.isNotBlank()) command("release") }
     fun pause() {

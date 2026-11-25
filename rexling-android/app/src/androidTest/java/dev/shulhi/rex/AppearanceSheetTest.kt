@@ -50,6 +50,8 @@ class AppearanceSheetTest {
                 assertTrue(first.arrowJoystickEnabled)
                 first.changeArrowJoystick(false)
                 assertEquals(ControlShortcutGesture.HOLD,first.shortcutGesture)
+                assertFalse(first.toolbarSystemColors)
+                first.changeToolbarSystemColors(true)
                 first.changeShortcutGesture(ControlShortcutGesture.DOUBLE_TAP)
                 assertNull(first.saveNeovimShortcuts(":w\n[Git]\n"+(1..40).joinToString("\n") {"Action $it = <Space>lg"}))
                 assertEquals(NeovimShortcutLayout.CIRCULAR,first.neovimShortcutLayout)
@@ -65,6 +67,7 @@ class AppearanceSheetTest {
                 assertEquals("merino-dark",second.theme(true).id);assertEquals("merino-light",second.theme(false).id);assertEquals(11,second.fontSize)
                 assertEquals(Appearance.DARK,second.appearance)
                 assertFalse(second.arrowJoystickEnabled)
+                assertTrue(second.toolbarSystemColors)
                 assertEquals(ControlShortcutGesture.DOUBLE_TAP,second.shortcutGesture)
                 assertEquals(NeovimShortcuts.parse(":w\n[Git]\n"+(1..40).joinToString("\n") {"Action $it = <Space>lg"}),second.neovimShortcuts)
                 assertEquals(NeovimShortcutLayout.GRID,second.neovimShortcutLayout)
@@ -106,7 +109,7 @@ class AppearanceSheetTest {
     }
     @Test fun themedSheetsRenderInLightAndDark() {
         val selected=mutableStateOf(themes.first {it.id=="abyssal-trench"})
-        ui.setContent {val theme=selected.value;MaterialTheme(colorScheme=(if(theme.terminal.dark) darkColorScheme() else lightColorScheme()).withPreset(theme)) {
+        ui.setContent {val theme=selected.value;RexTheme(theme.terminal.dark,theme) {
             Surface(Modifier.fillMaxSize()) {AppearanceSheet(Appearance.SYSTEM,themes,themes.first {it.id=="alpine-milk"},themes.first {it.id=="abyssal-trench"},{},{},onClose={})}
         }}
         for(id in listOf("abyssal-trench","alpine-milk")) {

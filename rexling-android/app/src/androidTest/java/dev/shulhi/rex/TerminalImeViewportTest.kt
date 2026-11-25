@@ -15,6 +15,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
+import dev.chrisbanes.haze.HazeState
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -36,6 +39,74 @@ class TerminalImeViewportTest {
                 (0 until rows).map {y->TerminalCell(0,y,"line $y",-1,0,0,1)})
         }
     }
+    @Test fun stackedPaneViewsKeepTheirHeightAndIdentityAcrossImeAndFocusChanges() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val scope=kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+        lateinit var client: RexConnection
+        ui.runOnUiThread {client=RexConnection(context.applicationContext as android.app.Application,scope,"")}
+        val views=mutableMapOf<String,TerminalView>()
+        var covered by mutableIntStateOf(0)
+        var focused by mutableStateOf("a")
+        var expectedBottom=0
+        var headerHeightSaved=0
+        var headerOverlap=0
+        try {
+            ui.setContent {MaterialTheme {
+                val density=LocalDensity.current
+                val ime=WindowInsets(bottom=covered)
+                val navigation=WindowInsets(bottom=24.dp)
+                val navClearance=14.dp
+                val toolbarHeight=40.dp
+                Column(Modifier.width(400.dp).height(520.dp-with(density) {covered.toDp()}).consumeWindowInsets(ime)) {
+                    KeyboardCollapsingHeader(ime,navigation,{headerHeightSaved=it},onOverlap={headerOverlap=it},
+                        full={Spacer(Modifier.fillMaxWidth().height(54.dp))},
+                        compact={Spacer(Modifier.fillMaxWidth().height(40.dp))})
+                    Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}
+                        .windowInsetsPadding(WindowInsets(bottom=navClearance)).onGloballyPositioned {
+                            val paneMargins=with(density) {4.dp.roundToPx()+1.5.dp.roundToPx()}
+                            expectedBottom=it.positionInWindow().y.toInt()+it.size.height-paneMargins
+                        }) {
+                    MultiPaneLayout(client,"session","tab",
+                        listOf(PanePlacement("a",0f,0f,1f,.37f),PanePlacement("b",0f,.37f,1f,.63f)),
+                        focused,focused,true,emptyMap(),emptySet(),11f,
+                        onFocus={id,_->focused=id},onView={views[focused]=it},onImage={_,_->false},
+                        onPaste={false},imeEnterSubmits=false,
+                        keyboardChrome={with(density) {toolbarHeight.roundToPx()}},extendsUnderNavigation=true,
+                        navigationClearance=navClearance,hazeState=remember {HazeState()},captureBackdrop=false,
+                        ime=ime,navigation=navigation,headerHeightSaved={headerHeightSaved},headerOverlap={headerOverlap})
+                    }
+                    Spacer(Modifier.fillMaxWidth().keyboardRevealed(ime,navigation) {}.height(toolbarHeight))
+                }
+            }}
+            ui.waitForIdle()
+            ui.onNodeWithContentDescription("Focus pane").performClick()
+            ui.waitForIdle()
+            val original=ui.runOnIdle {
+                val bottom=views.getValue("b")
+                val position=IntArray(2)
+                bottom.getLocationInWindow(position)
+                assertTrue("The bottom pane keeps its workspace margin",
+                    kotlin.math.abs(expectedBottom-position[1]-bottom.height)<=1)
+                views.mapValues {(_,view)->view to view.height}
+            }
+            assertEquals(setOf("a","b"),original.keys)
+            for(inset in listOf(0,19,53,99,151,223,267,101,0)) {
+                ui.runOnIdle {covered=inset}
+                ui.waitForIdle()
+                ui.onNodeWithContentDescription("Focus pane").performClick()
+                ui.waitForIdle()
+                ui.runOnIdle {
+                    for((id,pair) in original) {
+                        assertSame("Focus must keep pane $id mounted",pair.first,views[id])
+                        assertEquals("Keyboard must preserve the grid height of pane $id",pair.second,views[id]!!.height)
+                    }
+                }
+            }
+        } finally {
+            ui.runOnIdle {client.close()}
+        }
+    }
+
     @Test fun paneControlHandoffDoesNotChangeTheKeyboardHeight() {
         lateinit var outgoing: TerminalView;lateinit var incoming: TerminalView
         ui.setContent {Row(Modifier.fillMaxSize()) {
@@ -65,6 +136,53 @@ class TerminalImeViewportTest {
                 assertTrue(incoming.hasFocus())
             }
         } finally {ui.runOnIdle {sampling=false;android.view.Choreographer.getInstance().removeFrameCallback(sampler);incoming.hideKeyboard()}}
+    }
+    @Test fun minimizingAFloatingPaneKeepsItsEditorUntilTheTiledEditorIsServed() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val scope=kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main)
+        lateinit var client: RexConnection
+        ui.runOnUiThread {client=RexConnection(context.applicationContext as android.app.Application,scope,"")}
+        val tiled=listOf(PanePlacement("a",0f,0f,1f,1f))
+        var floating by mutableStateOf(listOf(PanePlacement("float",.2f,.2f,.6f,.6f,floating=true)))
+        var focused by mutableStateOf("float")
+        var live by mutableStateOf("float")
+        val views=mutableMapOf<String,TerminalView>()
+        val frame=TerminalScreen(40,20,2,2,-1,0,emptyList())
+        try {
+            ui.setContent {MaterialTheme {
+                MultiPaneLayout(client,"session","tab",tiled,focused,live,live.isNotBlank(),emptyMap(),emptySet(),11f,
+                    onFocus={_,_->},onView={view->view.screen=frame;views[live]=view},
+                    onImage={_,_->false},onPaste={false},imeEnterSubmits=false,
+                    keyboardChrome={0},extendsUnderNavigation=false,hazeState=remember {HazeState()},captureBackdrop=false,
+                    floatingPanes=floating)
+            }}
+            val outgoing=ui.runOnIdle {views.getValue("float").also {it.requestFocus()}}
+            val inputMethod=requireNotNull(context.getSystemService(android.view.inputmethod.InputMethodManager::class.java))
+            ui.waitUntil(7000) {ui.runOnIdle {outgoing.hasWindowFocus() && inputMethod.isActive(outgoing)}}
+            ui.runOnIdle {outgoing.keyboard()}
+            fun keyboardHeight(view: TerminalView) =
+                ViewCompat.getRootWindowInsets(view)?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+            ui.waitUntil(7000) {keyboardHeight(outgoing)>0}
+            ui.runOnIdle {
+                floating=emptyList()
+                focused="a"
+                live=""
+            }
+            ui.runOnIdle {
+                assertTrue("The outgoing editor must stay attached and focused during the navigation gap",
+                    outgoing.isAttachedToWindow && outgoing.hasFocus())
+                assertFalse(outgoing.controlled)
+                assertTrue(keyboardHeight(outgoing)>0)
+                live="a"
+            }
+            val incoming=ui.runOnIdle {views.getValue("a").also {it.requestFocus()}}
+            ui.waitUntil(5000) {!outgoing.isAttachedToWindow}
+            ui.runOnIdle {
+                assertTrue(incoming.hasFocus())
+                assertTrue(keyboardHeight(incoming)>0)
+                incoming.hideKeyboard()
+            }
+        } finally {ui.runOnIdle {client.close()}}
     }
     @Test fun keyboardAnimationKeepsTheGridAndCachedRowsStable() {
         var covered by mutableIntStateOf(0);var legacy by mutableStateOf(true)
@@ -162,13 +280,19 @@ class TerminalImeViewportTest {
     @Test fun realKeyboardDoesNotResizeTheTerminalAndTopPromptStaysPut() {
         val dimensions=mutableListOf<Pair<Int,Int>>();lateinit var view: TerminalView
         var visibleHeight=0;var viewportTop=0f;var cursorBottom by mutableStateOf<TerminalKeyboardFocus?>(null)
+        var headerHeightSaved=0
+        var headerOverlap=0
         ui.setContent {MaterialTheme {
             val ime=WindowInsets.ime;val navigation=WindowInsets.navigationBars
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-                Spacer(Modifier.height(48.dp))
-                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().onSizeChanged {visibleHeight=it.height}.onGloballyPositioned {viewportTop=it.positionInWindow().y}) {
+                SessionHeader(listOf(SessionItem("a","alpha · Mac")),"a",true,true,emptyList(),0,
+                    onSessions={},onSelect={},onLast={},title="Terminal",collapseForIme=ime,
+                    onHeaderHeightSaved={headerHeightSaved=it},onHeaderOverlap={headerOverlap=it},menu={})
+                Box(Modifier.weight(1f).fillMaxWidth().underWorkspaceHeader {headerOverlap}.clipToBounds()
+                    .onSizeChanged {visibleHeight=it.height}.onGloballyPositioned {viewportTop=it.positionInWindow().y}) {
                     AndroidView(factory={TerminalView(it).also {v->view=v;attach(v,dimensions,true);v.controlled=true;v.onKeyboardFocus={cursorBottom=it}}},
-                        modifier=Modifier.fillMaxSize().terminalImeViewport(ime,navigation) {cursorBottom},update={cursorBottom=it.keyboardFocus})
+                        modifier=Modifier.fillMaxSize().terminalImeViewport(ime,navigation,headerHeightSaved={headerHeightSaved},headerOverlap={headerOverlap}) {cursorBottom},
+                        update={cursorBottom=it.keyboardFocus})
                 }
                 Spacer(Modifier.height(48.dp))
             }
@@ -178,39 +302,55 @@ class TerminalImeViewportTest {
             WindowCompat.setDecorFitsSystemWindows(activity.window,false)
             activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
+        fun waitForKeyboard(height: Int) {
+            ui.waitUntil(7000) {
+                ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==true &&
+                    headerOverlap>0 && visibleHeight in 1 until height
+            }
+            ui.waitForIdle()
+        }
+        fun hideKeyboard() {
+            ui.runOnIdle {view.hideKeyboard()}
+            ui.waitUntil(7000) {ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==false && headerOverlap==0}
+            ui.waitForIdle()
+        }
         ui.waitForIdle();var height=0;var count=0
         ui.runOnIdle {height=view.height;count=dimensions.size;view.keyboard()}
         try {
-            ui.waitUntil(7000) {ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==true}
-            ui.waitForIdle()
+            waitForKeyboard(height)
             ui.runOnIdle {
                 assertTrue("Keyboard should reduce the visible viewport",visibleHeight<height)
+                assertTrue("The terminal should extend under the collapsed header",headerOverlap>0)
                 assertEquals(height,view.height);assertEquals(count,dimensions.size)
-                assertEquals("A prompt near the top must not move",0,terminalImePan(cursorBottom,visibleHeight,height-visibleHeight))
                 val position=IntArray(2);view.getLocationInWindow(position)
-                assertEquals(viewportTop.toInt(),position[1])
-                val grid=view.screen!!;view.screen=grid.copy(cursorY=grid.rows-4)
+                assertEquals("The first row, including output above the cursor, must stay clear of the glass",
+                    viewportTop+headerOverlap,position[1].toFloat(),1f)
             }
-            ui.waitForIdle()
+            hideKeyboard()
+            ui.runOnIdle {
+                val grid=view.screen!!;view.screen=grid.copy(cursorY=grid.rows-4)
+                view.keyboard()
+            }
+            waitForKeyboard(height)
             ui.runOnIdle {
                 assertTrue("Bottom prompt must move above the keyboard",terminalImePan(cursorBottom,visibleHeight,height-visibleHeight)>0)
                 val position=IntArray(2);view.getLocationInWindow(position)
                 assertTrue("The actual cursor must be above the controls",position[1]+cursorBottom!!.cursorBottom<=viewportTop+visibleHeight+1)
                 assertTrue("Prompt footer and status lines must also be visible",position[1]+cursorBottom!!.contentBottom<=viewportTop+visibleHeight+1)
                 assertTrue("Only enough of the pane should move",position[1]<viewportTop)
-                view.hideKeyboard()
             }
-            ui.waitUntil(7000) {ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime())==false}
-            ui.waitForIdle();ui.runOnIdle {assertEquals(height,view.height);assertEquals(count,dimensions.size)}
+            hideKeyboard()
+            ui.runOnIdle {assertEquals(height,view.height);assertEquals(count,dimensions.size)}
         } finally {ui.runOnIdle {view.hideKeyboard()}}
     }
-    @Test fun hiddenClaudeCursorPansAboveTheKeyboardWithoutResizingTheGrid() {
+    @Test fun hiddenPiCursorPansAboveTheKeyboardWithoutResizingTheGrid() {
         val sizes=mutableListOf<Pair<Int,Int>>();lateinit var view:TerminalView
+        val program=ProgramIdentity.resolve(listOf("/opt/pi-coding-agent/pi"))
         var focus by mutableStateOf<TerminalKeyboardFocus?>(null)
         ui.setContent {MaterialTheme {
             Box(Modifier.width(320.dp).height(300.dp).clipToBounds()) {
                 AndroidView(factory={TerminalView(it).also {v->
-                    view=v;v.allowHiddenCursorInput=true;v.onKeyboardFocus={focus=it}
+                    view=v;v.allowHiddenCursorInput=program.supportsHiddenCursorInput;v.onKeyboardFocus={focus=it}
                     v.onDimensions={cols,rows->sizes+=cols to rows;v.screen=TerminalScreen(cols,rows,null,null,-1,0,emptyList(),inputFlags=7,cursorAnchorX=2,cursorAnchorY=rows-2)}
                 }},modifier=Modifier.fillMaxSize().terminalImeViewport(WindowInsets(bottom=400),WindowInsets(0,0,0,0)) {focus},update={focus=it.keyboardFocus})
             }
@@ -218,7 +358,7 @@ class TerminalImeViewportTest {
         ui.waitForIdle();var count=0
         ui.runOnIdle {
             count=sizes.size;assertNull(view.screen!!.cursorY);assertNotNull(view.keyboardFocus)
-            assertTrue("Hidden Claude prompt must pan above the keyboard",terminalImePan(view.keyboardFocus,view.height-400,400)>0)
+            assertTrue("Hidden Pi prompt must pan above the keyboard",terminalImePan(view.keyboardFocus,view.height-400,400)>0)
         }
         ui.runOnIdle {view.screen=view.screen!!.copy(cursorAnchorY=view.screen!!.rows-3)}
         ui.waitForIdle();ui.runOnIdle {assertEquals(count,sizes.size)}

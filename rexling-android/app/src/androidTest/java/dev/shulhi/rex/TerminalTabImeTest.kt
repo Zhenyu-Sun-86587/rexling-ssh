@@ -23,7 +23,7 @@ class TerminalTabImeTest {
         val frame=TerminalScreen(40,20,2,18,-1,0,emptyList())
         ui.setContent {MaterialTheme {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-                TerminalCarousel(listOf(BlockItem(selected,"fish")),selected,live,frame,if(cached) targets.associateWith {frame} else emptyMap(),emptyMap(),controlled,10f,
+                TerminalCarousel(listOf(BlockItem(selected,"fish")),selected,live,frame,{id->frame.takeIf {cached && id in targets}},emptyMap(),controlled,10f,
                     {},{},{_,_,_,_,_->},{},{},{_,_->},{},{},{active=it},Modifier.weight(1f).fillMaxWidth())
             }
             LaunchedEffect(controlled,active) {if(controlled) active?.requestFocus()}

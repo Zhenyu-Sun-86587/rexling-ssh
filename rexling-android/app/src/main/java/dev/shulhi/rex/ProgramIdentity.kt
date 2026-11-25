@@ -4,6 +4,13 @@ import java.util.Locale
 
 enum class ProgramKind { TERMINAL, CLAUDE, CODEX, NEOVIM, VIM, GIT, PYTHON, NODE, SSH, TMUX, MONITOR, CLOUDFLARE }
 data class ProgramIdentity(val kind: ProgramKind, val label: String, val executable: String="",val pending: Boolean=false) {
+    /** These agents keep the terminal cursor at the input row while drawing their own. */
+    internal val supportsHiddenCursorInput: Boolean get() = when(kind) {
+        ProgramKind.CLAUDE, ProgramKind.CODEX -> true
+        ProgramKind.TERMINAL -> executable == "pi"
+        else -> false
+    }
+
     val title: String get() = when(kind) {
         ProgramKind.CLAUDE -> "claude"; ProgramKind.CODEX -> "codex"; ProgramKind.NEOVIM -> "nvim"
         ProgramKind.VIM -> "vim"; ProgramKind.GIT -> "git"; ProgramKind.PYTHON -> "python"

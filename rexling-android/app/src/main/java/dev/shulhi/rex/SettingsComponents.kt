@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.sp
 
 internal object SettingsType {
     val title=TextStyle(fontSize=20.sp,lineHeight=26.sp,fontWeight=FontWeight.Bold)
+    val paneTitle=TextStyle(fontSize=13.sp,lineHeight=16.sp,fontWeight=FontWeight.SemiBold)
+    val paneDetail=TextStyle(fontSize=11.sp,lineHeight=14.sp,fontWeight=FontWeight.Normal)
     val row=TextStyle(fontSize=14.sp,lineHeight=20.sp,fontWeight=FontWeight.Medium)
     val body=TextStyle(fontSize=14.sp,lineHeight=20.sp)
     val detail=TextStyle(fontSize=12.sp,lineHeight=18.sp)
@@ -43,10 +45,13 @@ internal object SettingsType {
 @Composable internal fun SettingsSection(title: String,compact: Boolean=true,content: @Composable ColumnScope.()->Unit) {
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text(title,Modifier.padding(start=4.dp),style=SettingsType.section,color=MaterialTheme.colorScheme.primary)
-        Surface(shape=RoundedCornerShape(if(compact) 12.dp else 20.dp),color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f)) {
-            Column(Modifier.fillMaxWidth(),content=content)
-        }
+        SettingsCard(compact=compact) {Column(Modifier.fillMaxWidth(),content=content)}
     }
+}
+
+@Composable internal fun SettingsCard(modifier: Modifier=Modifier,compact: Boolean=true,content: @Composable ()->Unit) {
+    Surface(modifier,shape=RoundedCornerShape(if(compact) 12.dp else 20.dp),
+        color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.45f),content=content)
 }
 
 @Composable internal fun SettingsDivider() {

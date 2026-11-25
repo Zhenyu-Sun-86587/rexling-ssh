@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TerminalImePanTest {
+    @Test fun compactHeaderKeepsShortOutputBelowTheGlass() {
+        val pan=TerminalImePanState()
+        val prompt=TerminalKeyboardFocus(20f,40f,40f)
+        assertEquals(-40,pan.position(null,500,200,40))
+        assertEquals(-40,pan.position(prompt,500,200,40))
+        assertEquals(120,pan.position(TerminalKeyboardFocus(600f,620f,650f),500,200,40))
+        assertEquals(120,pan.position(null,500,200,40))
+        assertEquals(-40,pan.position(prompt,500,200,40))
+        assertEquals(0,pan.position(prompt,740,0))
+    }
+
     @Test fun editorCursorMovesDoNotRecenterAVisibleViewport() {
         val pan=TerminalImePanState()
         assertEquals(400,pan.position(TerminalKeyboardFocus(600f,620f,1000f),500,400))

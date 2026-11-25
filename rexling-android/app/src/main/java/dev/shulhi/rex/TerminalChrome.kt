@@ -1,6 +1,6 @@
 package dev.shulhi.rex
 
-import androidx.compose.animation.core.animateFloat
+import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.MaterialTheme
@@ -34,12 +35,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,10 +52,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntRect
 import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.PI
@@ -68,13 +74,21 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, CHECK, PLAY, STOP }
+internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRON, CHEVRONS_DOWN, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, MINIMIZE, RESIZE, CHECK, PLAY, STOP, ZOOM, UNZOOM, MOVE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -93,9 +107,23 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             ChromeIcon.PLAY -> {drawPath(Path().apply {moveTo(8f*u,5f*u);lineTo(19f*u,12f*u);lineTo(8f*u,19f*u);close()},color,style=Stroke(width,join=StrokeJoin.Round))}
             ChromeIcon.STOP -> {box(6f,6f,12f,12f,1.5f)}
             ChromeIcon.FLOAT -> {box(3f,7f,14f,14f);box(10f,3f,11f,10f)}
+            ChromeIcon.MINIMIZE -> line(5f,12f,19f,12f)
+            ChromeIcon.RESIZE -> {line(6f,18f,18f,6f);line(12f,18f,18f,12f)}
             ChromeIcon.SPLIT -> { box(3f,4f,18f,16f);line(12f,4f,12f,20f) }
+            ChromeIcon.SPLIT_RIGHT, ChromeIcon.SPLIT_BELOW -> {
+                val right=icon==ChromeIcon.SPLIT_RIGHT
+                val fillOrigin=if(right) Offset(12f*u,5f*u) else Offset(4f*u,12f*u)
+                val fillSize=if(right) Size(8f*u,14f*u) else Size(16f*u,7f*u)
+                drawRoundRect(color.copy(alpha=color.alpha*.23f),fillOrigin,fillSize,CornerRadius(u))
+                box(3f,4f,18f,16f)
+                if(right) line(12f,4f,12f,20f) else line(3f,12f,21f,12f)
+            }
             ChromeIcon.SEARCH -> { drawCircle(color,6f*u,Offset(10f*u,10f*u),style=Stroke(width));line(15f,15f,21f,21f) }
             ChromeIcon.CHEVRON -> {line(7f,10f,12f,15f);line(12f,15f,17f,10f)}
+            ChromeIcon.CHEVRONS_DOWN -> {
+                line(7f,6f,12f,11f);line(12f,11f,17f,6f)
+                line(7f,13f,12f,18f);line(12f,18f,17f,13f)
+            }
             ChromeIcon.SESSIONS -> { box(4f,8f,13f,12f); line(8f,4f,20f,4f); line(20f,4f,20f,16f); line(7f,12f,11f,12f); line(7f,16f,13f,16f) }
             ChromeIcon.COPY -> { box(8f,8f,12f,12f); line(15f,4f,4f,4f); line(4f,4f,4f,15f) }
             ChromeIcon.PASTE -> {box(6f,5f,14f,16f);box(9f,3f,6f,4f,1f);line(10f,12f,16f,12f);line(10f,16f,15f,16f)}
@@ -105,6 +133,16 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
             }
             ChromeIcon.UNPLUG -> {box(7f,7f,10f,7f);line(9f,3f,9f,7f);line(15f,3f,15f,7f);line(12f,14f,12f,20f);line(12f,20f,18f,20f);line(3f,3f,21f,21f)}
             ChromeIcon.DELETE -> {box(7f,8f,10f,13f,1f);line(5f,6f,19f,6f);box(9f,3f,6f,3f,1f);line(10f,11f,10f,17f);line(14f,11f,14f,17f)}
+            ChromeIcon.MOVE -> {
+                line(4f,12f,20f,12f);line(12f,4f,12f,20f)
+                line(4f,12f,7f,9f);line(4f,12f,7f,15f)
+                line(20f,12f,17f,9f);line(20f,12f,17f,15f)
+                line(12f,4f,9f,7f);line(12f,4f,15f,7f)
+                line(12f,20f,9f,17f);line(12f,20f,15f,17f)
+            }
+            // Arrows out to opposite corners, and back in toward the middle.
+            ChromeIcon.ZOOM -> {line(13f,11f,20f,4f);line(15f,4f,20f,4f);line(20f,4f,20f,9f);line(11f,13f,4f,20f);line(4f,15f,4f,20f);line(4f,20f,9f,20f)}
+            ChromeIcon.UNZOOM -> {line(20f,4f,13f,11f);line(13f,6f,13f,11f);line(13f,11f,18f,11f);line(4f,20f,11f,13f);line(6f,13f,11f,13f);line(11f,13f,11f,18f)}
             ChromeIcon.FILE -> {line(6f,3f,14f,3f);line(14f,3f,19f,8f);line(19f,8f,19f,21f);line(19f,21f,6f,21f);line(6f,21f,6f,3f);line(14f,3f,14f,8f);line(14f,8f,19f,8f)}
             ChromeIcon.IMAGE -> {box(3f,4f,18f,16f);drawCircle(color,1.4f*u,Offset(16f*u,8f*u));line(3f,17f,8f,12f);line(8f,12f,12f,16f);line(12f,16f,15f,13f);line(15f,13f,21f,18f)}
             ChromeIcon.SERVER -> {
@@ -183,6 +221,20 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
     }
 }
 
+@Composable internal fun ScrollToLatestButton(hazeState: HazeState,modifier: Modifier=Modifier,onClick: ()->Unit) {
+    val scheme=MaterialTheme.colorScheme
+    Box(modifier.size(48.dp).clickable(role=Role.Button,onClick=onClick)
+        .semantics {contentDescription="Scroll to latest"},contentAlignment=Alignment.Center) {
+        TransferNoticeSurface(Modifier.size(36.dp).shadow(4.dp,CircleShape,clip=false)
+            .background(scheme.surface,CircleShape).border(.5.dp,scheme.outlineVariant,CircleShape),
+            hazeState,container=scheme.surface,title=null) {
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                ChromeSymbol(ChromeIcon.CHEVRONS_DOWN,color=scheme.primary)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun ChromeButton(icon: ChromeIcon, description: String, enabled: Boolean = true,
     modifier: Modifier = Modifier, readable: Boolean = enabled, onLongClick: (() -> Unit)?=null, onClick: () -> Unit) {
@@ -194,21 +246,78 @@ internal enum class ChromeIcon { SPLIT, SEARCH, CHEVRON, SESSIONS, COPY, MORE, A
 }
 
 internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font.jetbrains_mono_bold,FontWeight.Bold))
+internal val HeaderIconSlotWidth=59.dp
+
+internal enum class CompactHeaderMode(val label: String) {
+    NEVER("Never"), ALWAYS("Always"), WITH_KEYBOARD("With keyboard")
+}
+
+@Composable private fun SessionHeaderRow(modifier: Modifier,cutout: IntRect?,menu: @Composable ()->Unit,
+    content: @Composable RowScope.()->Unit) {
+    Layout(contents=listOf(
+        {Row(Modifier.fillMaxWidth().clipToBounds(),verticalAlignment=Alignment.CenterVertically,content=content)},
+        {Box(Modifier.padding(end=9.dp)) {menu()}}
+    ),modifier=modifier.fillMaxWidth()) {children,constraints->
+        val width=constraints.maxWidth
+        val menuButton=children[1].single().measure(constraints.copy(minWidth=0,minHeight=0))
+        val trailingMenuStart=width-menuButton.width
+        var menuStart=trailingMenuStart
+        var bodyStart=0
+        var bodyEnd=trailingMenuStart
+        var top=0
+        if(cutout!=null) {
+            val gap=4.dp.roundToPx()
+            val start=(if(layoutDirection==LayoutDirection.Ltr) cutout.left else width-cutout.right)-gap
+            val end=(if(layoutDirection==LayoutDirection.Ltr) cutout.right else width-cutout.left)+gap
+            val before=start.coerceIn(0,width)
+            val after=end.coerceIn(0,width)
+            if(menuStart<after) menuStart=before-menuButton.width
+            val leadingWidth=minOf(before,menuStart)
+            val trailingWidth=menuStart-after
+            if(maxOf(leadingWidth,trailingWidth)<96.dp.roundToPx()) {
+                // A wide notch may leave neither side enough room for the heading and menu.
+                menuStart=trailingMenuStart
+                top=cutout.bottom
+            } else if(leadingWidth>=trailingWidth) {
+                bodyEnd=leadingWidth
+            } else {
+                bodyStart=after
+                bodyEnd=menuStart
+            }
+        }
+        val body=children[0].single().measure(constraints.copy(minWidth=bodyEnd-bodyStart,maxWidth=bodyEnd-bodyStart,minHeight=0))
+        val barHeight=maxOf(body.height,menuButton.height)
+        val height=maxOf(top+barHeight,cutout?.bottom ?: 0).coerceIn(constraints.minHeight,constraints.maxHeight)
+        layout(width,height) {
+            body.placeRelative(bodyStart,top+(height-top-body.height)/2)
+            menuButton.placeRelative(menuStart,top+(height-top-menuButton.height)/2)
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun SessionHeader(sessions: List<SessionItem>, selectedId: String,
     connected: Boolean, enabled: Boolean,
-    programs: List<ProgramIdentity>, paneIndex: Int, directory: String,
-    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false, serverIcons: Map<String,ServerIcon> = emptyMap(), menu: @Composable ()->Unit) {
+    programs: List<ProgramIdentity>, paneIndex: Int,
+    onSessions: ()->Unit, onSelect: (String)->Unit, onLast: ()->Unit, title: String="", working: Boolean=false, expanded: Boolean=false,
+    serverIcons: Map<String,ServerIcon> = emptyMap(), collapseForIme: WindowInsets?=null, onHeaderHeightSaved: (Int)->Unit={},
+    headerHaze: HazeState?=null,onHeaderOverlap: ((Int)->Unit)?=null,iconSlotWidth: androidx.compose.ui.unit.Dp=HeaderIconSlotWidth,
+    topCutout: IntRect?=null,alwaysCompact: Boolean=false,directory: String="",
+    modifier: Modifier=Modifier,menu: @Composable ()->Unit) {
     val program=programs.getOrNull(paneIndex) ?: ProgramIdentity.Terminal
-    val titleHeight=with(LocalDensity.current) {16.sp.toDp()}
-    val directoryHeight=with(LocalDensity.current) {12.sp.toDp()}
-    val sessionHeight=maxOf(17.dp,directoryHeight)
+    val paneTitle=title.ifBlank {program.title}
+    val scheme=MaterialTheme.colorScheme
+    val connectionStatus=if(connected) "Connected" else "Disconnected"
+    val connectionTint=if(connected) scheme.primary else scheme.outline
+    val titleHeight=with(LocalDensity.current) {SettingsType.paneTitle.lineHeight.toDp()}
+    val sessionHeight=maxOf(17.dp,with(LocalDensity.current) {14.sp.toDp()})
     val lineStyle=androidx.compose.ui.text.TextStyle(
         platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false),
         lineHeightStyle=LineHeightStyle(LineHeightStyle.Alignment.Center,LineHeightStyle.Trim.None))
+    val headingStyle=lineStyle.merge(SettingsType.paneTitle).copy(fontWeight=FontWeight.Bold,letterSpacing=0.sp)
+    val contextStyle=lineStyle.copy(fontSize=11.sp,lineHeight=14.sp,letterSpacing=0.sp,color=scheme.onSurfaceVariant)
     val titleBaseline=rememberTextMeasurer().measure("Ag",
-        style=androidx.compose.material3.LocalTextStyle.current.merge(lineStyle).copy(fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,letterSpacing=0.sp),
+        style=androidx.compose.material3.LocalTextStyle.current.merge(headingStyle),
         maxLines=1).firstBaseline.roundToInt()
     val selectedIndex=sessions.indexOfFirst { it.id==selectedId }.coerceAtLeast(0)
     val looping=sessions.size>1
@@ -255,9 +364,9 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             if(enabled && sessions.getOrNull(index)?.id!=latestSelected) sessions.getOrNull(index)?.let {latestSelect(it.id)}
         }
     }
-    Row(Modifier.fillMaxWidth().heightIn(min=50.dp).padding(horizontal=9.dp,vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
+    val full: @Composable ()->Unit={SessionHeaderRow(Modifier.heightIn(min=44.dp),topCutout,{if(!expanded) menu()}) {
         if(!expanded) {
-            Box(Modifier.height(45.dp).clipToBounds().semantics(mergeDescendants=true) {
+            Box(Modifier.width(iconSlotWidth).height(36.dp).clipToBounds().semantics(mergeDescendants=true) {
                 contentDescription="Session program icon";stateDescription=if(working) "Working" else "Idle"
                 if(enabled && looping) customActions=listOf(CustomAccessibilityAction("Next session") {selectNeighbour(1)},CustomAccessibilityAction("Previous session") {selectNeighbour(-1)})
             }.pointerInput(enabled,sessionIds,selectedId) {
@@ -269,17 +378,18 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         onDragEnd={settleIcon();if(abs(distance.y)>=iconSwipeDistance && abs(distance.y)>abs(distance.x)*1.5f) selectNeighbour(if(distance.y<0) 1 else -1)})
                 }
             },contentAlignment=Alignment.Center) {
-                Box(Modifier.graphicsLayer {
+                Box(Modifier.offset(x=2.dp).graphicsLayer {
                     val y=if(iconDragging) iconDragY else iconSettle.value
                     val progress=(abs(y)/iconTravel).coerceIn(0f,1f)
                     translationY=y;scaleX=1f-.06f*progress;scaleY=scaleX;alpha=1f-.25f*progress
                 }) {ProgramStack(programs,paneIndex,framed=true,fixedSlot=true)}
             }
-            Spacer(Modifier.width(7.dp))
+            Spacer(Modifier.width(9.dp))
         }
-        Column(Modifier.weight(1f),verticalArrangement=Arrangement.Center) {
+        Column(Modifier.weight(1f).padding(top=4.dp,bottom=4.dp,start=if(expanded) 9.dp else 0.dp).then(if(expanded) Modifier else Modifier.combinedClickable(role=Role.Button,
+            onClickLabel="Open session drawer",onLongClick=onLast,onClick=onSessions)),verticalArrangement=Arrangement.Center) {
             if(!expanded) {
-                Text(title.ifBlank {program.title},fontWeight=FontWeight.Bold,fontSize=13.sp,lineHeight=16.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,
+                Text(paneTitle,style=headingStyle,maxLines=1,
                     overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth().height(titleHeight).layout {measurable,constraints->
                         // Fallback/emoji metrics must not move the ordinary title text.
                         val text=measurable.measure(constraints.copy(minHeight=0,maxHeight=Constraints.Infinity))
@@ -287,9 +397,6 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                             text.placeRelative(0,titleBaseline-text[FirstBaseline])
                         }
                     })
-                Text(directory,Modifier.fillMaxWidth().height(directoryHeight),
-                    fontFamily=MonoUi,fontSize=9.sp,lineHeight=12.sp,style=lineStyle,letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
-                    color=MaterialTheme.colorScheme.onSurfaceVariant)
             }
             BoxWithConstraints(Modifier.fillMaxWidth().height(if(expanded) 42.dp else sessionHeight)) {
                 val pageWidth=if(expanded) 160.dp else maxWidth.coerceAtLeast(40.dp)
@@ -302,35 +409,74 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         Row(Modifier.requiredWidth(pageWidth).fillMaxHeight().clip(RoundedCornerShape(19.dp))
                             .border(1.dp,if(expanded && active) MaterialTheme.colorScheme.primary.copy(alpha=.5f) else Color.Transparent,RoundedCornerShape(19.dp))
                             .padding(horizontal=if(expanded) 9.dp else 0.dp).graphicsLayer { alpha=if(active || sessions.isEmpty()) 1f else .38f }
-                            .combinedClickable(onClick={if(active || item==null) onSessions() else onSelect(item.id)},onLongClick=onLast)
+                            .then(if(expanded || (!active && item!=null)) Modifier.combinedClickable(
+                                onClick={if(active || item==null) onSessions() else onSelect(item.id)},onLongClick=onLast) else Modifier)
                             .semantics { contentDescription=if(active || item==null) "Switch session" else "Session ${item.label}" },
                             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(if(expanded) 6.dp else 4.dp)) {
-                            Box(Modifier.size(if(expanded) 7.dp else 5.dp).background(if(connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,RoundedCornerShape(4.dp)))
-                            serverIcons[item?.id]?.let {ServerGlyph(it,Modifier.size(if(expanded) 13.dp else 11.dp))}
-                            Text(item?.label ?: if(connected) "Sessions" else "Connect",fontFamily=MonoUi,fontWeight=if(expanded) FontWeight.Bold else FontWeight.Normal,
-                                fontSize=if(expanded) 12.sp else 9.sp,lineHeight=if(expanded) 16.sp else 12.sp,
-                                style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),letterSpacing=0.sp,maxLines=1,overflow=TextOverflow.Ellipsis,
-                                color=if(expanded) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier=Modifier.widthIn(max=(pageWidth-(if(expanded) 50.dp else 24.dp)-(if(serverIcons[item?.id]!=null) 15.dp else 0.dp)).coerceAtLeast(10.dp)))
-                            ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(if(expanded) 13.dp else 11.dp),MaterialTheme.colorScheme.onSurfaceVariant)
+                            val serverIcon=serverIcons[item?.id] ?: ServerIcon.GLOBE
+                            ServerGlyph(serverIcon,Modifier.size(if(expanded) 14.dp else 12.dp).semantics {
+                                contentDescription=serverIcon.label
+                                if(active || item==null) stateDescription=connectionStatus
+                            },color=if(active || item==null) connectionTint else scheme.onSurfaceVariant)
+                            val style=if(expanded) contextStyle.copy(fontSize=12.sp,lineHeight=16.sp,
+                                fontWeight=FontWeight.Bold,color=scheme.onSurface) else contextStyle
+                            HeaderContextLine(item?.label ?: if(connected) "Sessions" else "Connect",
+                                directory=directory.takeIf {active && !expanded}.orEmpty(),style=style,modifier=Modifier.weight(1f,fill=false))
                         }
                     }
                     if(expanded && sessions.size>1) PositionDots(logicalPage(pager.currentPage),sessions.size,Modifier.height(5.dp))
                 }
             }
         }
-        if(!expanded) {
-            menu()
+    }}
+    val compact: @Composable ()->Unit={
+        val frost=headerHaze?.let {Modifier.paneFrost(it,RectangleShape,edge=false,opacity=.66f,blur=16.dp)} ?: Modifier
+        SessionHeaderRow(frost.testTag("Compact session header"),topCutout,menu) {
+            val session=sessions.getOrNull(selectedIndex)?.label.orEmpty()
+            val serverIcon=serverIcons[selectedId] ?: ServerIcon.GLOBE
+            Row(Modifier.weight(1f).heightIn(min=36.dp).padding(start=9.dp).combinedClickable(role=Role.Button,
+                onClickLabel="Open session drawer",onLongClick=onLast,onClick=onSessions),
+                verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                ServerGlyph(serverIcon,Modifier.size(14.dp).semantics {
+                    contentDescription=serverIcon.label
+                    stateDescription=connectionStatus
+                },color=connectionTint)
+                HeaderContextLine(session,directory,contextStyle,Modifier.weight(1f),title=paneTitle,titleStyle=headingStyle)
+            }
+        }
+    }
+    val divider=scheme.outlineVariant.copy(alpha=.65f)
+    Box(modifier.fillMaxWidth().drawWithContent {
+        drawContent()
+        val stroke=.5.dp.toPx()
+        val y=size.height-stroke/2
+        drawLine(divider,Offset(0f,y),Offset(size.width,y),strokeWidth=stroke)
+    }) {
+        when {
+            expanded->full()
+            collapseForIme!=null->KeyboardCollapsingHeader(collapseForIme,WindowInsets.navigationBars,onHeaderHeightSaved,
+                onHeaderOverlap,if(alwaysCompact) null else full,compact)
+            alwaysCompact->compact()
+            else->full()
         }
     }
 }
 
-/** Call only for visible busy programs; idle chrome owns no animation clock. */
+// Share one clock across tabs and Activity rows. Only active lifecycle collectors keep it running.
+private val workingPhase by lazy {
+    flow {
+        val start=SystemClock.uptimeMillis()
+        while(true) {
+            emit(((SystemClock.uptimeMillis()-start)%1200L)/1200f)
+            delay(50L)
+        }
+    }.stateIn(CoroutineScope(Dispatchers.Main.immediate),SharingStarted.WhileSubscribed(replayExpirationMillis=0L),0f)
+}
+
+/** Call only for visible busy programs. Read the phase during drawing. */
 @Composable internal fun rememberWorkingPhase(working: Boolean): State<Float> {
     if(!working) return remember {mutableFloatStateOf(0f)}
-    val transition=androidx.compose.animation.core.rememberInfiniteTransition(label="Program working")
-    return transition.animateFloat(0f,1f,animationSpec=androidx.compose.animation.core.infiniteRepeatable(
-        animation=androidx.compose.animation.core.tween(1200,easing=androidx.compose.animation.core.LinearEasing)),label="Working highlight")
+    return workingPhase.collectAsStateWithLifecycle()
 }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -364,12 +510,30 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun TerminalTabs(windows: List<WindowItem>,selectedId: String,enabled: Boolean,
-    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",animateWorking: Boolean=true,contentReady: Boolean=true,paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},actions: @Composable ()->Unit) {
+    onSelect: (String)->Unit,panePrograms: (WindowItem)->List<ProgramIdentity>,selectedPane: (WindowItem)->Int,paneTitle: (WindowItem,Int)->String={_,_->""},paneWorking: (WindowItem)->Boolean={false},onClose: (WindowItem)->Unit={},onMove: (String,String?)->Boolean={_,_->false},reorderKey: String="",animateWorking: Boolean=true,contentReady: Boolean=true,paneProgress: (WindowItem)->TerminalProgress?={null},tabAttention: (WindowItem)->Int={0},onNewTab: (() -> Unit)?=null,actions: @Composable ()->Unit) {
+    val newTab=if(currentTabWidth().first!=TabWidthClass.NARROW) onNewTab else null
+    val markerHeight=3.dp
+    val markerBottom=5.dp
+    val markerSpace=markerHeight+markerBottom
+    val newTabButton: @Composable ()->Unit = {
+        newTab?.let {onClick->
+            Box(Modifier.fillMaxHeight().padding(bottom=markerHeight),contentAlignment=Alignment.Center) {
+                ChromeButton(ChromeIcon.ADD,"New tab",enabled=enabled,onClick=onClick)
+            }
+        }
+    }
+    val divider=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.65f)
+    val strip=Modifier.fillMaxWidth().height(45.dp).drawWithContent {
+        drawContent()
+        val stroke=.5.dp.toPx()
+        drawLine(divider,Offset(0f,stroke/2),Offset(size.width,stroke/2),strokeWidth=stroke)
+    }.padding(start=11.dp,end=6.dp)
     var revealed by remember(reorderKey) {mutableStateOf(false)}
     LaunchedEffect(reorderKey,contentReady) {if(contentReady) revealed=true}
     if(!contentReady && !revealed) {
         // Reserve the dock's normal bounds so first-load metadata cannot resize the terminal.
-        Row(Modifier.fillMaxWidth().height(45.dp).padding(start=11.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
+        Row(strip,verticalAlignment=Alignment.CenterVertically) {
+            newTabButton()
             Spacer(Modifier.weight(1f).fillMaxHeight())
             actions()
         }
@@ -419,7 +583,8 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
             if(velocity!=0f) {list.scrollBy(velocity*speed*dt);drag.cross(velocity,list)}
         }
     }
-    Row(Modifier.fillMaxWidth().height(45.dp).padding(start=11.dp,end=6.dp),verticalAlignment=Alignment.CenterVertically) {
+    Row(strip,verticalAlignment=Alignment.CenterVertically) {
+        newTabButton()
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
             val density=LocalDensity.current.density
             val widths=remember(maxWidth,contentWidths,index,density) {tabWidths(maxWidth.value,contentWidths,index,density)}
@@ -465,27 +630,31 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                     val progress=paneProgress(w)
                     val indicatorColor=terminalProgressColor(progress)
                     val busy=paneWorking(w) || progress?.busy==true
-                    val workPhase=rememberWorkingPhase(animateWorking && if(progress!=null) progress.busy && progress.percent==null else active && busy)
+                    val breathe=active && animateWorking && if(progress!=null) progress.busy && progress.percent==null else busy
+                    val workPhase=rememberWorkingPhase(breathe)
                     val programs=panePrograms(w)
                     val pane=selectedPane(w)
                     val program=programs.getOrNull(pane) ?: ProgramIdentity.Terminal
                     val title=program.tabTitle(w.label,w.blocks.getOrNull(pane)?.label.orEmpty(),i+1,paneTitle(w,pane))
+                    val iconInset=(36.dp-programStackPaintedWidth(programs.size))/2
                     Box(Modifier.animateItem(fadeInSpec=null,fadeOutSpec=null,placementSpec=if(drag.id==w.id) null else androidx.compose.animation.core.spring())
                         .zIndex(if(drag.id==w.id) 1f else 0f)
                         .graphicsLayer {translationX=drag.translation(w.id,list)*sign}) {
                     Column(Modifier.height(45.dp).width(width)
                         .drawWithContent {
                             drawContent()
-                            if(active || progress!=null) {
-                                val origin=Offset(0f,size.height-2.dp.toPx());val bar=Size(size.width,2.dp.toPx())
-                                if(progress!=null) {
-                                    drawWorkingBar(indicatorColor.copy(alpha=.18f),origin,bar)
-                                    val fill=progress.percent?.let {bar.copy(width=bar.width*it/100f)} ?: bar
-                                    drawWorkingBar(indicatorColor,origin,fill,phase=if(progress.busy && progress.percent==null && animateWorking) workPhase.value else null)
-                                } else drawWorkingBar(indicatorColor,origin,bar,phase=if(busy && animateWorking) workPhase.value else null)
+                            if(active) {
+                                val end=5.dp.toPx()
+                                // A label makes the slot's invisible leading padding asymmetric.
+                                val start=end+if(showTitle) iconInset.toPx() else 0f
+                                val bar=Size((size.width-start-end).coerceAtLeast(0f),markerHeight.toPx())
+                                val origin=Offset(if(layoutDirection==LayoutDirection.Ltr) start else end,
+                                    size.height-bar.height-markerBottom.toPx())
+                                val brightness=if(breathe) workingBarBrightness(workPhase.value) else 1f
+                                drawTabMarker(indicatorColor,origin,bar,progress?.percent,brightness)
                             }
                         }
-                        .clip(RoundedCornerShape(16.dp))
+                        .clipToBounds()
                         .background(if(drag.id==w.id && drag.moved) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                         .semantics(mergeDescendants=true) {contentDescription="Tab $title, ${program.label}"+(progress?.let {", ${it.description}"} ?: if(busy) ", working" else "")}
                         .semantics {
@@ -501,27 +670,22 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                         }
                         .clickable(enabled=enabled,role=Role.Tab,onClick={onSelect(w.id)}),horizontalAlignment=Alignment.CenterHorizontally) {
                         Row(Modifier.weight(1f).fillMaxWidth().padding(horizontal=6.dp),
-                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=if(showTitle) Arrangement.spacedBy(2.dp) else Arrangement.Center) {
+                            verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(2.dp,Alignment.CenterHorizontally)) {
                             Box(Modifier.semantics {testTag="Tab program icon ${w.id}"}) {
                                 ProgramStack(programs,pane,fixedSlot=true)
                                 if(unread>0) {
-                                    // Match the actual painted icon stack, including the
-                                    // centering used when its fixed slot has fewer panes.
-                                    val layers=programs.size.coerceIn(1,3)
-                                    val painted=if(layers==1) 22f else 21f+4f*(layers-1)
-                                    val right=(36f+painted)/2f
-                                    Box(Modifier.offset(x=(right-4).dp,y=(-.5).dp).size(8.dp)
+                                    Box(Modifier.offset(x=32.dp-iconInset,y=(-.5).dp).size(8.dp)
                                         .border(1.5.dp,MaterialTheme.colorScheme.background,androidx.compose.foundation.shape.CircleShape)
                                         .background(MaterialTheme.colorScheme.primary,androidx.compose.foundation.shape.CircleShape)
                                         .semantics {testTag="Tab unread dot ${w.id}"})
                                 }
                             }
-                            if(showTitle) Text(title,Modifier.weight(1f),fontSize=12.sp,lineHeight=18.sp,
+                            if(showTitle) Text(title,Modifier.weight(1f,fill=false),fontSize=12.sp,lineHeight=18.sp,
                                 style=androidx.compose.ui.text.TextStyle(platformStyle=androidx.compose.ui.text.PlatformTextStyle(includeFontPadding=false)),fontWeight=if(active) FontWeight.Bold else FontWeight.Normal,
                                 color=if(active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines=1,overflow=TextOverflow.Ellipsis,letterSpacing=0.sp)
                         }
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(markerSpace))
                     }
                     androidx.compose.material3.DropdownMenu(menuId==w.id,{menuId=null},containerColor=MaterialTheme.colorScheme.surface,tonalElevation=0.dp) {
                         TerminalMenuItem(leftLabel,ChromeIcon.LEFT,enabled=enabled && windowIndex>0,onClick={menuId=null;moveBy(-1)})
@@ -536,11 +700,29 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
     }
 }
 
+internal val activityButtonDiameter=41.dp
+
 @Composable internal fun TerminalActions(enabled: Boolean,activityEnabled: Boolean,
-    onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0) {
-    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+    onActivity: ()->Unit,onSwitcher: ()->Unit,attentionCount: Int=0,keyboardLabel: String="",onKeyboard: (()->Unit)?=null,vertical: Boolean=false) {
+    // The icon-only side rail stacks these actions.
+    @Composable fun Group(content: @Composable ()->Unit)=
+        if(vertical) Column(horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(4.dp)) {content()}
+        else BoxWithConstraints {
+            val buttonCount=if(onKeyboard==null) 1 else 2
+            val spacing=if(constraints.hasBoundedWidth) with(LocalDensity.current) {
+                val buttonWidth=36.dp.roundToPx()*buttonCount+activityButtonDiameter.roundToPx()
+                ((constraints.maxWidth-buttonWidth)/buttonCount).coerceIn(0,4.dp.roundToPx()).toDp()
+            } else 4.dp
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(spacing)) {content()}
+        }
+    Group {
+        // Stands in for the key toolbar's keyboard button while the toolbar is hidden.
+        val keyboard: @Composable ()->Unit={
+            if(onKeyboard!=null) ChromeButton(ChromeIcon.KEYBOARD,keyboardLabel,enabled,onClick=onKeyboard)
+        }
+        if(!vertical) keyboard()
         ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)
-        Box(Modifier.size(41.dp),contentAlignment=Alignment.Center) {
+        Box(Modifier.size(activityButtonDiameter).testTag("Activity button surface"),contentAlignment=Alignment.Center) {
             Box(Modifier.matchParentSize().clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
             Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled=activityEnabled,role=Role.Button,onClick=onActivity)
                 .semantics {contentDescription="Activity";stateDescription=if(attentionCount>0) "$attentionCount new activity items" else "All activity seen"},contentAlignment=Alignment.Center) {
@@ -551,20 +733,22 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
                 .background(MaterialTheme.colorScheme.surfaceVariant,RoundedCornerShape(5.dp)).padding(1.dp)
                 .background(MaterialTheme.colorScheme.primary,RoundedCornerShape(4.dp)).semantics {testTag="Activity unread dot"})
         }
+        if(vertical) keyboard()
     }
 }
 
 @Composable internal fun KeyboardBar(controlled: Boolean,enabled: Boolean,control: Boolean,alt: Boolean,shift: Boolean,
-    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},inputKey: String="",shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,arrowJoystickEnabled: Boolean=true,textKeyboard: Boolean=false,onTextKeyboard: ()->Unit={},onPaste: (() ->Unit)?=null,onPrompt: ((Int)->Unit)?=null,toolbarKeys: List<ToolbarKey> = ToolbarLayout.defaults,controlItems: List<ControlShortcut> = ControlShortcutConfig.defaults,onKeyboard: ()->Unit) {
+    keyboardVisible: Boolean,onControl: ()->Unit,onAlt: ()->Unit,onShift: ()->Unit,onShiftPress: ()->Unit,onShiftRelease: (Boolean)->Unit,onKey: (String)->Unit,readable: Boolean=enabled,onControlShortcut: (String)->Unit={},inputKey: String="",shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,arrowJoystickEnabled: Boolean=true,onPaste: (() ->Unit)?=null,onPrompt: ((Int)->Unit)?=null,toolbarKeys: List<ToolbarKey> = ToolbarLayout.defaults,controlItems: List<ControlShortcut> = ControlShortcutConfig.defaults,showTopDivider: Boolean=true,textKeyboard: Boolean=false,onTextKeyboard: ()->Unit={},onKeyboard: ()->Unit) {
     val toolbar=ToolbarLayout.normalize(toolbarKeys)
     var expanded by remember {mutableStateOf(false)}
     // The extra-key trigger lives just before Esc, outside the initial viewport.
     val keyScroll=rememberScrollState(initial=Int.MAX_VALUE)
     LaunchedEffect(keyboardVisible) {if(!keyboardVisible) {expanded=false;keyScroll.scrollTo(keyScroll.maxValue)}}
     LaunchedEffect(expanded,toolbar) {if(!expanded) keyScroll.scrollTo(keyScroll.maxValue)}
-    Column(Modifier.fillMaxWidth().padding(horizontal=8.dp)) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)))
-        Row(Modifier.fillMaxWidth().height(45.dp).padding(vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.fillMaxWidth().height(1.dp).then(if(showTopDivider)
+            Modifier.background(MaterialTheme.colorScheme.outline.copy(alpha=.4f)) else Modifier))
+        Row(Modifier.fillMaxWidth().height(45.dp).padding(horizontal=8.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
             if(toolbar.isEmpty()) Box(Modifier.weight(1f).fillMaxHeight(),contentAlignment=Alignment.CenterStart) {
                 ChromeButton(ChromeIcon.CHEVRON,if(expanded) "Hide extra keys" else "Show extra keys",enabled) {expanded=!expanded}
             } else BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
@@ -605,7 +789,7 @@ internal val MonoUi = FontFamily(Font(R.font.jetbrains_mono_regular),Font(R.font
         if(expanded) {
             val extra=listOf((1..6).map {"F$it" to "f$it"},(7..12).map {"F$it" to "f$it"},
                 listOf("Home" to "home","PgUp" to "pageup","PgDn" to "pagedown","End" to "end","Ins" to "insert","Del" to "delete","Backspace" to "backspace"))
-            for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+            for(row in extra) Row(Modifier.fillMaxWidth().height(43.dp).padding(horizontal=8.dp).padding(bottom=6.dp),horizontalArrangement=Arrangement.spacedBy(3.dp)) {
                 for((label,key) in row) DockKey(label,controlled,description=if(key.startsWith("f")) "Function key $label" else label,modifier=Modifier.weight(1f),readable=readable,icon=if(key=="backspace") ChromeIcon.BACKSPACE else null,repeat=key in listOf("delete","backspace"),inputKey=inputKey) {onKey(key)}
             }
         }

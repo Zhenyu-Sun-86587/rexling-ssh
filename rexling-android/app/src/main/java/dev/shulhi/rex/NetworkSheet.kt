@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -32,6 +33,7 @@ import kotlinx.coroutines.withTimeoutOrNull
     val scope=rememberCoroutineScope()
     val status by NetworkSettings.status.collectAsState()
     var control by remember {mutableStateOf(NetworkSettings.controlUrl)}
+    var deviceName by remember {mutableStateOf(NetworkSettings.hostname)}
     var error by remember {mutableStateOf<String?>(null)}
     var busy by remember {mutableStateOf(false)}
     val tailscale=status.optJSONObject("tailscale")
@@ -45,7 +47,7 @@ import kotlinx.coroutines.withTimeoutOrNull
         busy=true;error=null
         scope.launch {
             try {
-                error=NetworkSettings.prepareBuiltIn(control)
+                error=NetworkSettings.prepareBuiltIn(control,deviceName)
                 if(error==null) error=NetworkSettings.login()
                 if(error==null) {
                     val url=withTimeoutOrNull(20_000) {
@@ -62,7 +64,8 @@ import kotlinx.coroutines.withTimeoutOrNull
             finally {busy=false}
         }
     }
-    SettingsDrawer("Network","Close network settings",onClose,hazeState) {
+    val surface=if(hazeState==null) MaterialTheme.colorScheme.surface else Color.Transparent
+    SettingsDrawer("Network","Close network settings",onClose,hazeState,surfaceColor=surface) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=16.dp).padding(top=8.dp,bottom=12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             if(server!=null && server.endpoint.isNotBlank()) ServerNetworkStatusCard(server.label,NetworkSettings.route(server.endpoint),serverConnected)
             Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
@@ -75,7 +78,9 @@ import kotlinx.coroutines.withTimeoutOrNull
             Text("Choose the connection network separately in each server’s settings.",style=SettingsType.detail)
             OutlinedTextField(control,{control=it},Modifier.fillMaxWidth(),label={Text("Control server (optional)")},placeholder={Text("https://headscale.example.com")},singleLine=true)
             Text("Leave blank for Tailscale. Each control server keeps its own sign-in.",style=SettingsType.detail)
-            Button(enabled=!busy,onClick={busy=true;scope.launch {error=NetworkSettings.prepareBuiltIn(control);busy=false}}) {Text(if(busy) "Applying…" else "Apply")}
+            OutlinedTextField(deviceName,{deviceName=it},Modifier.fillMaxWidth(),label={Text("Device name")},placeholder={Text(TailscaleHostname.DEFAULT)},singleLine=true)
+            Text("How this phone appears in your tailnet. A name set in the Tailscale admin console takes precedence.",style=SettingsType.detail)
+            Button(enabled=!busy,onClick={busy=true;scope.launch {error=NetworkSettings.prepareBuiltIn(control,deviceName);busy=false}}) {Text(if(busy) "Applying…" else "Apply")}
             error?.let {Text(it,color=MaterialTheme.colorScheme.error,style=SettingsType.detail)}
         }
     }

@@ -27,13 +27,25 @@ class SessionSwitcherTest {
             instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG,100,it)
         }
     }
+    /** The unified switcher opened on its Sessions page, as the header's session strip opens it. */
+    @androidx.compose.runtime.Composable private fun SessionsDrawer(targets: List<SessionTarget>,current: String,last: String,
+        onRename: (SessionTarget,String)->Boolean,onSelect: (String)->Unit,onClose: ()->Unit,onNew: ()->Unit,
+        onCloseSession: (SessionTarget)->Unit={},allPanes: (@androidx.compose.runtime.Composable (()->Unit)->Unit)?=null) {
+        TabPaneSwitcher(emptyList(),"","",emptyMap(),emptyMap(),emptyMap(),{0},true,true,true,{},{},{},{_,_->},{},{},onClose,
+            sessions=SwitcherSessions(targets.size,"") {SessionsPage(targets,current,last,true,"","",onCloseSession,onRename,onSelect,onNew,allPanes)},
+            openSessions=true)
+    }
     @Test fun compactDrawerFiltersAcrossServersAndNavigatesWithoutDuplicateStrip() {
         var selected="";var closed=0
         ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {
-            SessionSwitcher(targets,targets[0].key,targets[1].key,true,"","",{},{_,_->true},{selected=it},{closed++},{})
+            SessionsDrawer(targets,targets[0].key,targets[1].key,{_,_->true},{selected=it},{closed++},{})
         }}
         ui.onNodeWithContentDescription("Session strip").assertDoesNotExist()
         ui.onNodeWithText("Rexling development").assertIsDisplayed()
+        for(label in listOf("Sessions","Tabs","Panes","Rexling development")) {
+            ui.onNodeWithText(label,useUnmergedTree=true).assertPaneTitleTypography()
+        }
+        ui.onNodeWithText("this device · 2 tabs · 4 panes",useUnmergedTree=true).assertPaneDetailTypography()
         ui.onNodeWithText("Ubuntu server").assertIsDisplayed()
         capture("sessions-compact-dark.png")
         val before=ui.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot
@@ -42,18 +54,18 @@ class SessionSwitcherTest {
         assertEquals(before.width,ui.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot.width)
         ui.onNodeWithText("Ubuntu server").performClick()
         ui.runOnIdle {assertEquals(targets[2].key,selected);assertEquals(0,closed)}
-        ui.onNodeWithContentDescription("Close sessions").performClick()
+        ui.onNodeWithContentDescription("Close tab and pane switcher").performClick()
         ui.runOnIdle {assertEquals(1,closed)}
     }
     @Test fun newSessionAndSessionActionsRemainSeparateFromSelection() {
         var created=0;var selected=0;var renamed=""
         ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
-            SessionSwitcher(targets,targets[0].key,targets[1].key,true,"","",{},{_,name->renamed=name;true},{selected++},{},{created++})
+            SessionsDrawer(targets,targets[0].key,targets[1].key,{_,name->renamed=name;true},{selected++},{},{created++})
         }}
         capture("sessions-compact-light.png")
         ui.onNodeWithText("New session").performClick()
-        ui.onNodeWithContentDescription("Session actions for ShipPDF on Shulhi MBP").performClick()
-        ui.onNodeWithText("Rename session").performClick()
+        ui.onNodeWithText("ShipPDF").swipeForSwitcherActions()
+        ui.onNodeWithContentDescription("Rename session").performClick()
         ui.onNode(hasSetTextAction() and hasText("ShipPDF")).performTextReplacement("New project")
         ui.onNodeWithText("Save").performClick()
         ui.runOnIdle {assertEquals(1,created);assertEquals(0,selected);assertEquals("New project",renamed)}
@@ -61,11 +73,60 @@ class SessionSwitcherTest {
     @Test fun emptyDrawerStillOffersNewSession() {
         var created=0
         ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
-            SessionSwitcher(emptyList(),"","",true,"","",{},{_,_->false},{},{},{created++})
+            SessionsDrawer(emptyList(),"","",{_,_->false},{},{},{created++})
         }}
         ui.onNodeWithText("No sessions yet").assertIsDisplayed()
         ui.onNodeWithText("New session").assertIsEnabled().performClick()
         ui.runOnIdle {assertEquals(1,created)}
+    }
+
+    @Test fun closingFromASwipeRequiresConfirmation() {
+        val closed=mutableListOf<String>()
+        ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
+            SessionsDrawer(targets,targets[0].key,"",{_,_->false},{},{},{},onCloseSession={closed+=it.key})
+        }}
+        fun requestClose() {
+            ui.onNodeWithText("ShipPDF").swipeForSwitcherActions()
+            ui.onNodeWithContentDescription("Close session").performTouchInput {click()}
+            ui.onNodeWithText("Close session?").assertIsDisplayed()
+        }
+        requestClose()
+        ui.runOnIdle {assertTrue(closed.isEmpty())}
+        ui.onNodeWithText("Cancel").performClick()
+        ui.runOnIdle {assertTrue(closed.isEmpty())}
+        requestClose()
+        ui.onNodeWithText("Close session").performClick()
+        ui.runOnIdle {assertEquals(listOf(targets[1].key),closed)}
+    }
+
+    @Test fun allPanesInSessionsSearchesRemoteDirectoriesAndKeepsTheExactServerTarget() {
+        val codex=ProgramIdentity.resolve(listOf("codex"))
+        val local=PaneCatalogTarget(mac,targets[0].session,
+            PaneCatalogEntry("s","pane","Terminal",codex,"Local task","~/Dev/rexling"),ActivityState.WORKING)
+        val remote=PaneCatalogTarget(linux,targets[2].session,
+            PaneCatalogEntry("s","pane","Terminal",codex,"Deployment task","~/infra/builds"),null)
+        val remoteState=AppState(phase="connected",sessions=listOf(remote.session),selectedSession=remote.session.id,
+            windows=listOf(WindowItem("w","Terminal",listOf(BlockItem("pane","Terminal")))),
+            paneCatalog=PaneCatalogSnapshot(listOf(remote.pane),partial=false,error=false))
+        val sources=listOf(PaneCatalogSource(mac,listOf(local),false,false),PaneCatalog.collect(linux,remoteState))
+        var opened: PaneCatalogTarget?=null
+        ui.setContent {RexTheme(true,ThemeCatalog.defaults[0]) {
+            SessionsDrawer(targets,targets[0].key,"",{_,_->false},{},{},{},allPanes={back->
+                AllPanesPage(sources,mac.id,"s","pane",back,{}) {opened=it;true}
+            })
+        }}
+        ui.onNodeWithText("All panes").performClick()
+        ui.onNodeWithText("Shulhi MBP").assertIsDisplayed()
+        ui.onNodeWithText("Local task").assertIsDisplayed()
+        ui.onNodeWithText("Local task",useUnmergedTree=true).assertPaneTitleTypography()
+        ui.onNodeWithText("~/Dev/rexling",useUnmergedTree=true).assertPaneDetailTypography()
+        ui.onNode(hasSetTextAction()).performTextReplacement("infra/builds")
+        ui.onNodeWithText("Local task").assertDoesNotExist()
+        ui.onNodeWithText("Ubuntu server").assertIsDisplayed()
+        ui.onNodeWithText("Deployment task").performClick()
+        ui.runOnIdle {assertEquals(remote,opened);assertNotEquals(local.key,remote.key)}
+        ui.onNodeWithContentDescription("Back to sessions").performClick()
+        ui.onNodeWithText("All panes").assertIsDisplayed()
     }
 
 }

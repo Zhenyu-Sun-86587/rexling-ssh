@@ -14,6 +14,38 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class TerminalBackgroundTest {
+    @Test fun changingThemeKeepsExistingTextReadableOnAnExplicitPromptBackground() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val background = 0xfff4f4f4.toInt()
+            val cells = List(8) { x -> TerminalCell(x, 0, "M", 0xff202328.toInt(), background, 128, 1) }
+            val frame = TerminalScreen(8, 1, null, null, 0xff202328.toInt(), -1, cells)
+            val view = TerminalView(instrumentation.targetContext).apply {
+                textSp = 20f
+                setTerminalPaddingDp(0, 0, 0)
+                screen = frame
+                layout(0, 0, 640, 160)
+            }
+            fun checkDrawn(theme: TerminalPalette, expected: Int) {
+                view.palette = theme
+                val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                try {
+                    view.draw(Canvas(bitmap))
+                    val pixels = IntArray(bitmap.width * bitmap.height)
+                    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                    assertTrue("The prompt should still use its pinned background", background in pixels)
+                    assertTrue("The cached text must use the new display color", expected in pixels)
+                    assertTrue(view.screen === frame)
+                } finally { bitmap.recycle() }
+            }
+            val light = TerminalPalette.Light
+            val amber = TerminalPalette.Dark.copy(foreground = 0xfff5c67c.toInt())
+            checkDrawn(light, light.foreground)
+            checkDrawn(amber, TerminalTextColors().foreground(amber, cells.first()))
+            checkDrawn(light, light.foreground)
+        }
+    }
+
     @Test fun aFullScreenApplicationBackgroundHasNoCellSeamsAtFractionalOffsets() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         val expected=0xff394457.toInt()
@@ -78,6 +110,50 @@ class TerminalBackgroundTest {
             result=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);view.draw(Canvas(result))
         }
         assertEquals(TerminalPalette.Dark.accent,result.getPixel(result.width/4,result.height/4))
+    }
+    @Test fun reverseVideoCursorKeepsItsColorInsideTheGrid() {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val context=instrumentation.targetContext
+            val grid=TerminalFonts(context).configure(android.graphics.Paint(),10f)
+            val padding=(10*context.resources.displayMetrics.density).roundToInt()
+            val width=(3*grid.cellWidth).toInt()+padding*2
+            val height=(3*grid.cellHeight).toInt()+padding*2
+            val background=0xff43546a.toInt()
+            val inverse=0xff202432.toInt()
+            val cells=listOf(TerminalCell(0,0," ",inverse,background,8,1),
+                TerminalCell(2,2," ",inverse,background,8,1))
+            val frame=TerminalScreen(3,3,null,null,-1,0,cells,cursorAnchorX=0,cursorAnchorY=0)
+            val view=TerminalView(context).apply {
+                allowHiddenCursorInput=true
+                setTerminalPaddingDp(10,10,10)
+                screen=frame
+                layout(0,0,width,height)
+            }
+            val image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)
+            try {
+                val leftCell=padding+(grid.cellWidth/2).toInt()
+                val topCell=padding+(grid.cellHeight/2).toInt()
+                val rightCell=width-leftCell-1
+                val bottomCell=height-topCell-1
+                view.draw(Canvas(image))
+                assertEquals(background,image.getPixel(1,topCell))
+                assertEquals(background,image.getPixel(leftCell,1))
+                assertEquals(inverse,image.getPixel(leftCell,topCell))
+                assertEquals(inverse,image.getPixel(width-2,bottomCell))
+                val initialRecordings=view.recordedRowCount
+
+                view.screen=frame.copy(cursorAnchorX=2,cursorAnchorY=2)
+                view.draw(Canvas(image))
+                assertEquals(inverse,image.getPixel(1,topCell))
+                assertEquals(background,image.getPixel(width-2,bottomCell))
+                assertEquals(background,image.getPixel(rightCell,height-2))
+                assertEquals(inverse,image.getPixel(rightCell,bottomCell))
+                assertEquals(initialRecordings+2,view.recordedRowCount)
+            } finally {
+                image.recycle()
+            }
+        }
     }
     @Test fun wideCharacterSpacersDoNotEraseTheLeadingCellsBackground() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()

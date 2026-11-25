@@ -1,6 +1,7 @@
 package dev.shulhi.rex
 
 import android.graphics.Paint
+import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -49,6 +50,39 @@ class TerminalMouseTest {
             assertEquals(1,calls.size)
         }
     }
+    @Test fun pointerClickIsDeliveredOnceAndKeepsTheSoftKeyboardClosed() {
+        instrumentation.runOnMainSync {
+            var clicks=0
+            var target="a"
+            val view=view().apply {
+                mouseTarget={target}
+                onMouseClick={_,_,_,_->clicks++}
+            }
+            view.primaryPointerButton(true,5f,5f)
+            assertEquals(0,clicks)
+            view.primaryPointerButton(false,5f,5f)
+            assertEquals(1,clicks)
+            assertFalse(view.hasFocus())
+            view.primaryPointerButton(true,5f,5f)
+            target="b"
+            view.primaryPointerButton(false,5f,5f)
+            assertEquals(1,clicks)
+            view.primaryPointerButton(true,5f,5f)
+            view.primaryPointerButton(false,100f,5f)
+            assertEquals(1,clicks)
+            fun mouseTouch(action: Int,time: Long) {
+                val event=MotionEvent.obtain(100,time,action,5f,5f,0)
+                event.source=InputDevice.SOURCE_MOUSE
+                try {view.onTouchEvent(event)} finally {event.recycle()}
+            }
+            mouseTouch(MotionEvent.ACTION_DOWN,100)
+            view.primaryPointerButton(true,5f,5f)
+            view.primaryPointerButton(false,5f,5f)
+            mouseTouch(MotionEvent.ACTION_UP,130)
+            assertEquals(2,clicks)
+            assertFalse(view.hasFocus())
+        }
+    }
     @Test fun swipesCancelAndLongPressSelectsWithoutSendingMouseClicks() {
         instrumentation.runOnMainSync {
             var clicks=0;var wheels=0;var panes=0
@@ -57,6 +91,34 @@ class TerminalMouseTest {
             event(view,MotionEvent.ACTION_DOWN,50f,50f,300);event(view,MotionEvent.ACTION_MOVE,50f,350f,400);event(view,MotionEvent.ACTION_UP,50f,350f,500)
             event(view,MotionEvent.ACTION_DOWN,5f,5f,600);assertTrue(view.performLongClick());event(view,MotionEvent.ACTION_UP,5f,5f,1200)
             assertEquals(0,clicks);assertEquals(1,panes);assertTrue(wheels<0);assertNotNull(view.selectedText)
+        }
+    }
+    @Test fun cornerControlsConsumeTheTapAndKeepSwipesAndScrolling() {
+        instrumentation.runOnMainSync {
+            var reveals=0;var clicks=0;var wheels=0;var swipes=0
+            val view=view().apply {
+                onPaneControlsTap={x,y->
+                    if(x>width-80 && y<80) {reveals++;true} else false
+                }
+                onMouseClick={_,_,_,_->clicks++}
+                onWheel={lines,_,_,_,_->wheels+=lines}
+                onPaneDragEnd={_,_->swipes++}
+            }
+            val corner=view.width-20f
+            event(view,MotionEvent.ACTION_DOWN,corner,20f,0)
+            event(view,MotionEvent.ACTION_UP,corner,20f,30)
+            assertEquals(1,reveals);assertEquals(0,clicks)
+            event(view,MotionEvent.ACTION_DOWN,5f,5f,100)
+            event(view,MotionEvent.ACTION_UP,5f,5f,130)
+            assertEquals(1,clicks)
+            event(view,MotionEvent.ACTION_DOWN,corner,20f,200)
+            event(view,MotionEvent.ACTION_MOVE,corner-350f,20f,300)
+            event(view,MotionEvent.ACTION_UP,corner-350f,20f,400)
+            event(view,MotionEvent.ACTION_DOWN,corner,20f,500)
+            event(view,MotionEvent.ACTION_MOVE,corner,320f,600)
+            event(view,MotionEvent.ACTION_UP,corner,320f,700)
+            assertEquals(1,reveals);assertEquals(1,clicks)
+            assertEquals(1,swipes);assertTrue(wheels<0)
         }
     }
     @Test fun navigationReconnectResizeAndModeChangesCancelAPendingTap() {
@@ -71,13 +133,45 @@ class TerminalMouseTest {
             assertEquals(0,clicks);assertEquals(0,activated)
         }
     }
-    @Test fun readonlyAndOrdinaryTerminalTapsKeepActivationBehavior() {
+    @Test fun takingControlFromOutputDoesNotRequestKeyboard() {
         instrumentation.runOnMainSync {
-            var activated=0;var clicks=0
-            val view=view().apply {controlled=false;onActivate={activated++};onMouseClick={_,_,_,_->clicks++}}
-            event(view,MotionEvent.ACTION_DOWN,5f,5f,0);event(view,MotionEvent.ACTION_UP,5f,5f,30)
-            view.screen=frame(6);event(view,MotionEvent.ACTION_DOWN,5f,5f,100);event(view,MotionEvent.ACTION_UP,5f,5f,130)
-            assertEquals(2,activated);assertEquals(0,clicks)
+            val requests=mutableListOf<Boolean>()
+            var clicks=0
+            val metrics=TerminalFonts(instrumentation.targetContext).configure(Paint(),10f)
+            val view=view().apply {
+                controlled=false
+                onActivate={requests+=it}
+                onMouseClick={_,_,_,_->clicks++}
+            }
+            fun tap(row: Int,time: Long) {
+                val y=metrics.cellHeight*(row+.5f)
+                event(view,MotionEvent.ACTION_DOWN,5f,y,time);event(view,MotionEvent.ACTION_UP,5f,y,time+30)
+            }
+            tap(0,0)
+            view.screen=frame(0).copy(cursorX=2,cursorY=3)
+            tap(2,100)
+            tap(3,200)
+            assertEquals(listOf(false,false,true),requests)
+            assertEquals(0,clicks)
+        }
+    }
+    @Test fun unmarkedShellOpensKeyboardOnlyAtLiveInputRow() {
+        instrumentation.runOnMainSync {
+            val metrics=TerminalFonts(instrumentation.targetContext).configure(Paint(),10f)
+            val shell=frame(0).copy(cursorX=2,cursorY=3)
+            val view=view().apply {screen=shell}
+            fun tap(row: Int,time: Long,x: Float=5f) {
+                val y=metrics.cellHeight*(row+.5f)
+                event(view,MotionEvent.ACTION_DOWN,x,y,time);event(view,MotionEvent.ACTION_UP,x,y,time+30)
+            }
+            tap(2,0);assertFalse(view.hasFocus())
+            tap(3,100,1200f);assertFalse(view.hasFocus())
+            tap(3,200);assertTrue(view.hasFocus())
+            view.clearFocus()
+            view.screen=shell.copy(scroll=TerminalScroll(100,0,12))
+            tap(3,300);assertFalse(view.hasFocus())
+            view.screen=shell.copy(inputFlags=2)
+            tap(3,400);assertFalse(view.hasFocus())
         }
     }
     @Test fun webLinksKeepPriorityOverApplicationMouseClicks() {
@@ -115,7 +209,7 @@ class TerminalMouseTest {
             assertEquals(listOf("mouse:3"),calls)
         }
     }
-    @Test fun hiddenClaudeCursorCanOpenKeyboardWithoutChangingMouseClicksOrOtherEditors() {
+    @Test fun hiddenPiCursorCanOpenKeyboardWithoutChangingMouseClicksOrOtherEditors() {
         instrumentation.runOnMainSync {
             val metrics=TerminalFonts(instrumentation.targetContext).configure(Paint(),10f)
             var cursorTaps=0;var clicks=0
@@ -128,7 +222,8 @@ class TerminalMouseTest {
                 event(view,MotionEvent.ACTION_DOWN,5f,y,time);event(view,MotionEvent.ACTION_UP,5f,y,time+30)
             }
             assertNull(view.keyboardFocus);tap(8,0);assertEquals(0,cursorTaps)
-            view.allowHiddenCursorInput=true;assertNotNull(view.keyboardFocus)
+            view.allowHiddenCursorInput=ProgramIdentity.resolve(listOf("pi")).supportsHiddenCursorInput
+            assertNotNull(view.keyboardFocus)
             tap(7,100);assertEquals(0,cursorTaps)
             tap(8,200);assertEquals(1,cursorTaps);assertEquals(3,clicks)
             view.screen=view.screen!!.copy(scroll=TerminalScroll(100,0,12));tap(8,300)

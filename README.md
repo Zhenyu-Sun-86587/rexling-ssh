@@ -358,6 +358,10 @@ Copyright 2026 Shulhi Sapli and contributors. Project code is licensed under
 retain their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 Rexling is an independent, unofficial client and is not an official Rex product.
 
+### Foldables and tablets
+
+Configure tab placement for each window width and choose a pane layout for each orientation in Preferences. Wide layouts support side-by-side panes, draggable borders and a Sessions sidebar. See the [Android guide](rexling-android/README.md) for workspace controls.
+
 ### Floating panes on the phone
 
 Enable **Preferences → Panes → Minimize floating panes** to keep floating panes in a compact icon dock at the bottom right. They are excluded from pane swipes. A single floating pane opens directly from its icon. Multiple floating panes use a stacked icon: tap it to fan their icons and titles upward, and tap it again to collapse the list. The stack is highlighted while a floating pane is open. Tap an item to open its terminal; tap the active item again or press Back to minimize it and return to the last tiled pane in that tab. Floating panes remain available in the pane drawer. This preference is off by default and does not change the server’s layout.

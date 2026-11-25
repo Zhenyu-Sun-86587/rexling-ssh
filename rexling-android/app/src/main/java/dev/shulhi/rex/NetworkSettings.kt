@@ -39,6 +39,8 @@ internal object NetworkSettings {
     fun isUsedAsJump(endpoint: String)=jumps().let {routes->routes.keys().asSequence().any {routes.optString(it)==endpoint}}
     val tailscaleEnabled get()=!preferences.getBoolean("tailscale_suspended",false) && (builtIn || preferences.getBoolean("tailscale_prepared",false) || JSONObject(preferences.getString("routes","{}")).let {routes->routes.keys().asSequence().any {routes.optString(it)=="builtin"}})
     val controlUrl get()=preferences.getString("control_url","").orEmpty()
+    /** The built-in Tailscale device name; blank means the default, rexling-android. */
+    val hostname get()=preferences.getString("tailscale_hostname","").orEmpty()
     private fun vaultKey(): SecretKey {
         val store=KeyStore.getInstance("AndroidKeyStore").apply {load(null)}
         (store.getKey("rexling-ssh",null) as? SecretKey)?.let {return it}
@@ -112,7 +114,7 @@ internal object NetworkSettings {
     private fun configure(): String? {
         val ssh=JSONObject();val library=keyLibrary()
         library.assigned().forEach {(endpoint,id)->runCatching {ssh.put(endpoint,JSONObject().put("key",decrypt(library.secret(id))))}}
-        val config=JSONObject().put("built_in",builtIn).put("control_url",controlUrl).put("directory",context.filesDir.resolve("tailscale").absolutePath)
+        val config=JSONObject().put("built_in",builtIn).put("control_url",controlUrl).put("hostname",hostname).put("directory",context.filesDir.resolve("tailscale").absolutePath)
             .put("built_in_suspended",preferences.getBoolean("tailscale_suspended",false)).put("built_in_enabled",tailscaleEnabled).put("routes",JSONObject(preferences.getString("routes","{}")!!))
             .put("ssh",ssh).put("jumps",jumps()).put("trusted",JSONObject(preferences.getString("trusted","{}")!!))
         val error=command("configure",JSONObject().put("config",config)).optString("error").takeIf {it.isNotEmpty()}
@@ -149,13 +151,14 @@ internal object NetworkSettings {
         if(error==null) sshKeyBindings.value=library.assigned() else write(oldRoutes,oldJumps,oldLibrary)
         error
     }}
-    suspend fun prepareBuiltIn(url: String): String? = withContext(Dispatchers.IO) {mutex.withLock {
+    suspend fun prepareBuiltIn(url: String,name: String=hostname): String? = withContext(Dispatchers.IO) {mutex.withLock {
         val trimmed=url.trim().trimEnd('/')
         if(trimmed.isNotEmpty()) {
             val uri=runCatching {java.net.URI(trimmed)}.getOrNull()
             if(uri==null || uri.scheme !in listOf("http","https") || uri.host.isNullOrEmpty() || uri.userInfo!=null || uri.query!=null || uri.fragment!=null) return@withLock "Enter a complete control server HTTP(S) URL"
         }
-        preferences.edit().putBoolean("tailscale_suspended",false).putBoolean("tailscale_prepared",true).putString("control_url",trimmed).commit();configure()
+        val device=TailscaleHostname.normalize(name) ?: return@withLock TailscaleHostname.ERROR
+        preferences.edit().putBoolean("tailscale_suspended",false).putBoolean("tailscale_prepared",true).putString("control_url",trimmed).putString("tailscale_hostname",device).commit();configure()
     }}
     suspend fun cancelLogin(): String? = withContext(Dispatchers.IO) {mutex.withLock {
         val response=command("cancel_login")
@@ -213,3 +216,17 @@ internal object NetworkSettings {
     }}}
     suspend fun login(): String? = withContext(Dispatchers.IO) {command("login").optString("error").takeIf {it.isNotEmpty()}}
 }
+
+/** Validation for the built-in Tailscale device name: one DNS label, as Tailscale machine names are. */
+internal object TailscaleHostname {
+    const val DEFAULT="rexling-android"
+    const val ERROR="Use letters, digits and hyphens for the device name (up to 63, not starting or ending with a hyphen)."
+    private val label=Regex("[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")
+    /** The name to store: blank for the default, lower-cased otherwise; null if Tailscale would not accept it. */
+    fun normalize(raw: String): String? {
+        val name=raw.trim().lowercase()
+        if(name.isEmpty()) return ""
+        return name.takeIf {label.matches(it)}
+    }
+}
+

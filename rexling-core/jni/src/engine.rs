@@ -116,6 +116,37 @@ mod shift_enter_tests {
     }
 }
 type PreviewTask = Pin<Box<dyn Future<Output = Result<Vec<(String, Arc<Frame>)>>>>>;
+fn pane_layout(window: &Value) -> impl Iterator<Item = &Value> {
+    window["layout"].as_array().into_iter().flatten()
+}
+
+fn pane_window<'a>(windows: &'a Value, block: &str) -> Option<&'a Value> {
+    windows.as_array()?.iter().find(|window| {
+        window["blocks"].as_array().into_iter().flatten().any(|pane| pane["id"] == block)
+    })
+}
+
+fn minimized_pane<'a>(windows: &'a Value, block: &str) -> Option<(&'a Value, &'a Value)> {
+    let window = pane_window(windows, block)?;
+    let pane = pane_layout(window).find(|pane| pane["id"] == block && pane["minimized"] == true)?;
+    Some((window, pane))
+}
+
+fn visible_terminal(window: &Value) -> Option<&str> {
+    let focused = window["focused"].as_str();
+    window["blocks"].as_array()?.iter()
+        .filter_map(|pane| pane["id"].as_str())
+        .filter(|id| !pane_layout(window).any(|pane| pane["id"] == *id && pane["minimized"] == true))
+        .min_by_key(|id| (Some(*id) != focused, pane_layout(window).any(|pane| pane["id"] == *id && pane["floating"] == true)))
+}
+
+fn visible_target(windows: &Value, block: String) -> String {
+    let Some((window, _)) = minimized_pane(windows, &block) else { return block };
+    visible_terminal(window)
+        .or_else(|| windows.as_array()?.iter().find_map(visible_terminal))
+        .unwrap_or_default().to_owned()
+}
+
 fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'static str,Value)> {
     ensure!(value["session"].as_str()==Some(session),"The selected session changed");
     let kind=value["type"].as_str().context("terminal action required")?;
@@ -132,6 +163,33 @@ fn terminal_edit_call(windows:&Value,session:&str,value:&Value)->Result<(&'stati
     }
     let layout=window["layout"].as_array().context("Pane layout is unavailable")?;
     let placement=layout.iter().find(|p|p["id"]==id).context("Pane layout changed")?;
+    if matches!(kind, "resize_floating" | "minimize_floating") {
+        let layer=placement["layerId"].as_str().filter(|id|!id.is_empty()).context("Floating layer is unavailable")?;
+        ensure!(placement["floating"]==true && value["layerId"]==layer,"The floating layer changed");
+        if kind == "minimize_floating" {
+            return Ok(("session.set_layer_state",json!({"session_id":session,"layer_id":layer,"state":"minimized"})));
+        }
+        let bounds=value["bounds"].as_array().filter(|rect|rect.len()==4).context("Invalid floating bounds")?;
+        let fields: Option<Vec<_>>=bounds.iter().map(Value::as_f64).collect();
+        let fields=fields.context("Invalid floating bounds")?;
+        let (x,y,w,h)=(fields[0],fields[1],fields[2],fields[3]);
+        ensure!(x>=0.0 && y>=0.0 && w>0.0 && h>0.0 && x<1.0 && y<1.0 &&
+            x+w<=1.000001 && y+h<=1.000001,"Floating panes must fit inside the window");
+        return Ok(("session.resize_layer",json!({"session_id":session,"layer_id":layer,"bounds":[x,y,w.min(1.0-x),h.min(1.0-y)]})));
+    }
+    if kind=="place_pane" {
+        let anchor=value["anchor"].as_str().context("Choose a target pane")?;
+        validate_tiled_drag(window,value,id,anchor)?;
+        let (direction,side)=match value["position"].as_str() {
+            Some("left")=>("horizontal","before"),
+            Some("right")=>("horizontal","after"),
+            Some("above")=>("vertical","before"),
+            Some("below")=>("vertical","after"),
+            _=>anyhow::bail!("Choose a side of the target pane"),
+        };
+        return Ok(("session.move_block",json!({"session_id":session,"block_id":id,"anchor_block_id":anchor,
+            "direction":direction,"side":side,"ratio":0.5})));
+    }
     let tiled:Vec<_>=layout.iter().filter(|p|p["floating"]==false).collect();
     if kind=="float_pane" {
         ensure!(placement["floating"]==false,"This pane is already floating");
@@ -161,8 +219,24 @@ fn split_anchor<'a>(windows: &Value,command: &'a Value)->Result<&'a str> {
         "This pane is no longer available; choose another pane");
     Ok(anchor)
 }
+fn validate_tiled_drag(window: &Value,command: &Value,source: &str,target: &str)->Result<()> {
+    let tiled: Vec<_> = window["layout"].as_array().into_iter().flatten()
+        .filter(|pane| pane["floating"] == false)
+        .filter_map(|pane| pane["id"].as_str())
+        .collect();
+    ensure!(window["zoomed"].as_str().is_none_or(str::is_empty)
+        && command["tiled"] == json!(tiled), "The pane layout changed; try again");
+    ensure!(source != target && tiled.contains(&source) && tiled.contains(&target),
+        "Choose two different tiled panes");
+    Ok(())
+}
 fn pane_reorder_swaps(windows: &Value,command: &Value)->Result<Vec<(String,String)>> {
     let window=windows.as_array().into_iter().flatten().find(|w|w["id"]==command["window"] && w["id"].is_string()).context("That tab is no longer available")?;
+    if let Some(other) = command["swapWith"].as_str() {
+        let block = command["id"].as_str().context("pane ID required")?;
+        validate_tiled_drag(window,command,block,other)?;
+        return Ok(vec![(block.to_owned(), other.to_owned())]);
+    }
     let mut ids:Vec<String>=window["blocks"].as_array().into_iter().flatten().filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
     ensure!(!ids.is_empty() && ids.len()<=256 && ids.iter().collect::<BTreeSet<_>>().len()==ids.len(),"Invalid pane order");
     ensure!(command["blocks"]==json!(ids),"The pane layout changed; try again");
@@ -191,6 +265,27 @@ fn collect_pane_layout(node: &Value,ids: &BTreeSet<&str>,layer: usize,floating: 
         out.push(json!({"id":id,"rect":rect,"layer":layer,"floating":floating}));
     }
     for child in ["before","after"] {collect_pane_layout(&node["split"][child],ids,layer,floating,depth+1,out);}
+}
+/// Any terminal block in a layout subtree; it stands for that side of a split in session.resize_pane.
+fn first_block<'a>(node: &'a Value,ids: &BTreeSet<&str>,depth: usize) -> Option<&'a str> {
+    if !node.is_object() || depth>64 {return None;}
+    if let Some(id)=node["block_id"].as_str() && ids.contains(id) {return Some(id);}
+    ["before","after"].iter().find_map(|child|first_block(&node["split"][*child],ids,depth+1))
+}
+/// A tiled layer's splits, for dragging pane borders: direction, ratio, the split's rect, and one
+/// block from each side. Rex resolves the innermost split between two such blocks, which is this one.
+fn collect_splits(node: &Value,ids: &BTreeSet<&str>,depth: usize,out: &mut Vec<Value>) {
+    if !node.is_object() || depth>64 || out.len()>=64 {return;}
+    let split=&node["split"];
+    if !split.is_object() {return;}
+    if let (Some(direction),Some(ratio),Some(rect),Some(before),Some(after))=(
+        split["direction"].as_str().filter(|d|matches!(*d,"horizontal"|"vertical")),
+        split["ratio"].as_f64().filter(|r|r.is_finite()),
+        node["rect"].as_array().filter(|r|r.len()==4 && r.iter().all(|v|v.as_f64().is_some_and(f64::is_finite))),
+        first_block(&split["before"],ids,depth+1),first_block(&split["after"],ids,depth+1)) {
+        out.push(json!({"id":split["split_id"],"direction":direction,"ratio":ratio,"rect":rect,"before":before,"after":after}));
+    }
+    for child in ["before","after"] {collect_splits(&split[child],ids,depth+1,out);}
 }
 type ConnectTask = Pin<Box<dyn Future<Output = Result<Control>>>>;
 type ProgramTask = Pin<Box<dyn Future<Output = Result<Value>>>>;
@@ -223,6 +318,9 @@ struct Actor {
     data: Option<Data>,
     cached_panes:BTreeMap<String,CachedPane>,
     retained_floating: Option<RetainedFloating>,
+    /// The multi-pane layout's other panes; empty, and inert, in the single-pane layout.
+    mirror: crate::mirror::Mirror,
+    mirror_waiting: Vec<String>,
     replica: Option<Replica>,
     control_token: Option<String>,
     data_resume: Option<Resume>,
@@ -237,11 +335,14 @@ struct Actor {
     windows: Value,
     screen: Option<Arc<Frame>>,
     selected_session: String,
+    stale_session: String,
     selected_block: String,
+    awaiting_pane_selection: bool,
     navigation_id: u64,
     tab_move_id: u64,
     pane_move_id: u64,
     controlled: bool,
+    owned_blocks: BTreeSet<String>,
     theme: Option<Value>,
     creating: bool,
     paused: bool,
@@ -251,6 +352,8 @@ struct Actor {
     preview_task: Option<PreviewTask>,
     connected_at: Option<tokio::time::Instant>,
     summary_task: Option<SummaryTask>,
+    pane_catalog_task: Option<SummaryTask>,
+    pane_catalog: Value,
     activity_open: bool,
     monitoring: bool,
     activity_task: Option<ProgramTask>,
@@ -293,6 +396,8 @@ impl Actor {
             control: None,commands:Commands::default(),input_acks:VecDeque::new(),input_limit:8,batch_text:true,connect_task:None,network_online:true,connection_epoch:0,other_owner:false,
             data: None,cached_panes:BTreeMap::new(),
             retained_floating: None,
+            mirror: Default::default(),
+            mirror_waiting: Vec::new(),
             replica: None,
             control_token: None,
             data_resume: None,
@@ -306,11 +411,14 @@ impl Actor {
             windows: json!([]),
             screen: None,
             selected_session: String::new(),
+            stale_session: String::new(),
             selected_block: String::new(),
+            awaiting_pane_selection: false,
             navigation_id: 0,
             tab_move_id: 0,
             pane_move_id: 0,
             controlled: false,
+            owned_blocks: BTreeSet::new(),
             theme: None,
             creating: false,
             paused: false,
@@ -320,6 +428,8 @@ impl Actor {
             preview_task: None,
             connected_at:None,
             summary_task: None,
+            pane_catalog_task: None,
+            pane_catalog: Value::Null,
             activity_open:false,monitoring:false,activity_task:None,activity_refresh:tokio::time::Instant::now(),
             activity:json!([]),activity_snapshot:Arc::default(),activity_dirty:true,activity_panes:json!([]),activity_titles:BTreeMap::new(),activity_full:false,activity_inflight_full:false,activity_pending:BTreeSet::new(),activity_inflight:BTreeSet::new(),activity_seen:json!({}),attention_count:0,activity_error:String::new(),activity_partial:false,
             program_task: None,
@@ -337,6 +447,7 @@ impl Actor {
         }
     }
     fn publish(&mut self) {
+        self.mirror_waiting = self.mirror.waiting().map(str::to_owned).collect();
         if self.activity_dirty {
             let mut items=crate::progress::activity(&self.activity,&self.activity_panes,&self.progress_reports);
             for item in items.as_array_mut().into_iter().flatten().filter(|v|v["progressOnly"]==true && v["session"]==self.selected_session) {
@@ -353,12 +464,26 @@ impl Actor {
             shared.key=format!("{}:{}",self.selected_session,self.selected_block);
             shared.json=json!({"phase":self.phase,"endpoint":self.server,
                 "terminalProgress":crate::progress::selected(&self.progress_reports,&self.selected_session),"identity":self.identity,"error":self.error,"notice":self.notice,"clipboard":self.clipboard,"sessions":self.sessions,
-                "windows":self.windows,"selectedSession":self.selected_session,
-                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
+                "mirrorWaiting":self.mirror_waiting,"windows":self.windows,"selectedSession":self.selected_session,"staleSession":self.stale_session,
+                "awaitingPaneSelection":self.awaiting_pane_selection,
+                "selectedBlock":self.selected_block,"navigationId":self.navigation_id,"tabMoveId":self.tab_move_id,"paneMoveId":self.pane_move_id,"connectionEpoch":self.connection_epoch,"otherOwner":self.other_owner,"controlled":self.controlled,"creating":self.creating,"sessionDetails":self.session_details,"paneCatalog":self.pane_catalog,"paneCatalogLoading":self.pane_catalog_task.is_some(),"programs":self.programs,"directories":self.directories,"titles":self.titles,"working":self.working,"activityError":self.activity_error,"activityPartial":self.activity_partial,"activityLoading":(self.activity_open || self.monitoring) && (self.activity_task.is_some() || self.activity_full),"attentionCount":self.attention_count}).to_string();
             shared
                 .pending_previews
                 .extend(std::mem::take(&mut self.preview_updates));
             self.updates.publish(shared.revision);
+        }
+    }
+    /// Hands mirror frames to Android without rebuilding the state JSON, which they leave unchanged.
+    fn publish_mirror_frames(&mut self) {
+        if let Ok(mut shared)=self.shared.lock() {
+            shared.revision+=1;
+            shared.pending_previews.extend(std::mem::take(&mut self.preview_updates));
+            self.updates.publish(shared.revision);
+        }
+    }
+    fn publish_mirror_status(&mut self) {
+        if !self.mirror.waiting().eq(self.mirror_waiting.iter().map(String::as_str)) {
+            self.publish();
         }
     }
     fn publish_frame(&mut self) {
@@ -390,6 +515,11 @@ impl Actor {
                 continue;
             }
             let active = !self.paused;
+            if self.visible && active && let Some(control) = self.control.as_mut() {
+                self.mirror.start(control).await;
+            }
+            let mirror_due = self.mirror.due().filter(|_| self.visible);
+            let mirror_retry = self.mirror.retry_due().filter(|_| self.visible && active && self.control.is_some());
             tokio::select! {
                 value=rx.recv()=>{
                     let Some(value)=value else{break;};
@@ -397,7 +527,10 @@ impl Actor {
                     if value["type"]=="visibility" {
                         self.visible=!self.monitoring && value["visible"].as_bool().unwrap_or(true);
                         if self.visible {self.dirty=true;render_at=tokio::time::Instant::now();}
-                        else {self.commands.clear();if let Err(error)=self.release_selected().await {self.recover(error);}self.publish();}
+                        else {
+                            self.commands.clear();
+                            if let Err(error)=self.release_session_panes().await {self.recover(error);}self.publish();
+                        }
                         continue;
                     }
                     // Local scrollback does not issue RPCs or mutate input ownership.
@@ -468,6 +601,26 @@ impl Actor {
                         Err(e)=>self.recover(e),
                     }
                 },
+                event = self.mirror.next(), if self.visible && active && self.control.is_some() => {
+                    if let Some(endpoint) = self.endpoint.as_ref() {
+                        self.mirror.handle(event, endpoint);
+                        self.publish_mirror_status();
+                    }
+                },
+                _ = async { if let Some(at) = mirror_retry { tokio::time::sleep_until(at).await; } else { pending::<()>().await; }} => {},
+                _ = async { if let Some(at) = mirror_due { tokio::time::sleep_until(at).await; } else { pending::<()>().await; }} => {
+                    let frames = self.mirror.frames();
+                    if !frames.is_empty() {
+                        self.preview_updates.extend(frames);
+                        if self.mirror.waiting().eq(self.mirror_waiting.iter().map(String::as_str)) {
+                            self.publish_mirror_frames();
+                        } else {
+                            self.publish();
+                        }
+                    } else {
+                        self.publish_mirror_status();
+                    }
+                },
                 chunk=async {match &mut self.retained_floating {Some(p)=>p.data.read().await,None=>pending().await}}=>{
                     let keep=if let (Ok(bytes),Some(pane))=(chunk,self.retained_floating.as_mut()) {
                         let ok=pane.replica.feed(&bytes).is_ok();
@@ -480,11 +633,25 @@ impl Actor {
                 },
                 result=async {match &mut self.preview_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.preview_task=None;
-                    if let Ok(frames)=result {for(id,frame) in frames {self.preview_updates.insert(id,frame);}self.publish();}
+                    if let Ok(frames)=result {
+                        self.preview_updates.extend(frames.into_iter().filter(|(id,_)| minimized_pane(&self.windows,id).is_none()));
+                        self.publish();
+                    }
                 },
                 result=async {match &mut self.summary_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.summary_task=None;
                     if let Ok(details)=result {self.session_details=details;self.publish();}
+                },
+                result=async {match &mut self.pane_catalog_task {Some(task)=>task.await,None=>pending().await}}=>{
+                    self.pane_catalog_task=None;
+                    match result {
+                        Ok(catalog)=>self.pane_catalog=catalog,
+                        Err(_)=> {
+                            if self.pane_catalog.is_null() {self.pane_catalog=json!({});}
+                            self.pane_catalog["error"]=json!(true);
+                        }
+                    }
+                    self.publish();
                 },
                 result=async {match &mut self.activity_task {Some(task)=>task.await,None=>pending().await}}=>{
                     self.activity_task=None;self.activity_refresh=tokio::time::Instant::now()+Duration::from_secs(1);
@@ -582,11 +749,17 @@ impl Actor {
         }
     }
     async fn disconnect(&mut self) {
+        let _ = tokio::time::timeout(Duration::from_secs(2), self.release_session_panes()).await;
         self.close_retained_floating().await;
+        self.awaiting_pane_selection = false;
+        self.mirror=Default::default();
+        self.stale_session.clear();
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
+        self.pane_catalog_task = None;
+        self.pane_catalog = Value::Null;
         self.activity_task=None;
         self.program_task = None;
         self.preview_updates.clear();
@@ -604,15 +777,19 @@ impl Actor {
             let _ = tokio::time::timeout(Duration::from_secs(2), c.close()).await;
         }
         self.controlled = false;
+        self.owned_blocks.clear();
     }
     fn lose_connections(&mut self) {
         self.cached_panes.clear();
+        self.owned_blocks.clear();
         self.retained_floating=None;
+        self.mirror.clear();
         self.progress_reports.clear();self.activity_dirty=true;
         self.commands.clear();self.input_acks.clear();
         self.connect_task=None;self.other_owner=false;
         self.preview_task = None;
         self.summary_task = None;
+        self.pane_catalog_task = None;
         self.activity_task=None;
         self.program_task = None;
         if let Some(c) = self.control.take() {
@@ -638,6 +815,55 @@ impl Actor {
         }
         self.publish();
     }
+    fn clear_ended_session(&mut self, session: String) {
+        self.cached_panes.clear();
+        self.owned_blocks.clear();
+        self.stale_session = session;
+        self.selected_session.clear();
+        self.selected_block.clear();
+        self.awaiting_pane_selection = false;
+        self.windows = json!([]);
+        self.mirror = Default::default();
+        self.retained_floating = None;
+        self.data = None;
+        self.data_resume = None;
+        self.replica = None;
+        self.screen = None;
+        self.dirty = false;
+        self.controlled = false;
+        self.other_owner = false;
+        self.clipboard = Value::Null;
+        self.commands.discard_input();
+        self.preview_task = None;
+        self.program_task = None;
+        self.summary_task = None;
+        self.preview_updates.clear();
+        if let Ok(mut shared) = self.shared.lock() {
+            shared.pending_previews.clear();
+        }
+        self.programs = json!({});
+        self.directories = json!({});
+        self.titles = json!({});
+        self.working = json!([]);
+        self.title_owners = json!({});
+        self.title_events.clear();
+        self.process_events.clear();
+        if let Some(sessions) = self.sessions.as_array_mut() {
+            sessions.retain(|item| item["session_id"] != self.stale_session);
+        }
+        self.progress_reports.retain(|_, report| report["session"] != self.stale_session);
+        self.activity_full = true;
+        self.activity_dirty = true;
+        self.error.clear();
+        self.notice = "Session ended. Start or choose another session.".into();
+    }
+
+    async fn refresh_session_catalog(&mut self) -> Result<()> {
+        self.sessions = self.control.as_mut().context("not connected")?
+            .call("session.list", json!({})).await?["sessions"].clone();
+        Ok(())
+    }
+
     async fn connected(&mut self,mut control: Control) -> Result<()> {
         self.program_suspended=false;
         let endpoint=self.endpoint.clone().context("server missing")?;
@@ -655,13 +881,32 @@ impl Actor {
         self.control = Some(control);
         rex_core::diagnostics::record("connection",format!("connected resumed={resumed} nextEpoch={}",self.connection_epoch+1));
         self.phase = "connected".into();self.connection_epoch=self.connection_epoch.wrapping_add(1);
+        self.awaiting_pane_selection = false;
         self.activity_full=true;self.activity_refresh=tokio::time::Instant::now();
         self.error.clear();
         self.connected_at=Some(tokio::time::Instant::now());
         if !self.selected_session.is_empty() {
             let session = self.selected_session.clone();
-            let attached = self.control.as_mut().unwrap().attach(&session).await?;
+            let attached = match self.control.as_mut().unwrap().attach(&session).await {
+                Ok(attached) => attached,
+                Err(error) if missing_terminal(&error) => {
+                    self.clear_ended_session(session);
+                    self.publish();
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            };
             self.set_view(&attached["view"]);
+            if !self.visible && !self.owned_blocks.is_empty() {
+                self.release_session_panes().await?;
+            }
+            if minimized_pane(&self.windows, &self.selected_block).is_some() {
+                self.release_selected().await?;
+                self.selected_block = visible_target(&self.windows, std::mem::take(&mut self.selected_block));
+                self.data_resume = None;
+                self.replica = None;
+                self.screen = None;
+            }
             if !self.selected_block.is_empty() {
                 let block = self.selected_block.clone();
                 self.apply_theme().await?;
@@ -691,11 +936,13 @@ impl Actor {
                 }
                 .into();
             }
+
         }
         self.publish();
         Ok(())
     }
     fn set_view(&mut self, view: &Value) {
+        self.stale_session.clear();
         self.other_owner=false;
         let client = self
             .control
@@ -704,19 +951,37 @@ impl Actor {
             .unwrap_or("");
         let mut windows = Vec::new();
         let mut selected_exists = false;
+        self.owned_blocks.clear();
+        let mut minimized = BTreeSet::new();
         for window in view["windows"].as_array().into_iter().flatten() {
             let mut blocks = Vec::new();
             let mut layout=Vec::new();
+            let mut splits=Vec::new();
             for (index,layer) in window["layers"].as_array().into_iter().flatten().enumerate() {
                 let ids=layer["blocks"].as_array().into_iter().flatten()
                     .filter(|b|b["creator_name"]=="com.superlogical.terminal")
                     .filter_map(|b|b["block_id"].as_str()).collect();
+                let start=layout.len();
                 collect_pane_layout(&layer["layout"],&ids,index,layer["kind"]!="tiled",0,&mut layout);
+                if layer["kind"]=="floating" && layer["layer_id"].is_string() {
+                    for pane in &mut layout[start..] {
+                        pane["layerId"]=layer["layer_id"].clone();
+                        pane["layerBounds"]=layer["bounds"].clone();
+                        if layer["state"] == "minimized" {
+                            pane["minimized"] = json!(true);
+                            if let Some(id) = pane["id"].as_str() { minimized.insert(id.to_owned()); }
+                        }
+                    }
+                }
+                if layer["kind"]=="tiled" {collect_splits(&layer["layout"],&ids,0,&mut splits);}
                 for block in layer["blocks"].as_array().into_iter().flatten() {
                     if block["creator_name"] != "com.superlogical.terminal" {
                         continue;
                     }
                     let id = block["block_id"].as_str().unwrap_or("");
+                    if !id.is_empty() && !client.is_empty() && block["owner"].as_str() == Some(client) {
+                        self.owned_blocks.insert(id.to_owned());
+                    }
                     if id == self.selected_block {
                         selected_exists = true;
                         self.controlled = block["owner"].as_str() == Some(client);
@@ -728,7 +993,9 @@ impl Actor {
                     );
                 }
             }
-            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout}));
+            // Rex draws a zoomed block over its whole window; layouts keep their normal sizes.
+            windows.push(json!({"id":window["window_id"],"label":window["label"],"blocks":blocks,"layout":layout,"splits":splits,
+                "zoomed":window["zoomed_block_id"].as_str().unwrap_or(""),"focused":window["focused_block_id"]}));
         }
         let next = json!(windows);
         let ids = |windows: &Value| -> BTreeSet<String> {
@@ -754,7 +1021,11 @@ impl Actor {
         self.windows = next;
         let live: BTreeSet<_>=self.windows.as_array().into_iter().flatten().flat_map(|w|w["blocks"].as_array().into_iter().flatten()).filter_map(|b|b["id"].as_str().map(str::to_owned)).collect();
         if self.retained_floating.as_ref().is_some_and(|p|!live.contains(&p.block)) {self.retained_floating=None;}
-        self.cached_panes.retain(|id,_|live.contains(id));
+        self.cached_panes.retain(|id,_|live.contains(id) && !minimized.contains(id));
+        self.mirror.retain(|block| live.contains(block) && !minimized.contains(block));
+        if !minimized.is_empty() {
+            self.preview_updates.retain(|id, _| !minimized.contains(id));
+        }
         let before=self.progress_reports.len();
         self.progress_reports.retain(|_,r|r["session"]!=self.selected_session || r["block"].as_str().is_some_and(|id|live.contains(id)));
         if self.progress_reports.len()!=before {self.activity_dirty=true;}
@@ -772,14 +1043,32 @@ impl Actor {
         if self.selected_session.is_empty() {
             return Ok(());
         }
-        let view = self
-            .control
-            .as_mut()
-            .context("not connected")?
-            .call("session.view", json!({"session_id":self.selected_session}))
-            .await?;
-        self.set_view(&view);
+        let mut switched_pane = false;
+        const MAX_VIEW_ATTEMPTS: usize = 3;
+        for attempt in 1..=MAX_VIEW_ATTEMPTS {
+            let view = self.control.as_mut().context("not connected")?
+                .call("session.view", json!({"session_id":self.selected_session})).await?;
+            self.set_view(&view);
+            if self.retained_floating.as_ref().is_some_and(|pane| minimized_pane(&self.windows, &pane.block).is_some()) {
+                self.close_retained_floating().await;
+            }
+            if minimized_pane(&self.windows, &self.selected_block).is_none() { break; }
+            if attempt == MAX_VIEW_ATTEMPTS {
+                self.open_block_stream(String::new(), false).await?;
+                self.awaiting_pane_selection = true;
+                self.error = "Floating panes are changing on another client. Choose a pane to continue.".into();
+                switched_pane = false;
+                break;
+            }
+            let block = visible_target(&self.windows, self.selected_block.clone());
+            self.open_block_stream(block, true).await?;
+            switched_pane = true;
+            if self.selected_block.is_empty() { break; }
+        }
         self.publish();
+        if switched_pane && self.controlled {
+            self.focus_selected().await?;
+        }
         Ok(())
     }
     fn apply_program_details(&mut self, details: Value) {
@@ -827,28 +1116,14 @@ impl Actor {
         if event["type"] == "session_destroyed"
             && event["payload"]["session_id"].as_str() == Some(self.selected_session.as_str())
         {
-            self.selected_session.clear();
-            self.selected_block.clear();
-            self.data = None;
-            self.data_resume = None;
-            self.replica = None;
-            self.screen = None;
-            self.windows = json!([]);
-            self.controlled = false;
-            self.notice = "That session has closed".into();
+            self.clear_ended_session(self.selected_session.clone());
         }
         if matches!(
             event["type"].as_str(),
             Some("session_created" | "session_destroyed" | "session_changed")
         ) {
             self.activity_full=true;
-            self.sessions = self
-                .control
-                .as_mut()
-                .unwrap()
-                .call("session.list", json!({}))
-                .await?["sessions"]
-                .clone();
+            self.refresh_session_catalog().await?;
         }
         if event["type"] == "session_event" {
             let inner = &event["payload"]["event"];
@@ -887,7 +1162,7 @@ impl Actor {
                 inner["type"].as_str(),
                 Some("session_view_changed" | "block_owner_changed" | "block_closed")
             ) {
-                self.refresh_view().await?;
+                self.refresh_close_view().await?;
             }
         }
         self.publish();
@@ -945,6 +1220,9 @@ impl Actor {
         ensure!(!self.monitoring,"Background monitor is read-only");
         let target=self.input_target();
         if !target.matches(&value) {rex_core::diagnostics::record("input","rejected stale input target");return Ok(());}
+        if value["type"]=="wheel" {
+            return self.send_wheel(&value,target).await;
+        }
         if value["type"]=="click" && (!self.visible || self.paused || self.phase!="connected" || !self.controlled) {return Ok(());}
         ensure!(self.visible && !self.paused && self.phase=="connected","Connect before typing");
         if !self.controlled {rex_core::diagnostics::record("input","claiming ownership");self.take_selected().await?;}
@@ -969,11 +1247,49 @@ impl Actor {
         // Unlike terminal.write, block.event is serialized by Rex on this connection.
         // An unidentified key with text preserves our already-encoded input bytes;
         // it bypasses Lua bindings, matching the previous raw-write behavior.
-        let payload=json!({"session_id":target.session,"block_id":target.block,"event":input_event(value["type"]=="paste",text)});
+        self.start_input(target,value["type"]=="paste",text,&value).await
+    }
+    async fn start_input(&mut self,target:Target,paste:bool,text:&str,value:&Value)->Result<()> {
+        let payload=json!({"session_id":target.session,"block_id":target.block,"event":input_event(paste,text)});
         let reply=self.control.as_mut().context("not connected")?.start_call("block.event",payload).await?;
         let sequence=value["inputSequence"].as_u64().unwrap_or(0);
         rex_core::diagnostics::record("input",format!("sent sequence={sequence} chars={} nav={} queueMs={}",text.chars().count(),target.navigation,unix_millis().saturating_sub(value["queuedAtMs"].as_u64().unwrap_or_else(unix_millis))));
-        self.input_acks.push_back(InputAck {target,paste:value["type"]=="paste",reply:Box::pin(reply.receive()),sent:tokio::time::Instant::now(),sequence});Ok(())
+        self.input_acks.push_back(InputAck {target,paste,reply:Box::pin(reply.receive()),sent:tokio::time::Instant::now(),sequence});
+        Ok(())
+    }
+    async fn send_wheel(&mut self,value:&Value,target:Target)->Result<()> {
+        if !self.visible || self.paused || self.phase!="connected"
+            || target.navigation<self.latest_navigation.load(Ordering::Acquire) {return Ok(());}
+        let lines=crate::input_queue::wheel_lines(value) as i32;
+        if lines==0 {return Ok(());}
+        let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
+        let terminal=replica.terminal()?;
+        let flags=terminal.input_flags()?;
+        let bytes=if flags&1!=0 {
+            terminal.wheel(lines>0,value["col"].as_i64().unwrap_or(0) as i32,value["row"].as_i64().unwrap_or(0) as i32,
+                value["cw"].as_u64().unwrap_or(1).clamp(1,1024) as u32,value["ch"].as_u64().unwrap_or(1).clamp(1,1024) as u32)?
+        } else if flags&6==6 {
+            match (flags&8!=0,lines<0) {(true,true)=>b"\x1bOA".to_vec(),(true,false)=>b"\x1bOB".to_vec(),(false,true)=>b"\x1b[A".to_vec(),(false,false)=>b"\x1b[B".to_vec()}
+        } else {
+            terminal.scroll_viewport(lines);
+            self.dirty=true;
+            return Ok(());
+        };
+        if bytes.is_empty(){return Ok(());}
+        let text=String::from_utf8(bytes.repeat(lines.unsigned_abs() as usize)).context("Legacy mouse coordinates cannot be sent as UTF-8 terminal input")?;
+        if !self.controlled {
+            self.take_selected().await?;
+            if target!=self.input_target() || target.navigation<self.latest_navigation.load(Ordering::Acquire) {return Ok(());}
+            if let (Some(cols),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
+                && cols>0 && rows>0 {
+                self.control.as_mut().context("not connected")?.terminal(&target.session,&target.block,"resize",
+                    json!({"columns":cols.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
+            }
+        }
+        if self.controlled && target.navigation>=self.latest_navigation.load(Ordering::Acquire) {
+            self.start_input(target,false,&text,value).await?;
+        }
+        Ok(())
     }
     async fn command(&mut self, value: Value) -> Result<()> {
         let kind=value["type"].as_str().context("command type missing")?;
@@ -1064,15 +1380,7 @@ impl Actor {
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_str)
-                    .filter(|id| {
-                        self.windows.as_array().into_iter().flatten().any(|w| {
-                            w["blocks"]
-                                .as_array()
-                                .into_iter()
-                                .flatten()
-                                .any(|b| b["id"].as_str() == Some(*id))
-                        })
-                    })
+                    .filter(|id| pane_window(&self.windows,id).is_some() && minimized_pane(&self.windows,id).is_none())
                     .take(2)
                     .map(str::to_owned)
                     .collect();
@@ -1098,6 +1406,16 @@ impl Actor {
                         sessions,
                         own,
                     ));
+                }
+            }
+            "pane_catalog" => {
+                if value["open"]==false {
+                    self.pane_catalog_task=None;
+                    self.pane_catalog=Value::Null;
+                    self.publish();
+                } else if self.phase=="connected" && self.pane_catalog_task.is_none() {
+                    self.pane_catalog_task=Some(pane_catalog_task(self.endpoint.clone().context("no server")?));
+                    self.publish();
                 }
             }
             "rename_session" => {
@@ -1138,13 +1456,10 @@ impl Actor {
                 let _=closer.close().await;
                 if let Err(error)=result
                     && error.downcast_ref::<rex_core::control::RpcError>().is_none_or(|e| e.code!="session_not_found") {return Err(error);}
-                if self.selected_session==id {
-                    self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);
-                    self.data=None;self.data_resume=None;self.replica=None;self.screen=None;self.controlled=false;
-                    self.preview_task=None;self.program_task=None;self.summary_task=None;
-                    self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();self.preview_updates.clear();
+                if self.selected_session == id {
+                    self.clear_ended_session(id);
                 }
-                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+                self.refresh_session_catalog().await?;
                 self.creating=false;self.notice="Session closed".into();self.publish();
             }
             "new_session" => {
@@ -1168,7 +1483,8 @@ impl Actor {
                     .as_str()
                     .context("No shell block")?
                     .to_owned();
-                self.release_selected().await?;
+                self.release_session_panes().await?;
+                self.close_cached().await;
                 if let Some(mut data) = self.data.take() {
                     let _ = data.close().await;
                 }
@@ -1186,6 +1502,7 @@ impl Actor {
                 let attached = self.control.as_mut().unwrap().attach(&id).await?;
                 self.selected_session = id;
                 self.selected_block.clear();
+                self.awaiting_pane_selection = false;
                 self.set_view(&attached["view"]);
                 self.sessions = self
                     .control
@@ -1198,14 +1515,23 @@ impl Actor {
                 self.creating = false;
                 self.publish();
             }
-            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" => {
+            "rename_tab" | "rename_pane" | "float_pane" | "dock_pane" | "resize_floating" | "minimize_floating" | "place_pane" => {
                 ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before editing a terminal");
                 self.refresh_view().await?;
                 let (method,args)=terminal_edit_call(&self.windows,&self.selected_session,&value)?;
                 self.error.clear();
                 // Send once: never repeat a layout mutation after an uncertain reply.
-                self.control.as_mut().context("not connected")?.call(method,args).await?;
+                let control = self.control.as_mut().context("not connected")?;
+                if method == "session.set_layer_state" {
+                    ensure!(control.welcome()["api_revision"].as_u64().is_some_and(|revision| revision >= 9),
+                        "Update this Rex server to sync floating panes");
+                }
+                control.call(method,args).await?;
                 self.refresh_view().await?;
+                if value["type"]=="float_pane" && value["focus"]==true {
+                    let block=value["id"].as_str().context("pane ID required")?.to_owned();
+                    self.open_block_with_layout(block,true).await?;
+                }
             }
             "move_tab" => {
                 ensure!(self.visible && !self.paused && self.phase=="connected" && !self.creating,"Connect before moving tabs");
@@ -1242,50 +1568,51 @@ impl Actor {
                 self.refresh_view().await?;
             }
             "session" => {
-                self.close_cached().await;
-                self.preview_task = None;
-                self.summary_task = None;
-                self.program_task = None;
-                self.programs = json!({});
-                self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
-                self.program_refresh = tokio::time::Instant::now();
-                self.preview_updates.clear();
                 let session = value["id"]
                     .as_str()
                     .context("session ID required")?
                     .to_owned();
-                self.release_selected().await?;
-                if let Some(mut data) = self.data.take() {
-                    let _ = data.close().await;
+                if self.selected_session != session {
+                    self.close_cached().await;
+                    self.preview_task = None;
+                    self.summary_task = None;
+                    self.program_task = None;
+                    self.programs = json!({});
+                    self.directories = json!({});self.titles=json!({});self.working=json!([]);self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
+                    self.program_refresh = tokio::time::Instant::now();
+                    self.preview_updates.clear();
+                    self.release_session_panes().await?;
+                    if let Some(mut data) = self.data.take() {
+                        let _ = data.close().await;
+                    }
+                    self.close_retained_floating().await;
+                    self.data_resume = None;
+                    self.replica = None;
+                    self.screen = None;
+                    self.selected_block.clear();
+                    if !self.selected_session.is_empty() {
+                        self.control.as_mut().context("not connected")?
+                            .call("session.detach", json!({"session_id":self.selected_session})).await?;
+                    }
                 }
-                self.close_retained_floating().await;
-                self.data_resume = None;
-                self.replica = None;
-                self.screen = None;
-                self.selected_block.clear();
-                self.controlled = false;
-                if !self.selected_session.is_empty() && self.selected_session != session {
-                    self.control
-                        .as_mut()
-                        .context("not connected")?
-                        .call(
-                            "session.detach",
-                            json!({"session_id":self.selected_session}),
-                        )
-                        .await?;
-                }
-                let attached = self
-                    .control
-                    .as_mut()
-                    .context("not connected")?
-                    .attach(&session)
-                    .await?;
-                self.selected_session = session;
                 self.navigation_id = value["navigationId"].as_u64().unwrap_or(0);
+                let attached = match self.control.as_mut().context("not connected")?.attach(&session).await {
+                    Ok(attached) => attached,
+                    Err(error) if missing_terminal(&error) => {
+                        self.clear_ended_session(session);
+                        self.refresh_session_catalog().await?;
+                        self.publish();
+                        return Ok(());
+                    }
+                    Err(error) => return Err(error),
+                };
+                self.selected_session = session;
+                self.awaiting_pane_selection = false;
                 self.set_view(&attached["view"]);
                 self.error.clear();
                 if let Some(block)=value["block"].as_str() {
                     ensure!(self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==block)),"This pane is no longer available. Refresh activity.");
+                    if value["restoreMinimized"] == true { self.restore_minimized(block).await?; }
                     self.open_block(block.to_owned()).await?;
                 }
                 self.publish();
@@ -1296,7 +1623,9 @@ impl Actor {
                     .as_str()
                     .context("block ID required")?
                     .to_owned();
-                self.open_block(block).await?;
+                ensure!(pane_window(&self.windows,&block).is_some(),"This pane is no longer available");
+                if value["restoreMinimized"] == true { self.restore_minimized(&block).await?; }
+                self.open_block_with_layout(block,value["keepTiled"]==true).await?;
             }
             "close_tab" | "close_pane" => {
                 ensure!(self.phase=="connected" && !self.paused && !self.creating,"Connect before closing a terminal");
@@ -1365,7 +1694,9 @@ impl Actor {
                     .as_str()
                     .context("Server created no terminal block")?
                     .to_owned();
-                self.open_block(block).await?;
+                let keep_tiled=value["type"]=="new_pane" && value["keepTiled"]==true;
+                if keep_tiled {self.refresh_view().await?;}
+                self.open_block_with_layout(block,keep_tiled).await?;
                 self.creating = false;
                 self.publish();
             }
@@ -1390,40 +1721,56 @@ impl Actor {
                         json!({"columns":columns.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
                 }
             }
-            "release" => {
-                if let Some(c) = &mut self.control {
-                    c.call("session.disown_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block]})).await?;
-                }
-                self.controlled = false;self.other_owner=false;
-                self.notice = "Viewing terminal".into();
-                self.publish();
+            "zoom" => {
+                // Zoom a pane to fill its window, or restore the layout, for every client.
+                ensure!(value["session"]==self.selected_session,"Session changed");
+                let block=value["block"].as_str().filter(|b|!b.is_empty()).context("block required")?;
+                let zoom=value["zoom"].as_bool().context("zoom required")?;
+                self.control.as_mut().context("not connected")?.call("session.zoom_block",json!({"session_id":self.selected_session,
+                    "block_id":block,"zoom":zoom})).await?;
             }
-            "wheel" => {
-                if !self.visible || self.paused || self.phase!="connected"
-                    || value["block"].as_str()!=Some(self.selected_block.as_str())
-                    || value["session"].as_str()!=Some(self.selected_session.as_str()) {return Ok(());}
-                let lines=value["lines"].as_i64().unwrap_or(0).clamp(-32,32) as i32;
-                if lines==0 {return Ok(());}
-                let Some(replica)=self.replica.as_mut().filter(|r|r.ready()) else{return Ok(());};
-                let terminal=replica.terminal()?;let flags=terminal.input_flags()?;
-                let bytes=if flags&1!=0 {
-                    terminal.wheel(lines>0,value["col"].as_i64().unwrap_or(0) as i32,value["row"].as_i64().unwrap_or(0) as i32,
-                        value["cw"].as_u64().unwrap_or(1).clamp(1,1024) as u32,value["ch"].as_u64().unwrap_or(1).clamp(1,1024) as u32)?
-                } else if flags&6==6 {match (flags&8!=0,lines<0) {(true,true)=>b"\x1bOA".to_vec(),(true,false)=>b"\x1bOB".to_vec(),(false,true)=>b"\x1b[A".to_vec(),(false,false)=>b"\x1b[B".to_vec()}}
-                else {terminal.scroll_viewport(lines);self.dirty=true;return Ok(());};
-                if bytes.is_empty(){return Ok(());}
-                let text=String::from_utf8(bytes.repeat(lines.unsigned_abs() as usize)).context("Legacy mouse coordinates cannot be sent as UTF-8 terminal input")?;
-                if !self.controlled {
-                    self.take_selected().await?;
-                    if let (Some(cols),Some(rows))=(value["columns"].as_u64(),value["rows"].as_u64())
-                        && cols>0 && rows>0 {
-                        self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"resize",
-                            json!({"columns":cols.clamp(1,512),"rows":rows.clamp(1,256)})).await?;
+            "resize_split" => {
+                // Dragging a pane border in the multi-pane layout.
+                ensure!(value["session"]==self.selected_session,"Session changed");
+                let direction=value["direction"].as_str().filter(|d|matches!(*d,"horizontal"|"vertical")).context("direction required")?;
+                let ratio=value["ratio"].as_f64().filter(|r|r.is_finite()).context("ratio required")?.clamp(0.05,0.95);
+                self.control.as_mut().context("not connected")?.call("session.resize_pane",json!({"session_id":self.selected_session,
+                    "direction":direction,"before_block_id":value["before"],"after_block_id":value["after"],"ratio":ratio})).await?;
+            }
+            "mirror_obscured" => {
+                let obscured = value["obscured"].as_bool().context("Missing mirror visibility")?;
+                self.mirror.set_obscured(obscured);
+            }
+            "mirror" => {
+                let (session,wanted)=crate::mirror::parse(&value);
+                if !self.visible || session != self.selected_session {
+                    return Ok(());
+                }
+                let Some(window)=pane_window(&self.windows,&self.selected_block).filter(|w|w["id"]==value["window"])
+                    else {return Ok(());};
+                let zoomed=window["zoomed"].as_str().filter(|id|!id.is_empty());
+                let wanted: Vec<_> = wanted.into_iter().filter(|want| {
+                    want.block != self.selected_block && zoomed.is_none_or(|id|id==want.block) &&
+                        pane_layout(window).any(|pane|pane["id"]==want.block && pane["minimized"]!=true)
+                }).collect();
+                if self.retained_floating.as_ref().is_some_and(|pane|wanted.iter().any(|want|want.block==pane.block))
+                    && let Some(pane)=self.retained_floating.take() {
+                    self.mirror.adopt(&session,pane.block,pane.data,pane.replica,false);
+                }
+                // Transfer the existing stream instead of opening a second one for this client/pane.
+                for want in &wanted {
+                    if let Some(pane)=self.cached_panes.remove(&want.block) {
+                        self.mirror.adopt(&session,want.block.clone(),pane.data,pane.replica,self.owned_blocks.contains(&want.block));
                     }
                 }
-                if let Err(error)=self.control.as_mut().context("not connected")?.terminal(&self.selected_session,&self.selected_block,"write",json!({"data":text})).await {
-                    self.recover(error);self.notice="Scroll outcome uncertain; wheel input was not resent".into();self.publish();
-                }
+                self.mirror.request(&session, wanted);
+                self.publish_mirror_status();
+            }
+            "release" => {
+                self.release_selected().await?;
+                self.other_owner=false;
+                self.notice = "Viewing terminal".into();
+                self.publish();
             }
             "copy_semantic" => {
                 if !self.visible || self.paused || !self.input_target().matches(&value) {return Ok(());}
@@ -1503,7 +1850,7 @@ impl Actor {
             }
             "pause" => {
                 // Always drop connections after this bounded explicit-release attempt.
-                let _=tokio::time::timeout(Duration::from_secs(2),self.release_selected()).await;
+                let _=tokio::time::timeout(Duration::from_secs(2),self.release_session_panes()).await;
                 self.paused = true;
                 self.retry = None;
                 self.lose_connections();
@@ -1564,19 +1911,96 @@ impl Actor {
         Ok(())
     }
     async fn open_block(&mut self, block: String) -> Result<()> {
+        self.open_block_with_layout(block,false).await
+    }
+    async fn restore_minimized(&mut self, block: &str) -> Result<()> {
+        if let Some((_, pane)) = minimized_pane(&self.windows, block) {
+            let layer = pane["layerId"].as_str().context("Floating layer is unavailable")?.to_owned();
+            let args = json!({"session_id":self.selected_session,"layer_id":layer,"state":"normal"});
+            self.control.as_mut().context("not connected")?.call("session.set_layer_state",args).await?;
+            // Rex acknowledged the whole layer. Start opening the stream now;
+            // the normal post-open refresh reconciles any later desktop changes.
+            for window in self.windows.as_array_mut().into_iter().flatten() {
+                for pane in window["layout"].as_array_mut().into_iter().flatten() {
+                    if pane["layerId"] == layer { pane["minimized"] = json!(false); }
+                }
+            }
+        }
+        Ok(())
+    }
+    async fn open_block_with_layout(&mut self, block: String, keep_tiled: bool) -> Result<()> {
         ensure!(!self.selected_session.is_empty(), "Choose a session first");
-        ensure!(self.windows.as_array().into_iter().flatten().any(|w|w["blocks"].as_array().into_iter().flatten().any(|b|b["id"]==block)),"This pane is no longer available");
-        if self.selected_block==block && self.data.is_some() {self.publish();return Ok(());}
-        self.release_selected().await?;
-        let restored=if self.retained_floating.as_ref().is_some_and(|p|p.block==block) {
+        let block = visible_target(&self.windows, block);
+        if self.selected_block == block && self.data.is_some() && self.replica.is_some() {
+            self.publish();
+            return Ok(());
+        }
+        self.open_block_stream(block.clone(), keep_tiled).await?;
+        self.refresh_view().await?;
+        if self.controlled && self.selected_block == block {
+            // Returning to an owned pane skips take_selected, so restore its keyboard focus here.
+            self.focus_selected().await?;
+        }
+        Ok(())
+    }
+
+    async fn open_block_stream(&mut self, block: String, keep_tiled: bool) -> Result<()> {
+        let minimized = minimized_pane(&self.windows, &self.selected_block).is_some();
+        let window=pane_window(&self.windows,&self.selected_block);
+        let floating=window.is_some_and(|w|pane_layout(w).any(|p|p["id"]==self.selected_block && p["floating"]==true));
+        let same_tab = window.is_some_and(|w| w["blocks"].as_array().into_iter().flatten().any(|pane| pane["id"] == block));
+        let keep_layout=keep_tiled && window.is_some_and(|w| {
+            w["zoomed"].as_str().is_none_or(str::is_empty) &&
+                pane_layout(w).any(|pane|pane["id"]==block && pane["minimized"]!=true)
+        });
+        let handoff = same_tab && self.mirror.wants(&self.selected_session, &block);
+        let keep_claim = self.visible && !self.paused && !minimized && !block.is_empty();
+        let retain_as_mirror = keep_claim && (keep_layout || handoff && !floating) &&
+            self.data.is_some() && self.replica.is_some();
+        let was_controlled = self.controlled;
+        if keep_claim {
+            if was_controlled && let Some(control) = self.control.as_mut() {
+                // The phone keeps sizing the departing pane, but it no longer has keyboard focus.
+                let _ = control.start_call("block.event", json!({
+                    "session_id": self.selected_session, "block_id": self.selected_block,
+                    "event": {"type":"focus","payload":{"action":"out"}}
+                })).await;
+            }
+        } else {
+            self.release_selected().await?;
+        }
+        if !same_tab && !block.is_empty() {
+            self.close_retained_floating().await;
+            if keep_claim {
+                self.owned_blocks.extend(self.mirror.park());
+                self.mirror_waiting.clear();
+            } else {
+                self.mirror.request("", Vec::new());
+            }
+        }
+        let restored = if self.retained_floating.as_ref().is_some_and(|p| p.block == block) {
             self.retained_floating.take()
-        } else {None};
-        let floating=self.windows.as_array().into_iter().flatten().any(|w|
-            w["layout"].as_array().into_iter().flatten().any(|p|p["id"]==self.selected_block && p["floating"]==true));
-        if floating && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+        } else if handoff {
+            self.mirror.take(&block).await.map(|(data, replica)| RetainedFloating {
+                block: block.clone(), data, replica,
+            })
+        } else {
+            // Giving up on focus should leave the other visible panes streaming.
+            if same_tab && !keep_layout && !block.is_empty() {
+                self.mirror.request("", Vec::new());
+                if let Some(control) = self.control.as_mut() {
+                    self.mirror.start(control).await;
+                }
+            }
+            None
+        };
+        if retain_as_mirror && let (Some(data), Some(replica)) = (self.data.take(), self.replica.take()) {
+            // The departing pane stays visible even when the incoming pane was the only mirror.
+            self.mirror.adopt(&self.selected_session,self.selected_block.clone(), data, replica, was_controlled);
+        } else if floating && same_tab && !minimized && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.close_retained_floating().await;
             self.retained_floating=Some(RetainedFloating {block:self.selected_block.clone(),data,replica});
-        } else if let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
+        } else if !minimized && !block.is_empty() && self.replica.is_some() && let (Some(data),Some(replica))=(self.data.take(),self.replica.take()) {
             self.cached_panes.insert(self.selected_block.clone(),CachedPane {data,replica,touched:tokio::time::Instant::now()});
         } else if let Some(mut data)=self.data.take() {
             let _=tokio::time::timeout(Duration::from_secs(2),data.close()).await;
@@ -1586,6 +2010,7 @@ impl Actor {
         if let Some(mut pane)=self.cached_panes.remove(&self.selected_block) {
             self.screen=if pane.replica.ready() {Some(Arc::new(pane.replica.terminal()?.frame()?))} else {None};
             self.data=Some(pane.data);self.replica=Some(pane.replica);self.controlled=false;self.other_owner=false;
+            self.awaiting_pane_selection=false;
             self.error.clear();self.publish();
             rex_core::diagnostics::record("navigation","reused live pane data channel");
             return Ok(());
@@ -1598,6 +2023,11 @@ impl Actor {
         rex_core::diagnostics::record("navigation","opening first pane data channel");
         self.controlled = false;
         self.screen = None;
+        if self.selected_block.is_empty() {
+            self.replica = None;
+            self.notice = "Choose a terminal".into();
+            return Ok(());
+        }
         if let Some(pane)=restored {
             self.replica=Some(pane.replica);self.data=Some(pane.data);
             self.dirty=true;
@@ -1612,9 +2042,9 @@ impl Actor {
             self.replica = Some(Replica::new(data.nonce));
             self.data = Some(data);
         }
+        self.awaiting_pane_selection = false;
         self.error.clear();
         self.notice = "Viewing terminal; take control to type".into();
-        self.refresh_view().await?;
         Ok(())
     }
     async fn close_cached(&mut self) {
@@ -1626,15 +2056,9 @@ impl Actor {
         if self.selected_session.is_empty() {return Ok(false);}
         match self.refresh_view().await {
             Ok(())=>Ok(true),
-            Err(error) if error.downcast_ref::<rex_core::control::RpcError>().is_some_and(|e|e.code=="session_not_found")=>{
-                self.close_retained_floating().await;
-                self.close_cached().await;
-                self.selected_session.clear();self.selected_block.clear();self.windows=json!([]);self.screen=None;
-                self.data=None;self.data_resume=None;self.replica=None;self.controlled=false;
-                self.preview_task=None;self.program_task=None;self.summary_task=None;self.preview_updates.clear();
-                self.programs=json!({});self.directories=json!({});self.titles=json!({});self.working=json!([]);
-                self.title_owners=json!({});self.title_events.clear();self.process_events.clear();
-                self.sessions=self.control.as_mut().context("not connected")?.call("session.list",json!({})).await?["sessions"].clone();
+            Err(error) if missing_terminal(&error) => {
+                self.clear_ended_session(self.selected_session.clone());
+                self.refresh_session_catalog().await?;
                 Ok(false)
             }
             Err(error)=>Err(error)
@@ -1643,7 +2067,12 @@ impl Actor {
     async fn take_selected(&mut self) -> Result<()> {
         ensure!(!self.selected_block.is_empty(),"Choose a terminal first");
         self.control.as_mut().context("not connected")?.call("session.own_block",json!({"session_id":self.selected_session,"block_ids":[self.selected_block],"mode":"take"})).await?;
-        self.refresh_view().await?;self.apply_theme().await?;
+        self.refresh_view().await?;
+        self.focus_selected().await
+    }
+    async fn focus_selected(&mut self) -> Result<()> {
+        if self.selected_block.is_empty() { return Ok(()); }
+        self.apply_theme().await?;
         // A focus notification makes programs re-query even if set_theme was
         // deduplicated because the canonical terminal already had these colors.
         self.control.as_mut().context("not connected")?.call("block.event",json!({"session_id":self.selected_session,"block_id":self.selected_block,
@@ -1681,6 +2110,37 @@ impl Actor {
                 )
                 .await?;
         }
+        self.owned_blocks.remove(&self.selected_block);
+        self.controlled = false;
+        Ok(())
+    }
+
+    async fn release_session_panes(&mut self) -> Result<()> {
+        self.owned_blocks.extend(self.mirror.park());
+        self.mirror_waiting.clear();
+        if self.controlled && !self.selected_block.is_empty() {
+            self.owned_blocks.insert(self.selected_block.clone());
+        }
+        if let Some(control) = self.control.as_mut() {
+            self.mirror.start(control).await;
+            if !self.selected_session.is_empty() && !self.owned_blocks.is_empty() {
+                let request = json!({"session_id":self.selected_session,"block_ids":self.owned_blocks});
+                if let Err(error) = control.call("session.disown_block", request).await {
+                    if !missing_terminal(&error) { return Err(error); }
+                    // A pane closed after the last view may invalidate the batch.
+                    match control.call("session.view", json!({"session_id":self.selected_session})).await {
+                        Ok(view) => self.set_view(&view),
+                        Err(error) if missing_terminal(&error) => self.owned_blocks.clear(),
+                        Err(error) => return Err(error),
+                    }
+                    if !self.owned_blocks.is_empty() {
+                        self.control.as_mut().context("not connected")?.call("session.disown_block",
+                            json!({"session_id":self.selected_session,"block_ids":self.owned_blocks})).await?;
+                    }
+                }
+            }
+        }
+        self.owned_blocks.clear();
         self.controlled = false;
         Ok(())
     }
@@ -1727,7 +2187,7 @@ fn preview_task(endpoint: Endpoint, session: String, ids: Vec<String>) -> Previe
     })
 }
 // Executable identifiers and a display directory cross JNI; never command arguments or user IDs.
-fn program_candidates(process: &Value, status: &Value) -> Value {
+fn program_candidates(process: &Value, status: &Value, terminal: &Value) -> Value {
     let foreground = &process["foreground"];
     let mut names: Vec<String> = Vec::new();
     let mut add = |value: &Value| {
@@ -1748,6 +2208,17 @@ fn program_candidates(process: &Value, status: &Value) -> Value {
                 add(&record["app"]);
             }
         }
+    } else if foreground.is_null()
+        && terminal["owner"].is_null()
+        && terminal["title"].as_str().is_some_and(|title| title.starts_with("π - "))
+        && status["records"].as_array().into_iter().flatten().any(|record|
+            record["owner"].is_null()
+                && record["id"].as_str().is_none_or(str::is_empty)
+                && record["app"] == "pi")
+    {
+        // Some Rex hosts report only the login wrapper. Pi's own title corroborates
+        // its ownerless status without taking precedence over an identified process.
+        add(&json!("pi"));
     }
     let source = if foreground.is_object() {
         foreground
@@ -1831,7 +2302,7 @@ fn program_task(mut endpoint: Endpoint, session: String, ids: Vec<String>) -> Pr
                     if program_working(&process,&status) {working.push(id.clone());}
                     titles.insert(id.clone(),json!(program_title(&process,&status,&terminal)));
                     directories.insert(id.clone(), json!(program_directory(&process)));
-                    programs.insert(id, program_candidates(&process, &status));
+                    programs.insert(id, program_candidates(&process, &status, &terminal));
                 }
             }
             let _ = control.close().await;
@@ -1867,6 +2338,7 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
                             || s.starts_with("rex-android-summary")
                             || s.starts_with("rex-android-programs")
                             || s.starts_with("rex-android-activity")
+                            || s.starts_with("rex-android-pane-catalog")
                     }) {
                         continue;
                     }
@@ -1931,6 +2403,76 @@ fn summary_task(endpoint: Endpoint, sessions: Value, own: String) -> SummaryTask
         .context("session details timed out")?
     })
 }
+
+fn pane_catalog_task(endpoint: Endpoint) -> SummaryTask {
+    Box::pin(async move {
+        use tokio::time::{Instant, timeout, timeout_at};
+
+        let (mut control, sessions) = timeout(Duration::from_secs(5), async {
+            let mut control = Control::connect(endpoint, None, Trace::default()).await?;
+            control.call("client.set_label", json!({"label":"rex-android-pane-catalog"})).await?;
+            // A passive attachment can read topology without opening streams or taking control.
+            let sessions = control.call("session.attach_all", json!({"event_scope":"session"})).await?["sessions"].clone();
+            Ok::<_, anyhow::Error>((control, sessions))
+        }).await??;
+
+        let mut items = Vec::new();
+        let mut partial = false;
+        let mut timed_out = false;
+        let topology_deadline = Instant::now() + Duration::from_secs(7);
+        for session in sessions.as_array().into_iter().flatten() {
+            let Some(id) = session["session_id"].as_str() else { continue };
+            match timeout_at(topology_deadline, control.call("session.view", json!({"session_id":id}))).await {
+                Ok(Ok(view)) => {
+                    for window in view["windows"].as_array().into_iter().flatten() {
+                        for block in window["layers"].as_array().into_iter().flatten()
+                            .flat_map(|layer| layer["blocks"].as_array().into_iter().flatten())
+                        {
+                            if block["creator_name"] != "com.superlogical.terminal" { continue; }
+                            if let Some(block_id) = block["block_id"].as_str() {
+                                items.push(json!({"session":id,"block":block_id,"label":block["label"]}));
+                            }
+                        }
+                    }
+                }
+                Ok(Err(_)) => partial = true,
+                Err(_) => {
+                    partial = true;
+                    timed_out = true;
+                    break;
+                }
+            }
+        }
+        if !timed_out {
+            let metadata_deadline = Instant::now() + Duration::from_secs(6);
+            for item in &mut items {
+                let session = item["session"].as_str().unwrap_or_default();
+                let block = item["block"].as_str().unwrap_or_default();
+                let result = timeout_at(metadata_deadline, async {
+                    let process = control.terminal(session, block, "process", json!({})).await?;
+                    let title = control.terminal(session, block, "title", json!({})).await.unwrap_or(Value::Null);
+                    Ok::<_, anyhow::Error>((process, title))
+                }).await;
+                match result {
+                    Ok(Ok((process, title))) => {
+                        item["programs"] = program_candidates(&process, &Value::Null, &Value::Null);
+                        item["directory"] = json!(program_directory(&process));
+                        item["title"] = json!(program_title(&process, &Value::Null, &title));
+                    }
+                    Ok(Err(error)) if missing_terminal(&error) => (),
+                    Ok(Err(_)) => partial = true,
+                    Err(_) => {
+                        partial = true;
+                        break;
+                    }
+                }
+            }
+        }
+        let _ = timeout(Duration::from_secs(1), control.close()).await;
+        Ok(json!({"items":items,"partial":partial}))
+    })
+}
+
 fn rgb(rgb: [u8; 3]) -> u32 {
     ((rgb[0] as u32) << 16) | ((rgb[1] as u32) << 8) | rgb[2] as u32
 }
@@ -1954,6 +2496,23 @@ fn frame_value(frame: &Frame) -> Value {
     json!({"columns":frame.columns,"rows":frame.rows,"scrollbar":[frame.scroll_total,frame.scroll_offset,frame.scroll_visible],"input_flags":frame.input_flags,"cursor":frame.cursor,"cursor_position":frame.cursor_position,"foreground":rgb(frame.foreground),"background":rgb(frame.background),"cells":cells})
 }
 
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+    #[test]
+    fn splits_name_one_block_per_side_and_skip_non_terminals() {
+        let layout=json!({"rect":[0,0,1,1],"split":{"split_id":"s1","direction":"horizontal","ratio":0.5,
+            "before":{"rect":[0,0,0.5,1],"block_id":"a"},
+            "after":{"rect":[0.5,0,0.5,1],"split":{"split_id":"s2","direction":"vertical","ratio":0.3,
+                "before":{"rect":[0.5,0,0.5,0.3],"block_id":"web"},
+                "after":{"rect":[0.5,0.3,0.5,0.7],"block_id":"c"}}}}});
+        let ids:BTreeSet<&str>=["a","c"].into_iter().collect();
+        let mut out=Vec::new();
+        collect_splits(&layout,&ids,0,&mut out);
+        // s2's before side holds only a non-terminal block, so it cannot be named and is skipped.
+        assert_eq!(out,vec![json!({"id":"s1","direction":"horizontal","ratio":0.5,"rect":[0,0,1,1],"before":"a","after":"c"})]);
+    }
+}
 #[cfg(test)]
 mod tests {
     fn navigation_actor()->Actor {
@@ -2059,6 +2618,11 @@ mod tests {
         invalid["label"]=json!("");assert_eq!(terminal_edit_call(&windows,"s",&invalid).unwrap().1["label"],"");
         let mut invalid=command("dock_pane","f");invalid["anchor"]=json!("f");assert!(terminal_edit_call(&windows,"s",&invalid).is_err());
         let only=json!([{"id":"w","blocks":[{"id":"a"}],"layout":[{"id":"a","floating":false}]}]);assert!(terminal_edit_call(&only,"s",&command("float_pane","a")).is_err());
+        let place=json!({"type":"place_pane","session":"s","window":"w","id":"b","anchor":"a","position":"below","tiled":["a","b"]});
+        for (key,value) in [("anchor",json!("f")),("anchor",json!("b")),("tiled",json!(["b","a"])),("position",json!("center"))] {
+            let mut invalid=place.clone();invalid[key]=value;
+            assert!(terminal_edit_call(&windows,"s",&invalid).is_err());
+        }
     }
 
     #[test]
@@ -2187,17 +2751,32 @@ mod tests {
             {"effective_app":"claude-code","owner":{"pid":12,"name":"node"}}
         ]});
         assert_eq!(
-            program_candidates(&process, &status),
+            program_candidates(&process, &status, &Value::Null),
             json!(["claude-code", "/tools/agent.js", "node"])
         );
         assert_eq!(
             program_candidates(
                 &json!({"foreground":null,"child":{"argv0":"-fish","name":"fish"}}),
-                &status
+                &status,
+                &Value::Null
             ),
             json!(["-fish", "fish"])
         );
-        assert_eq!(program_candidates(&json!({}), &status), json!([]));
+        assert_eq!(program_candidates(&json!({}), &status, &Value::Null), json!([]));
+    }
+    #[test]
+    fn pi_status_and_title_identify_the_pane_when_foreground_metadata_is_missing() {
+        let process = json!({"child":{"name":"login","path":"/usr/bin/login"}});
+        let title = json!({"title":"π - rexling"});
+        let status = json!({"records":[{"app":"pi","effective_app":"pi","state":"idle"}]});
+        let login = json!(["/usr/bin/login", "login"]);
+        assert_eq!(program_candidates(&process, &status, &title), json!(["pi", "/usr/bin/login", "login"]));
+        assert_eq!(program_candidates(&process, &Value::Null, &title), login);
+        assert_eq!(program_candidates(&process, &status, &json!({"title":"fish"})), login);
+        let stale = json!({"records":[{"app":"pi","owner":{"pid":12,"name":"node"}}]});
+        assert_eq!(program_candidates(&process, &stale, &title), login);
+        let foreground = json!({"foreground":{"pid":13,"name":"nvim"}});
+        assert_eq!(program_candidates(&foreground, &status, &title), json!(["nvim"]));
     }
     #[test]
     fn program_titles_prefer_live_terminal_titles_and_reject_stale_owners() {
@@ -2338,6 +2917,97 @@ mod tests {
         }));
         runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();
         runtime.block_on(writer.close()).unwrap();result.unwrap();
+    }
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_tab_claims_preserve_size_allow_takeover_and_release_when_leaving() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut desktop = runtime.block_on(Control::connect(
+            Endpoint::new(&server, Duration::from_secs(10)).unwrap(), None, Trace::default(),
+        )).unwrap();
+        let desktop_id = desktop.client_id().unwrap().to_owned();
+        let window = json!({"layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}});
+        let created = runtime.block_on(desktop.call("session.create", json!({
+            "label":format!("rexling-tab-claims-test-{}", std::process::id()),"initial_windows":[window,window,window]
+        }))).unwrap();
+        let session = created["session_id"].as_str().unwrap();
+        let block = |index: usize| created["initial_windows"][index]["block_ids"][0].as_str().unwrap();
+        let (first, second, untouched) = (block(0), block(1), block(2));
+        let mut fixtures = vec![session.to_owned()];
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.block_on(desktop.attach(session)).unwrap();
+            let owner = |desktop: &mut Control, target: &str| {
+                let view = runtime.block_on(desktop.call("session.view", json!({"session_id":session}))).unwrap();
+                view["windows"].as_array().unwrap().iter()
+                    .flat_map(|w| w["layers"].as_array().unwrap())
+                    .flat_map(|l| l["blocks"].as_array().unwrap())
+                    .find(|b| b["block_id"] == target).unwrap()["owner"].as_str().unwrap_or("").to_owned()
+            };
+            let app = Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":server})).unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":session,"block":first})).unwrap();
+            let select = |target: &str| {
+                app.command(json!({"type":"block","id":target})).unwrap();
+                wait(&app, |v| v["selectedBlock"] == target && v["screen"].is_object())
+            };
+            let take = |columns: u16, rows: u16| {
+                app.command(json!({"type":"take","columns":columns,"rows":rows})).unwrap();
+                wait(&app, |v| v["controlled"] == true && v["screen"]["columns"] == columns && v["screen"]["rows"] == rows);
+            };
+            wait(&app, |v| v["selectedBlock"] == first && v["screen"].is_object());
+            take(61,23);
+            let mobile_id = owner(&mut desktop, first);
+            assert!(!mobile_id.is_empty());
+            select(second);
+            take(71,27);
+            assert_eq!(owner(&mut desktop, first),mobile_id);
+            assert_eq!(owner(&mut desktop, second),mobile_id);
+            assert_eq!(owner(&mut desktop, untouched),"");
+            let returned = select(first);
+            assert_eq!(returned["controlled"],true);
+            assert_eq!(returned["screen"]["columns"],61);
+            assert_eq!(returned["screen"]["rows"],23);
+
+            select(second);
+            runtime.block_on(desktop.call("session.own_block",json!({"session_id":session,"block_ids":[first],"mode":"take"}))).unwrap();
+            runtime.block_on(desktop.terminal(session,first,"resize",json!({"columns":94,"rows":32}))).unwrap();
+            assert_eq!(owner(&mut desktop, first),desktop_id);
+            assert_eq!(owner(&mut desktop, second),mobile_id);
+            app.command(json!({"type":"session","id":session,"block":first})).unwrap();
+            let handed_over = wait(&app, |v| v["selectedBlock"] == first && v["screen"].is_object());
+            assert_eq!(handed_over["controlled"],false);
+            assert_eq!(handed_over["screen"]["columns"],94);
+            assert_eq!(owner(&mut desktop, second),mobile_id);
+
+            let other = runtime.block_on(desktop.call("session.create",json!({
+                "label":format!("rexling-tab-claims-destination-{}", std::process::id()),"initial_windows":[window]
+            }))).unwrap();
+            let other_session = other["session_id"].as_str().unwrap();
+            fixtures.push(other_session.to_owned());
+            app.command(json!({"type":"session","id":other_session})).unwrap();
+            wait(&app, |v| v["selectedSession"] == other_session);
+            assert_eq!(owner(&mut desktop, first),desktop_id);
+            assert_eq!(owner(&mut desktop, second),"");
+
+            app.command(json!({"type":"session","id":session,"block":second})).unwrap();
+            wait(&app, |v| v["selectedBlock"] == second && v["screen"].is_object());
+            take(71,27);
+            select(untouched);
+            take(72,28);
+            app.command(json!({"type":"pause"})).unwrap();
+            wait(&app, |v| v["phase"] == "paused");
+            assert_eq!(owner(&mut desktop, first),desktop_id);
+            assert_eq!(owner(&mut desktop, second),"");
+            assert_eq!(owner(&mut desktop, untouched),"");
+        }));
+        for session in fixtures {
+            runtime.block_on(desktop.attach(&session)).unwrap();
+            runtime.block_on(desktop.call("session.destroy", json!({"session_id":session}))).unwrap();
+        }
+        runtime.block_on(desktop.close()).unwrap();
+        result.unwrap();
     }
     #[test]
     #[ignore = "requires an explicitly supplied owned Rex server"]
@@ -2794,7 +3464,7 @@ mod tests {
                 v["error"]
                     .as_str()
                     .unwrap_or("")
-                    .contains("selected pane changed")
+                    .contains("pane is no longer available")
             });
             app.command(json!({"type":"new_pane","session":id,"anchor":new_block}))
                 .unwrap();
@@ -2857,6 +3527,62 @@ mod tests {
         runtime.block_on(writer.close()).unwrap();
         result.unwrap();
     }
+
+    #[test]
+    #[ignore = "requires an explicitly supplied owned Rex server"]
+    fn live_pane_catalog_lists_background_sessions_without_changing_focus() {
+        let server = std::env::var("REX_TEST_SERVER").expect("set REX_TEST_SERVER");
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut writer = runtime.block_on(Control::connect(
+            Endpoint::new(&server, Duration::from_secs(10)).unwrap(), None, Trace::default(),
+        )).unwrap();
+        let fixtures: Vec<_> = ["foreground", "background"].into_iter().map(|label| {
+            let session = runtime.block_on(writer.call("session.create", json!({
+                "label":format!("rex-android-catalog-{}-{label}",std::process::id()),
+                "initial_windows":[{"layout":{"block":{"flavor":"com.superlogical.terminal.shell"}}}]
+            }))).unwrap();
+            (
+                session["session_id"].as_str().unwrap().to_owned(),
+                session["initial_windows"][0]["block_ids"][0].as_str().unwrap().to_owned(),
+            )
+        }).collect();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let (foreground, active_block) = &fixtures[0];
+            let (background, target_block) = &fixtures[1];
+            // Rex can defer starting a new terminal until it has been opened.
+            let second = Session::spawn().unwrap();
+            second.command(json!({"type":"connect","server":server})).unwrap();
+            wait(&second, |v| v["phase"] == "connected");
+            second.command(json!({"type":"session","id":background,"block":target_block})).unwrap();
+            wait(&second, |v| v["selectedBlock"] == *target_block &&
+                v["directories"][target_block].as_str().is_some_and(|cwd| !cwd.is_empty()));
+            let app = Session::spawn().unwrap();
+            app.command(json!({"type":"connect","server":server})).unwrap();
+            wait(&app, |v| v["phase"] == "connected");
+            app.command(json!({"type":"session","id":foreground,"block":active_block,"navigationId":16})).unwrap();
+            let active = wait(&app, |v| v["selectedBlock"] == *active_block && v["screen"].is_object());
+            app.command(json!({"type":"pane_catalog","open":true})).unwrap();
+            let catalog = wait(&app, |v| v["paneCatalog"]["items"].is_array() && v["paneCatalogLoading"] == false);
+            let entries = catalog["paneCatalog"]["items"].as_array().unwrap();
+            assert!(entries.iter().any(|v| v["session"] == *foreground && v["block"] == *active_block));
+            assert!(entries.iter().any(|v| v["session"] == *background && v["block"] == *target_block &&
+                v["directory"].as_str().is_some_and(|cwd| !cwd.is_empty())), "Missing background pane metadata: {entries:?}");
+            assert_eq!(catalog["selectedBlock"], *active_block);
+            assert_eq!(catalog["controlled"], active["controlled"]);
+            assert_eq!(catalog["screen"]["columns"], active["screen"]["columns"]);
+            app.command(json!({"type":"session","id":background,"block":target_block,"navigationId":17})).unwrap();
+            wait(&app, |v| v["selectedSession"] == *background && v["selectedBlock"] == *target_block && v["navigationId"] == 17);
+            app.command(json!({"type":"pane_catalog","open":false})).unwrap();
+            wait(&app, |v| v["paneCatalog"].is_null() && v["paneCatalogLoading"] == false);
+        }));
+        for (session, _) in &fixtures {
+            runtime.block_on(writer.attach(session)).unwrap();
+            runtime.block_on(writer.call("session.destroy", json!({"session_id":session}))).unwrap();
+        }
+        runtime.block_on(writer.close()).unwrap();
+        result.unwrap();
+    }
+
     #[test]
     #[ignore = "requires an explicitly supplied owned Rex server"]
     fn live_close_tabs_and_panes_preserves_backgrounds_and_selects_neighbours() {
@@ -3091,7 +3817,9 @@ while True:
             app.command(json!({"type":"session","id":ids[0],"block":blocks[0],"navigationId":7})).unwrap();
             let initial=until(&app,|v|v["selectedBlock"]==blocks[0] && text(v).contains("ACTIVITY_READY"));
             let closed=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>=2));
-            assert!(closed["activity"].is_null(),"Closed-sheet updates must carry only the attention count");
+            assert!(closed["activity"].as_array().is_some_and(|items|items.iter().any(|item|
+                item["session"]==ids[1] && item["block"]==blocks[1] && item["state"]=="done")),
+                "Tab badges need pane-scoped activity records even when the sheet is closed");
             app.command(json!({"type":"activity","open":true})).unwrap();
             let listed=until(&app,|v|v["activity"].as_array().is_some_and(|items|
                 items.iter().any(|a|a["session"]==ids[0] && a["state"]=="working") && items.iter().any(|a|a["session"]==ids[1] && a["state"]=="done") && items.iter().any(|a|a["id"]=="worker" && a["state"]=="blocked")));
@@ -3111,7 +3839,9 @@ while True:
             runtime.block_on(writer.terminal(&ids[1],&blocks[1],"write",json!({"data":"alert\n"}))).unwrap();
             let background=until(&monitor,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[1] && a["id"]=="" && a["state"]=="blocked")));
             assert!(background["screen"].is_null());assert_eq!(background["controlled"],false);
-            let alerted=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>0) && v["activity"].is_null());
+            let alerted=until(&app,|v|v["attentionCount"].as_u64().is_some_and(|n|n>0) &&
+                v["activity"].as_array().is_some_and(|items|items.iter().any(|item|
+                    item["block"]==blocks[1] && item["id"]=="" && item["state"]=="blocked")));
             assert_eq!(alerted["controlled"],false);
             app.command(json!({"type":"activity","open":true})).unwrap();
             until(&app,|v|v["activity"].as_array().is_some_and(|items|items.iter().any(|a|a["block"]==blocks[1] && a["id"]=="" && a["state"]=="blocked")));
@@ -3121,7 +3851,8 @@ while True:
             app.command(json!({"type":"activity","open":false})).unwrap();
             app.command(json!({"type":"session","id":ids[1],"block":"missing-pane","navigationId":9})).unwrap();
             let stale=until(&app,|v|v["error"].as_str().is_some_and(|e|e.contains("no longer available")));
-            assert_eq!(stale["controlled"],false);assert_eq!(stale["selectedBlock"],"");
+            assert_eq!(stale["controlled"],false);
+            assert_eq!(stale["selectedBlock"],blocks[1],"A stale Activity link must leave the current pane selected");
         }));
         for id in &ids {runtime.block_on(writer.attach(id)).unwrap();runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();}
         runtime.block_on(writer.close()).unwrap();result.unwrap();
@@ -3424,6 +4155,79 @@ while True:
             }
             let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
             assert_eq!(view["windows"][0]["label"],"Renamed tab");assert_eq!(view["windows"][0]["layers"].as_array().unwrap().len(),1);
+
+            let mut tiled=json!([first,second]);
+            for (position,axis,before) in [("left",0,true),("above",1,true),("right",0,false),("below",1,false)] {
+                app.command(json!({"type":"place_pane","session":id,"window":window,"id":second,"anchor":first,
+                    "position":position,"tiled":tiled})).unwrap();
+                let placed=wait(&app,|v| {
+                    let Some(layout)=v["windows"][0]["layout"].as_array() else {return false;};
+                    let origin=|id:&Value|layout.iter().find(|p|p["id"]==*id).and_then(|p|p["rect"][axis].as_f64());
+                    match (origin(first),origin(second)) {
+                        (Some(anchor),Some(moved))=>if before {moved<anchor} else {moved>anchor},
+                        _=>false,
+                    }
+                });
+                let layout=placed["windows"][0]["layout"].as_array().unwrap();
+                assert_eq!(layout.len(),2);
+                assert!(layout.iter().all(|p|p["floating"]==false));
+                assert_eq!(placed["error"],"");assert_eq!(placed["selectedBlock"],*first);assert_eq!(placed["controlled"],true);
+                tiled=Value::Array(layout.iter().map(|p|p["id"].clone()).collect());
+            }
+
+            app.command(json!({"type":"float_pane","session":id,"window":window,"id":second,"focus":true})).unwrap();
+            let floated=wait(&app,|v|v["selectedBlock"]==*second && v["windows"][0]["layout"].as_array().unwrap().iter()
+                .any(|p|p["id"]==*second && p["floating"]==true));
+            let layer=floated["windows"][0]["layout"].as_array().unwrap().iter().find(|p|p["id"]==*second).unwrap()["layerId"].clone();
+            assert!(layer.as_str().is_some_and(|id|!id.is_empty()));
+            let bounds=json!([0.2,0.25,0.55,0.5]);
+            app.command(json!({"type":"resize_floating","session":id,"window":window,"id":second,"layerId":layer,"bounds":bounds})).unwrap();
+            wait(&app,|v|v["windows"][0]["layout"].as_array().unwrap().iter().any(|p|p["id"]==*second && p["layerBounds"]==bounds));
+            app.command(json!({"type":"new_pane","session":id,"anchor":second,"direction":"horizontal","keepTiled":true})).unwrap();
+            let split=wait(&app,|v|v["selectedBlock"]!=*second && !v["screen"].is_null() &&
+                v["windows"][0]["layout"].as_array().unwrap().iter().filter(|p|p["layerId"]==layer).count()==2);
+            assert_eq!(split["error"],"");
+            let new_block=&split["selectedBlock"];
+            app.command(json!({"type":"mirror","session":id,"window":window,"panes":[
+                {"block":first,"columns":40,"rows":20},{"block":second,"columns":40,"rows":20}
+            ]})).unwrap();
+            wait(&app,|v|!v["previews"][second.as_str().unwrap()].is_null() && v["error"]=="");
+            app.command(json!({"type":"zoom","session":id,"block":new_block,"zoom":true})).unwrap();
+            wait(&app,|v|v["windows"][0]["zoomed"]==*new_block);
+            app.command(json!({"type":"minimize_floating","session":id,"window":window,"id":new_block,"layerId":layer})).unwrap();
+            let layer_minimized=|v:&Value| v["windows"][0]["layout"].as_array().is_some_and(|layout|
+                layout.iter().filter(|pane|pane["layerId"]==layer && pane["minimized"]==true).count()==2);
+            let minimized=wait(&app,|v|layer_minimized(v) && v["selectedBlock"]==*first && !v["screen"].is_null());
+            assert_eq!(minimized["windows"][0]["zoomed"],"");
+            let until=std::time::Instant::now()+Duration::from_secs(5);
+            loop {
+                let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
+                let hidden=&view["windows"][0]["layers"][1];
+                assert_eq!(hidden["state"],"minimized");
+                if hidden["blocks"].as_array().unwrap().iter().all(|pane|pane["owner"].is_null()) { break; }
+                assert!(std::time::Instant::now()<until,"Minimized layer kept a mirror owner: {hidden}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+
+            // Restoring workspace history does not reopen another client's minimized layer.
+            app.command(json!({"type":"block","id":second,"navigationId":10})).unwrap();
+            wait(&app,|v|v["navigationId"]==10 && layer_minimized(v) && v["selectedBlock"]==*first);
+            app.command(json!({"type":"block","id":second,"navigationId":11,"restoreMinimized":true,"keepTiled":true})).unwrap();
+            wait(&app,|v|!layer_minimized(v) && v["selectedBlock"]==*second && text(v).contains("EDIT_READY"));
+            let view=runtime.block_on(writer.call("session.view",json!({"session_id":id}))).unwrap();
+            assert!(view["windows"][0]["layers"][1]["state"].is_null());
+
+            for state in ["minimized","normal"] {
+                runtime.block_on(writer.call("session.set_layer_state",json!({"session_id":id,"layer_id":layer,"state":state}))).unwrap();
+                wait(&app,|v|layer_minimized(v)==(state=="minimized") && v["selectedBlock"]==*first);
+            }
+            app.command(json!({"type":"block","id":second,"navigationId":12,"restoreMinimized":true})).unwrap();
+            wait(&app,|v|v["navigationId"]==12 && v["selectedBlock"]==*second && !v["screen"].is_null());
+            app.command(json!({"type":"pause"})).unwrap();
+            wait(&app,|v|v["phase"]=="paused");
+            runtime.block_on(writer.call("session.set_layer_state",json!({"session_id":id,"layer_id":layer,"state":"minimized"}))).unwrap();
+            app.command(json!({"type":"resume"})).unwrap();
+            wait(&app,|v|v["phase"]=="connected" && v["selectedBlock"]==*first && layer_minimized(v) && !v["screen"].is_null());
         }));
         runtime.block_on(writer.call("session.destroy",json!({"session_id":id}))).unwrap();runtime.block_on(writer.close()).unwrap();result.unwrap();
     }
@@ -3436,3 +4240,7 @@ mod latency_tests;
 #[cfg(test)]
 #[path="pane_reorder_tests.rs"]
 mod pane_reorder_tests;
+
+#[cfg(test)]
+#[path="reconnect_tests.rs"]
+mod reconnect_tests;

@@ -1,5 +1,7 @@
 package dev.shulhi.rex
 
+import androidx.compose.ui.unit.dp
+
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.test.*
@@ -64,14 +66,24 @@ class KeyboardToolbarTest {
         ui.onNodeWithContentDescription("Close keyboard toolbar").performClick()
         ui.runOnIdle {assertTrue(closed)}
     }
-    @Test fun fixedPanelKeepsInsideTapsAndStillAllowsBackAndOutsideDismissal() {
+    @Test fun fixedPanelOnlyDismissesFromTheHandleOrCloseButton() {
         var dismissals=0
-        ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {KeyboardToolbarSheet(ToolbarLayout.defaults,{}, {dismissals++})}}
+        var open by mutableStateOf(true)
+        ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
+            if(open) KeyboardToolbarSheet(ToolbarLayout.defaults,{}, {dismissals++;open=false})
+        }}
         ui.onNodeWithText("Your toolbar · 7/7").performClick()
         ui.runOnIdle {assertEquals(0,dismissals)}
         androidx.test.espresso.Espresso.pressBack()
-        ui.runOnIdle {assertEquals(1,dismissals)}
+        ui.runOnIdle {assertEquals(0,dismissals)}
         ui.onNodeWithText("Keyboard toolbar").performTouchInput {click(androidx.compose.ui.geometry.Offset(center.x,-100f))}
+        ui.runOnIdle {assertEquals(0,dismissals)}
+        val pull=with(ui.density) {88.dp.toPx()}
+        ui.onNodeWithContentDescription("Drawer handle").performTouchInput {
+            swipe(center,center+androidx.compose.ui.geometry.Offset(0f,pull))
+        }
+        ui.runOnIdle {assertEquals(1,dismissals);open=true}
+        ui.onNodeWithContentDescription("Close keyboard toolbar").performClick()
         ui.runOnIdle {assertEquals(2,dismissals)}
     }
     private fun drag(source: String,target: String) {

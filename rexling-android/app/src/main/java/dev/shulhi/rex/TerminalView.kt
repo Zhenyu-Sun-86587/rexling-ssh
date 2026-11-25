@@ -13,6 +13,7 @@ import android.text.InputType
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -53,7 +54,7 @@ class TerminalView(context: Context) : View(context) {
     override fun onWindowVisibilityChanged(visibility: Int) {super.onWindowVisibilityChanged(visibility);awake.update();refreshCursorBlink()}
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {if(event.actionMasked==MotionEvent.ACTION_DOWN) awake.activity();return super.dispatchTouchEvent(event)}
     var interactive = true
-        set(value) {if(field!=value) {field=value;if(!value) clearSelection();refreshCursorBlink()}}
+        set(value) {if(field!=value) {field=value;if(!value) {inputAvailable=false;pointerPress=null;mouseTouch=false;clearSelection()};refreshCursorBlink()}}
     private var selection: TerminalSelection?=null
     private var selectionMode: ActionMode?=null
     private var selectionLink: TerminalLink?=null
@@ -71,6 +72,7 @@ class TerminalView(context: Context) : View(context) {
         set(value) { if(field != value) { field=value;clearRows();invalidate() } }
     var onPaneDrag: ((Float, Boolean) -> Unit)? = null
     var onPaneDragEnd: ((Float, Float) -> Unit)? = null
+    internal var onPaneControlsTap: ((Float,Float)->Boolean)?=null
     private var startX=0f
     private var startY=0f
     private var dragging=false
@@ -87,7 +89,7 @@ class TerminalView(context: Context) : View(context) {
     internal var onInputConnectionReady: ()->Unit = {}
     var onScroll: (Int) -> Unit = {}
     var onWheel: (Int,Int,Int,Int,Int) -> Unit = {lines,_,_,_,_->onScroll(lines)}
-    var onActivate: () -> Unit = {}
+    var onActivate: (Boolean) -> Unit = {}
     var onMouseClick: (Int,Int,Int,Int) -> Unit = {_,_,_,_->}
     internal var onSemanticCopy: ((TerminalScreen,Int,Int,Boolean)->Boolean)?=null
     internal var onCursorTap: ()->Unit = {}
@@ -106,9 +108,9 @@ class TerminalView(context: Context) : View(context) {
         get()=currentScreen
         set(value) {setScreen(value,false)}
     internal var allowHiddenCursorInput: Boolean=false
-        set(value) {if(field!=value) {field=value;reportCursorViewport()}}
+        set(value) {if(field!=value) {field=value;reportCursorViewport();invalidate()}}
     private fun inputCursorRow(frame: TerminalScreen)=frame.cursorY ?: frame.cursorAnchorY.takeIf {allowHiddenCursorInput && frame.cursorAnchorX!=null}
-    internal var onKeyboardFocus: (TerminalKeyboardFocus?)->Unit={}
+    internal var onKeyboardFocus: ((TerminalKeyboardFocus?)->Unit)?=null
     internal val keyboardFocus: TerminalKeyboardFocus? get() {
         val frame=screen ?: return null
         if(frame.scroll.below>0) return null
@@ -118,7 +120,7 @@ class TerminalView(context: Context) : View(context) {
         return TerminalKeyboardFocus(insetTop+row*cellHeight,bottom,
             max(bottom,insetTop+(lastText+1)*cellHeight+insetBottom))
     }
-    private fun reportCursorViewport() {onKeyboardFocus(keyboardFocus)}
+    private fun reportCursorViewport() {onKeyboardFocus?.invoke(keyboardFocus)}
     private var frameTraceToken: String?=null
     internal fun presentFrame(value: TerminalScreen?,token: String?=null) {setScreen(value,true);frameTraceToken=token}
     private fun setScreen(value: TerminalScreen?,onDisplayFrame: Boolean) {
@@ -134,9 +136,6 @@ class TerminalView(context: Context) : View(context) {
     var keyboardSuggestions: Boolean = true
     /** The on-screen keyboard's Enter submits (CR) instead of inserting a newline (LF). */
     var imeEnterSubmits: Boolean = false
-        set(value) {
-            if(field!=value) {field=value;if(controlled && hasFocus()) (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)}
-        }
     var controlled: Boolean = false
         set(value) {
             if (field != value) {
@@ -184,9 +183,14 @@ class TerminalView(context: Context) : View(context) {
         set(value) { if (field != value) { field = value; metrics(); invalidate() } }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val backgroundPaint = Paint() // Cell fills must meet without antialiased seams.
+    private val textColors = TerminalTextColors()
     private val fonts = TerminalFonts(context)
     private val terminalImages=TerminalImages()
-    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>)
+    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>,
+        val paddingCursorColumn: Int?) {
+        val contentHash by lazy(LazyThreadSafetyMode.NONE) { rowContentHash(cells) }
+        fun atRow(y: Int): RecordedRow = if(links.isEmpty()) this else copy(links=links.map {it.copy(row=y)})
+    }
     /**
      * Smooth scrolling: pixels scrolled past the last whole line that the
      * canvas slides by. Positive means content moves up (scrolling forward).
@@ -195,6 +199,8 @@ class TerminalView(context: Context) : View(context) {
      */
     private val scrollMotion=TerminalScrollMotion()
     private var recordedOffset: Long?=null
+    private var recordedApplicationLines: List<List<TerminalCell>>?=null
+    private var reuseApplicationRowsUntil=0L
     private var suppressScrollTap=false
     private val linkIndex=TerminalLinks.Index()
     private var recorded= arrayOfNulls<RecordedRow>(0)
@@ -203,7 +209,7 @@ class TerminalView(context: Context) : View(context) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Int,String>,Float>?)=size>4096
     }
     internal var recordedRowCount=0;private set
-    private fun clearRows() {recordedOffset=null;recorded.forEach {it?.recording?.release()};recorded=arrayOfNulls(0);rowGeometry=""}
+    private fun clearRows() {recordedOffset=null;recordedApplicationLines=null;recorded.forEach {it?.recording?.release()};recorded=arrayOfNulls(0);rowGeometry=""}
     private fun advance(text: String,style: Int): Float=advances.getOrPut(style to text){paint.measureText(text)}
     private var cellWidth = 1f
     private var cellHeight = 1f
@@ -277,6 +283,14 @@ class TerminalView(context: Context) : View(context) {
         // Content that only moved keeps its recording: reuse rows by content
         // when the whole screen shifted, so only edge and uncovered rows need recording.
         reuseShiftedRows(frame,visibleRows)
+        val anchorRow=frame.cursorAnchorY ?: -1
+        val paddingCursor=if(allowHiddenCursorInput && frame.cursorX==null && frame.cursorY==null &&
+            frame.scroll.below==0L && anchorRow in 0 until visibleRows) {
+            frame.lines[anchorRow].firstOrNull {cell->
+                cell.x==frame.cursorAnchorX && cell.x<visibleColumns && cell.width>0 && cell.attributes and 8!=0 &&
+                    (cell.x==0 || cell.x+cell.width>=visibleColumns || anchorRow==0 || anchorRow==visibleRows-1)
+            }
+        } else null
         val slide=slideFor(frame)
         if(slide!=0f) {canvas.save();canvas.clipRect(0f,insetTop,width.toFloat(),height-insetBottom);canvas.translate(0f,-slide)}
         if(frame.images.isEmpty()) {
@@ -284,22 +298,23 @@ class TerminalView(context: Context) : View(context) {
         if(slide>0f) frame.below.forEachIndexed {i,row->drawLooseRow(canvas,row,visibleColumns,insetTop+(visibleRows+i)*cellHeight)}
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
+            val cursor=paddingCursor.takeIf {y==anchorRow}
             var row=recorded[y]
             val links=rowLinks[y]
-            if(row==null || !row.recording.valid || !sameCells(row.cells,cells) || row.links!=links) {
+            if(row==null || !row.recording.valid || !sameCells(row.cells,cells) || row.links!=links || row.paddingCursorColumn!=cursor?.x) {
                 val origin=if(y==0) 0f else insetTop+y*cellHeight
                 val top=if(y==0) insetTop else 0f
                 val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
                 val recording=row?.recording ?: TerminalRowRecording.create(canvas.isHardwareAccelerated)
                 recording.record(width,bottom.toInt().coerceAtLeast(1)) { target ->
-                    drawRow(target,cells,visibleColumns,top,bottom)
+                    drawRow(target,cells,visibleColumns,top,bottom,paddingCursor=cursor)
                     target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
                     backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
                     for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
                         insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
                     target.restore()
                 }
-                row=RecordedRow(cells,recording,links);recorded[y]=row;recordedRowCount++
+                row=RecordedRow(cells,recording,links,cursor?.x);recorded[y]=row;recordedRowCount++
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
             row.recording.draw(canvas);canvas.restore()
@@ -312,7 +327,7 @@ class TerminalView(context: Context) : View(context) {
                     val top=if(y==0) insetTop else 0f
                     val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
                     val save=canvas.save();canvas.translate(0f,origin)
-                    drawRow(canvas,frame.lines[y],visibleColumns,top,bottom,pass)
+                    drawRow(canvas,frame.lines[y],visibleColumns,top,bottom,pass,paddingCursor.takeIf {y==anchorRow})
                     if(pass==2) {
                         canvas.save();canvas.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
                         backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
@@ -389,21 +404,68 @@ class TerminalView(context: Context) : View(context) {
      */
     private fun reuseShiftedRows(frame: TerminalScreen,visibleRows: Int) {
         val previous=recordedOffset
+        val previousApplicationLines=recordedApplicationLines
         recordedOffset=frame.scroll.offset
+        recordedApplicationLines=frame.lines.takeIf {frame.applicationScroll && frame.scroll.below==0L && frame.images.isEmpty()}
         if(previous==null || recorded.size!=visibleRows || visibleRows<4) return
         val distance=frame.scroll.offset-previous
-        if(distance==0L || kotlin.math.abs(distance)>=visibleRows-2) return
+        if(distance==0L) {
+            if(recordedApplicationLines!=null && previousApplicationLines!==frame.lines &&
+                android.os.SystemClock.uptimeMillis()<reuseApplicationRowsUntil) reuseApplicationRows(frame,visibleRows)
+            return
+        }
+        if(kotlin.math.abs(distance)>=visibleRows-2) return
         val shift=distance.toInt()
         val next=arrayOfNulls<RecordedRow>(visibleRows)
         val used=BooleanArray(visibleRows)
         for(y in 1 until visibleRows-1) {
             val from=y+shift
-            if(from in 1 until visibleRows-1) {next[y]=recorded[from]?.let {it.copy(links=it.links.map {link->link.copy(row=y)})};used[from]=true}
+            if(from in 1 until visibleRows-1) {next[y]=recorded[from]?.atRow(y);used[from]=true}
         }
         // Keep edge rows in place; release recordings that fell off.
         next[0]=recorded[0];next[visibleRows-1]=recorded[visibleRows-1];used[0]=true;used[visibleRows-1]=true
         for(y in recorded.indices) if(!used[y]) recorded[y]?.recording?.release()
         recorded=next
+    }
+    /** A full-screen program moves content without changing Ghostty's history offset. */
+    private fun reuseApplicationRows(frame: TerminalScreen,visibleRows: Int) {
+        val interior=1 until visibleRows-1
+        var displaced: Array<RecordedRow?>?=null
+        for(y in interior) {
+            val row=recorded[y] ?: continue
+            if(!sameCells(row.cells,frame.lines[y])) {
+                val rows=displaced ?: arrayOfNulls<RecordedRow>(visibleRows).also {displaced=it}
+                rows[y]=row
+                recorded[y]=null
+            }
+        }
+        val spare=displaced ?: return
+        val candidates=HashMap<Int,MutableList<Int>>()
+        for(y in interior) spare[y]?.takeIf {it.recording.valid}?.let {row->
+            candidates.getOrPut(row.contentHash) {mutableListOf()}.add(y)
+        }
+        for(y in interior) {
+            if(recorded[y]!=null || candidates.isEmpty()) continue
+            val cells=frame.lines[y]
+            val hash=rowContentHash(cells)
+            val matches=candidates[hash] ?: continue
+            val match=matches.indexOfFirst {from->sameCells(spare[from]!!.cells,cells)}
+            if(match<0) continue
+            val from=matches.removeAt(match)
+            recorded[y]=spare[from]!!.atRow(y)
+            spare[from]=null
+            if(matches.isEmpty()) candidates.remove(hash)
+        }
+        // Reuse remaining recording objects for new content, keeping each object in one row.
+        for(y in interior) {
+            if(recorded[y]==null && spare[y]!=null) {
+                recorded[y]=spare[y]
+                spare[y]=null
+            }
+        }
+        val remaining=spare.asSequence().filterNotNull().iterator()
+        for(y in interior) if(recorded[y]==null && remaining.hasNext()) recorded[y]=remaining.next()
+        while(remaining.hasNext()) remaining.next().recording.release()
     }
     /** An overscan row, drawn directly (it only shows mid-scroll). */
     private fun drawLooseRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,origin: Float) {
@@ -411,13 +473,28 @@ class TerminalView(context: Context) : View(context) {
         drawRow(canvas,cells,columns,0f,cellHeight)
         canvas.restoreToCount(save)
     }
-    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float,pass: Int=0) {
+    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float,pass: Int=0,
+        paddingCursor: TerminalCell?=null) {
         var start=0;var end=0;var color=0
         fun flush() {
-            if(pass==2 || end<=start || start>=columns || color==palette.background) return
-            backgroundPaint.color=color
-            canvas.drawRect(if(start==0) 0f else insetHorizontal+start*cellWidth,0f,
-                if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth,bottom,backgroundPaint)
+            if(pass==2 || end<=start || start>=columns) return
+            val left=if(start==0) 0f else insetHorizontal+start*cellWidth
+            val right=if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth
+            if(paddingCursor!=null && start==paddingCursor.x && end==start+paddingCursor.width) {
+                // An agent can draw its caret with reverse video while keeping the hardware
+                // cursor hidden. Extend the original cell background into the padding.
+                val base=palette.background(paddingCursor)
+                if(base!=palette.background) {
+                    backgroundPaint.color=base
+                    canvas.drawRect(left,0f,right,bottom,backgroundPaint)
+                }
+                backgroundPaint.color=color
+                canvas.drawRect(insetHorizontal+start*cellWidth,top,
+                    minOf(insetHorizontal+end*cellWidth,width-insetHorizontal),minOf(top+cellHeight,bottom),backgroundPaint)
+            } else if(color!=palette.background) {
+                backgroundPaint.color=color
+                canvas.drawRect(left,0f,right,bottom,backgroundPaint)
+            }
         }
         for(cell in cells) {
             if(cell.width==0 && cell.x<end) continue
@@ -435,7 +512,7 @@ class TerminalView(context: Context) : View(context) {
             if(cell.x>=columns || cell.width==0 || cell.text.isEmpty() || cell.text.codePointAt(0)==0x10eeee || cell.attributes and 16!=0) continue
             val style=cell.attributes and 3
             paint.typeface=fonts.typefaceFor(style,cell.text)
-            paint.color=if(cell.attributes and 8!=0) palette.background(cell) else palette.foreground(cell)
+            paint.color=textColors.foreground(palette,cell)
             paint.alpha=if(cell.attributes and 4!=0) 150 else 255
             var text=cell.text;var width=cell.width
             val ascii=cell.width==1 && cell.text.length==1 && cell.text[0] in ' '..'~'
@@ -466,13 +543,18 @@ class TerminalView(context: Context) : View(context) {
         }
         canvas.restore()
     }
+    private fun sendWheel(lines: Int,col: Int,row: Int) {
+        // The program may return several frames over the network for one gesture.
+        reuseApplicationRowsUntil=android.os.SystemClock.uptimeMillis()+500
+        onWheel(lines,col,row,desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())
+    }
     internal fun scrollByPixels(pixels: Float) {
         val frame=screen ?: return
         if(frame.applicationScroll && frame.scroll.below==0L) {
             scrollMotion.reset()
             scrollPixels+=pixels
             val lines=(scrollPixels/cellHeight).toInt()
-            if(lines!=0) {scrollPixels-=lines*cellHeight;onWheel(lines,wheelCol,wheelRow,desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())}
+            if(lines!=0) {scrollPixels-=lines*cellHeight;sendWheel(lines,wheelCol,wheelRow)}
         } else {
             val lines=scrollMotion.drag(pixels,frame.scroll,cellHeight)
             if(lines!=0) onScroll(lines)
@@ -497,15 +579,64 @@ class TerminalView(context: Context) : View(context) {
     private fun settleScroll() {
         if(scrollMotion.remainder!=0f || scrollPixels!=0f) {scrollPixels=0f;scrollMotion.settle();invalidate()}
     }
-    override fun onDetachedFromWindow() {removeCallbacks(cursorTick);awake.detach();terminalImages.clear();clearRows();clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()}
+    override fun onDetachedFromWindow() {
+        // Folding can replace the entire workspace without changing the remote pane target.
+        inputGeneration++;imeEditable=null;flushImeEditor=null;composing="";composingCursor=0
+        pointerPress=null;mouseTouch=false;removeCallbacks(cursorTick);awake.detach();clearRows();clearSelection();scrollFling.abortAnimation();touchVelocity?.recycle();touchVelocity=null;super.onDetachedFromWindow()
+    }
+    private data class PointerPress(val x: Float,val y: Float)
+    private var pointerPress: PointerPress?=null
+    private var mouseTouch=false
+
+    private fun rememberPress(x: Float,y: Float) {
+        pressedMouseTarget=mouseTarget()
+        pressedMouseGrid=screen?.let {it.columns to it.rows}
+        pressedMouse=screen?.mouseTracking==true
+        pressedControlled=controlled
+        pressedLink=linkAt(x,y)
+    }
+
+    private fun finishTap(x: Float,y: Float,showKeyboard: Boolean) {
+        if(pressedMouseTarget!=mouseTarget()) return
+        val link=pressedLink
+        if(link==null) terminalTap(x,y,showKeyboard)
+        else if(link==linkAt(x,y)) onOpenLink(link.url)
+    }
+
+    internal fun primaryPointerButton(pressed: Boolean,x: Float,y: Float) {
+        if(pressed) {
+            // Some devices also dispatch DOWN/UP. Let the touch gesture handle that click.
+            if(!mouseTouch && selection==null) {
+                awake.activity()
+                rememberPress(x,y)
+                pointerPress=PointerPress(x,y)
+            }
+        } else {
+            val press=pointerPress
+            pointerPress=null
+            val slop=ViewConfiguration.get(context).scaledTouchSlop
+            if(press!=null && selection==null &&
+                kotlin.math.abs(x-press.x)<=slop && kotlin.math.abs(y-press.y)<=slop) {
+                finishTap(x,y,showKeyboard=false)
+            }
+            if(!mouseTouch) pressedLink=null
+        }
+    }
+
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if(interactive && event.isFromSource(InputDevice.SOURCE_MOUSE) &&
+            event.actionButton==MotionEvent.BUTTON_PRIMARY &&
+            event.actionMasked in MotionEvent.ACTION_BUTTON_PRESS..MotionEvent.ACTION_BUTTON_RELEASE) {
+            primaryPointerButton(event.actionMasked==MotionEvent.ACTION_BUTTON_PRESS,event.x,event.y)
+            return true
+        }
         if(selection!=null && event.actionMasked==MotionEvent.ACTION_SCROLL) return true
         if(interactive && event.actionMasked==MotionEvent.ACTION_SCROLL) {
             val lines=(-event.getAxisValue(MotionEvent.AXIS_VSCROLL)*3).roundToInt()
             if(lines!=0) {
                 scrollMotion.reset()
                 if(screen?.applicationScroll==true && screen?.scroll?.below==0L && event.metaState and KeyEvent.META_SHIFT_ON==0)
-                    onWheel(lines,((event.x-insetHorizontal)/desiredCellWidth).toInt(),((event.y-insetTop)/desiredCellHeight).toInt(),desiredCellWidth.roundToInt(),desiredCellHeight.roundToInt())
+                    sendWheel(lines,((event.x-insetHorizontal)/desiredCellWidth).toInt(),((event.y-insetTop)/desiredCellHeight).toInt())
                 else onScroll(lines)
                 return true
             }
@@ -557,13 +688,19 @@ class TerminalView(context: Context) : View(context) {
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if(!interactive) return false
+        val fromMouse=event.isFromSource(InputDevice.SOURCE_MOUSE)
+        if(event.actionMasked==MotionEvent.ACTION_DOWN) {
+            pointerPress=null
+            mouseTouch=fromMouse
+        }
+        if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) mouseTouch=false
         if(selectionTouch || selection!=null) return selectionEvent(event)
         if(event.actionMasked==MotionEvent.ACTION_DOWN) {touchVelocity?.recycle();touchVelocity=VelocityTracker.obtain()}
         val sample=MotionEvent.obtain(event)
         sample.offsetLocation(event.rawX-event.x,event.rawY-event.y)
         touchVelocity?.addMovement(sample);sample.recycle()
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {suppressScrollTap=!scrollFling.isFinished || scrollTranslation!=0f;scrollFling.abortAnimation();scrollMotion.reset();invalidate();pressedMouseTarget=mouseTarget();pressedMouseGrid=screen?.let {it.columns to it.rows};pressedMouse=screen?.mouseTracking==true;pressedControlled=controlled;pressedLink=linkAt(event.x,event.y);pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrollMotion.reset();scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
+            MotionEvent.ACTION_DOWN -> {suppressScrollTap=!scrollFling.isFinished || scrollTranslation!=0f;scrollFling.abortAnimation();scrollMotion.reset();invalidate();rememberPress(event.x,event.y);pressX=event.x;pressY=event.y;removeCallbacks(longPress);postDelayed(longPress,ViewConfiguration.getLongPressTimeout().toLong());wheelCol=((event.x-insetHorizontal)/desiredCellWidth).toInt();wheelRow=((event.y-insetTop)/desiredCellHeight).toInt();scrollFling.abortAnimation();startX=event.rawX;startY=event.rawY;lastScrollY=event.rawY;scrollPixels=0f;scrollMotion.reset();scrolling=false;dragging=false;paneGesture.begin(event.x, event.y)}
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount != 1) { removeCallbacks(longPress);paneGesture.cancel();onPaneDrag?.invoke(0f,false);dragging=false;scrolling=false }
                 else {
@@ -581,7 +718,8 @@ class TerminalView(context: Context) : View(context) {
             MotionEvent.ACTION_UP -> if(scrolling) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 val velocity=-(touchVelocity?.yVelocity ?: 0f).toInt()
-                val history=screen?.scroll
+                val frame=screen
+                val history=frame?.scroll?.takeUnless {frame.applicationScroll && it.below==0L}
                 if(history!=null && history.available>0) {
                     val minimum=-(history.offset.toDouble()*cellHeight).coerceAtMost(1000000.0).toInt()
                     val maximum=(history.below.toDouble()*cellHeight).coerceAtMost(1000000.0).toInt()
@@ -592,7 +730,10 @@ class TerminalView(context: Context) : View(context) {
                 touchVelocity?.computeCurrentVelocity(1000)
                 onPaneDragEnd?.invoke(event.rawX-startX,touchVelocity?.xVelocity ?: 0f);dragging=false;paneGesture.cancel()
             } else when (paneGesture.finish(event.x, event.y)) {
-                PaneGesture.Result.TAP -> {val link=pressedLink;if(suppressScrollTap) Unit else if(link==null) terminalTap(event.x,event.y) else if(link==linkAt(event.x,event.y)) onOpenLink(link.url)}
+                PaneGesture.Result.TAP -> if(!suppressScrollTap) {
+                    val openedControls=!fromMouse && pressedLink==null && onPaneControlsTap?.invoke(event.x,event.y)==true
+                    if(!openedControls) finishTap(event.x,event.y,showKeyboard=!fromMouse)
+                }
                 PaneGesture.Result.NEXT -> onPaneSwipe(1)
                 PaneGesture.Result.PREVIOUS -> onPaneSwipe(-1)
                 PaneGesture.Result.NONE -> Unit
@@ -601,28 +742,28 @@ class TerminalView(context: Context) : View(context) {
         if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {pressedLink=null;removeCallbacks(longPress);touchVelocity?.recycle();touchVelocity=null}
         return true
     }
-    private fun terminalTap(x: Float,y: Float) {
+    private fun terminalTap(x: Float,y: Float,showKeyboard: Boolean) {
         val frame=screen
         if(pressedMouse && pressedControlled && !controlled) return
+        val col=floor((x-insetHorizontal)/cellWidth).toInt()
+        val row=floor((y-insetTop)/cellHeight).toInt()
+        val hit=frame?.takeIf {
+            pressedMouseGrid==(it.columns to it.rows) &&
+                x>=insetHorizontal && x<width-insetHorizontal && y>=insetTop && y<height-insetBottom &&
+                col in 0 until it.columns && row in 0 until it.rows
+        }
         if(controlled && (pressedMouse || frame?.mouseTracking==true)) {
-            if(frame?.mouseTracking!=true || !pressedMouse || !pressedControlled || frame.scroll.below>0 ||
-                pressedMouseTarget!=mouseTarget() || pressedMouseGrid!=(frame.columns to frame.rows)) return
-            val col=floor((x-insetHorizontal)/cellWidth).toInt()
-            val row=floor((y-insetTop)/cellHeight).toInt()
-            if(x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom ||
-                col !in 0 until frame.columns || row !in 0 until frame.rows) return
-            super.performClick()
+            if(hit?.mouseTracking!=true || !pressedMouse || !pressedControlled || hit.scroll.below>0) return
             onMouseClick(col,row,cellWidth.roundToInt().coerceAtLeast(1),cellHeight.roundToInt().coerceAtLeast(1))
-            if(frame.isSemanticInputRow(row)) keyboard()
-            else if(row==inputCursorRow(frame)) onCursorTap()
-        } else if(controlled && frame?.hasSemanticPrompt==true) {
-            val row=floor((y-insetTop)/cellHeight).toInt()
-            if(pressedMouseTarget!=mouseTarget() || pressedMouseGrid!=(frame.columns to frame.rows) ||
-                x<insetHorizontal || x>=width-insetHorizontal || y<insetTop || y>=height-insetBottom) return
-            super.performClick()
-            if(frame.isSemanticInputRow(row)) keyboard()
-            else if(frame.scroll.below==0L && row==inputCursorRow(frame)) onCursorTap()
-        } else performClick()
+        }
+        super.performClick()
+        val input=hit?.takeIf {showKeyboard && it.scroll.below==0L}
+        val cursorTap=input!=null && row==inputCursorRow(input)
+        val promptTap=input!=null && (input.isSemanticInputRow(row) ||
+            cursorTap && !input.hasSemanticPrompt && !input.mouseTracking && !input.alternateScreen)
+        if(!controlled) onActivate(promptTap || cursorTap && allowHiddenCursorInput)
+        else if(promptTap) keyboard()
+        else if(cursorTap) onCursorTap()
     }
     internal fun copySemanticSelection(output: Boolean): Boolean {
         val selected=selection ?: return false
@@ -751,7 +892,7 @@ class TerminalView(context: Context) : View(context) {
             (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).restartInput(this)
         }
     }
-    override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate()};return true }
+    override fun performClick(): Boolean { super.performClick();if(interactive) {if(controlled) keyboard() else onActivate(true)};return true }
     override fun onCheckIsTextEditor() = acceptsInput
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
         if (!acceptsInput) {DevelopLog.event("ime","create blocked interactive=$interactive owned=$controlled available=$inputAvailable");return null}
@@ -1021,3 +1162,17 @@ class TerminalView(context: Context) : View(context) {
     }
 }
 private object KeyCharacterMapCompat { const val COMBINING_ACCENT: Int = Int.MIN_VALUE }
+
+private fun rowContentHash(cells: List<TerminalCell>): Int {
+    var hash=cells.size
+    for(cell in cells) {
+        hash=31*hash+cell.x
+        hash=31*hash+cell.width
+        hash=31*hash+cell.attributes
+        hash=31*hash+cell.foreground
+        hash=31*hash+cell.background
+        hash=31*hash+cell.text.hashCode()
+        hash=31*hash+(cell.hyperlink?.hashCode() ?: 0)
+    }
+    return hash
+}
