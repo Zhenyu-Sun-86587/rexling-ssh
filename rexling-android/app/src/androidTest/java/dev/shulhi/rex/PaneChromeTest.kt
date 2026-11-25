@@ -34,6 +34,7 @@ class PaneChromeTest {
     private lateinit var terminal: TerminalView
     private val selected=mutableListOf<String>()
     private var opened=0
+    private var scrolledToLatest=0
     private fun carousel(initial: String="a",count: Int=3,history: Boolean=false,titles: Map<String,String> = emptyMap(),directories: Map<String,String> = emptyMap(),colored: Boolean=false) {
         val blocks=listOf(BlockItem("a","shell"),BlockItem("b","shell"),BlockItem("c","shell")).take(count)
         val cells=if(colored) (0 until 60).flatMap {y->(0 until 80).map {x->TerminalCell(x,y,"",-1,if(x%2==0) 0xffff0000.toInt() else 0xff0000ff.toInt(),0,1)}} else emptyList()
@@ -44,7 +45,7 @@ class PaneChromeTest {
                 TerminalCarousel(blocks,selected,selected,screen,{screen},
                     mapOf("a" to ProgramIdentity(ProgramKind.TERMINAL,"fish"),
                         "b" to ProgramIdentity(ProgramKind.CODEX,"Codex"),"c" to ProgramIdentity(ProgramKind.NEOVIM,"Neovim")),
-                    false,10f,{},{},{_,_,_,_,_->},{},{},{_,_->},{selected=it;this@PaneChromeTest.selected.add(it)},{opened++},{terminal=it},Modifier.size(320.dp,480.dp),paneLayout=listOf(PanePlacement("a",0f,0f,.5f,1f),PanePlacement("b",.5f,0f,.5f,.5f),PanePlacement("c",.5f,.5f,.5f,.5f)).filter {p->blocks.any {it.id==p.id}},titles=titles,directories=directories)
+                    false,10f,{},{},{_,_,_,_,_->},{},{scrolledToLatest++},{_,_->},{selected=it;this@PaneChromeTest.selected.add(it)},{opened++},{terminal=it},Modifier.size(320.dp,480.dp),paneLayout=listOf(PanePlacement("a",0f,0f,.5f,1f),PanePlacement("b",.5f,0f,.5f,.5f),PanePlacement("c",.5f,.5f,.5f,.5f)).filter {p->blocks.any {it.id==p.id}},titles=titles,directories=directories)
             }
         }
         ui.mainClock.autoAdvance=false
@@ -148,9 +149,13 @@ class PaneChromeTest {
     @Test fun theProgramLabelDoesNotOverlapTheReturnToLatestButton() {
         carousel(history=true)
         ui.runOnIdle {terminal.onPaneDrag?.invoke(-terminal.width*.4f,true)};ui.mainClock.advanceTimeByFrame()
-        val latest=ui.onNodeWithText("↓ Latest").fetchSemanticsNode().boundsInRoot
+        val latestButton=ui.onNodeWithContentDescription("Scroll to latest")
+            .assertHasClickAction().assertWidthIsEqualTo(48.dp).assertHeightIsEqualTo(48.dp)
+        val latest=latestButton.fetchSemanticsNode().boundsInRoot
         val program=badge().fetchSemanticsNode().boundsInRoot
         assertTrue("$latest overlaps $program",latest.bottom<=program.top)
+        latestButton.performClick()
+        ui.runOnIdle {assertEquals(1,scrolledToLatest)}
     }
 
     @Test fun switchCaptionUsesTheTopBarTitleAndDirectoryOnSeparateLines() {

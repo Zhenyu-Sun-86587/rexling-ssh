@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -86,7 +88,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRON, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, MINIMIZE, RESIZE, CHECK, PLAY, STOP, ZOOM, UNZOOM, MOVE }
+internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRON, CHEVRONS_DOWN, SESSIONS, COPY, MORE, ADD, KEYBOARD, HIDE_KEYBOARD, LEFT, RIGHT, UP, DOWN, TAB, CLOSE, ESCAPE, CONTROL, ALT, SHIFT, POINTER, EYE, BACKSPACE, ARROWS, ENTER, SETTINGS, PASTE, IMAGE, FILE, SERVER, REFRESH, SUN, MOON, EDIT, UNPLUG, DELETE, FLOAT, MINIMIZE, RESIZE, CHECK, PLAY, STOP, ZOOM, UNZOOM, MOVE }
 
 @Composable internal fun ChromeSymbol(icon: ChromeIcon, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(modifier.size(19.dp)) {
@@ -118,6 +120,10 @@ internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRO
             }
             ChromeIcon.SEARCH -> { drawCircle(color,6f*u,Offset(10f*u,10f*u),style=Stroke(width));line(15f,15f,21f,21f) }
             ChromeIcon.CHEVRON -> {line(7f,10f,12f,15f);line(12f,15f,17f,10f)}
+            ChromeIcon.CHEVRONS_DOWN -> {
+                line(7f,6f,12f,11f);line(12f,11f,17f,6f)
+                line(7f,13f,12f,18f);line(12f,18f,17f,13f)
+            }
             ChromeIcon.SESSIONS -> { box(4f,8f,13f,12f); line(8f,4f,20f,4f); line(20f,4f,20f,16f); line(7f,12f,11f,12f); line(7f,16f,13f,16f) }
             ChromeIcon.COPY -> { box(8f,8f,12f,12f); line(15f,4f,4f,4f); line(4f,4f,4f,15f) }
             ChromeIcon.PASTE -> {box(6f,5f,14f,16f);box(9f,3f,6f,4f,1f);line(10f,12f,16f,12f);line(10f,16f,15f,16f)}
@@ -210,6 +216,20 @@ internal enum class ChromeIcon { SPLIT, SPLIT_RIGHT, SPLIT_BELOW, SEARCH, CHEVRO
                 for(x in listOf(6f,10f,14f,18f)) { line(x,8f,x+.2f,8f); line(x,11f,x+.2f,11f) }
                 line(8f,14f,16f,14f)
                 if(icon==ChromeIcon.HIDE_KEYBOARD) { line(9f,21f,12f,23f); line(12f,23f,15f,21f) }
+            }
+        }
+    }
+}
+
+@Composable internal fun ScrollToLatestButton(hazeState: HazeState,modifier: Modifier=Modifier,onClick: ()->Unit) {
+    val scheme=MaterialTheme.colorScheme
+    Box(modifier.size(48.dp).clickable(role=Role.Button,onClick=onClick)
+        .semantics {contentDescription="Scroll to latest"},contentAlignment=Alignment.Center) {
+        TransferNoticeSurface(Modifier.size(36.dp).shadow(4.dp,CircleShape,clip=false)
+            .background(scheme.surface,CircleShape).border(.5.dp,scheme.outlineVariant,CircleShape),
+            hazeState,container=scheme.surface,title=null) {
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
+                ChromeSymbol(ChromeIcon.CHEVRONS_DOWN,color=scheme.primary)
             }
         }
     }

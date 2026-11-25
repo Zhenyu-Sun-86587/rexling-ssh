@@ -174,10 +174,9 @@ import dev.chrisbanes.haze.hazeSource
                             }
                         }
                         if(center && (frame?.scroll?.below ?: 0)>0) {
-                            Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(end=12.dp,bottom=(if(blocks.size>1) if(hasMinimap) 128.dp else 88.dp else 10.dp)+bottomControlsInset+bottomOverlayInset)
-                                .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surface)
-                                .clickable(role=Role.Button,onClick=onBottom).padding(horizontal=12.dp,vertical=7.dp),
-                                fontSize=11.sp,color=MaterialTheme.colorScheme.primary)
+                            ScrollToLatestButton(haze,Modifier.align(Alignment.BottomEnd)
+                                .padding(end=12.dp,bottom=(if(blocks.size>1) if(hasMinimap) 128.dp else 88.dp else 10.dp)+bottomControlsInset+bottomOverlayInset),
+                                onClick=onBottom)
                         }
                     }
                 }

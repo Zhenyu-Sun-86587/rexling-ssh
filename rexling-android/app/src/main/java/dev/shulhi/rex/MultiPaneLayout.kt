@@ -328,10 +328,7 @@ internal fun MultiPaneLayout(
                 } else {
                     val display by client.displayLayout.collectAsState()
                     if(live && display.below) {
-                        Text("↓ Latest",Modifier.align(Alignment.BottomEnd).padding(10.dp)
-                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).background(scheme.surface)
-                            .clickable(role=Role.Button,onClick=client::scrollToBottom).padding(horizontal=12.dp,vertical=7.dp),
-                            fontSize=11.sp,color=scheme.primary)
+                        ScrollToLatestButton(hazeState,Modifier.align(Alignment.BottomEnd).padding(10.dp),onClick=client::scrollToBottom)
                     } else if(paneFrame==null && (!live || !display.hasScreen)) {
                         Text("Opening terminal…",Modifier.align(Alignment.Center),
                             fontFamily=MonoUi,fontSize=12.sp,color=scheme.onSurfaceVariant)
