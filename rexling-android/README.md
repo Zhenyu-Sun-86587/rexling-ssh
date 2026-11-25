@@ -27,15 +27,23 @@ signing separately before publishing. SDK paths and caches remain ignored.
 
 ## Usage
 
-- Keep Tailscale connected and use an explicit authenticated Rex server URL.
-  **⋮ → Servers** saves hosts and keeps several connected at once.
-- The compact header shows the task/program title, a working-directory line
-  when available, then session · server. Tap the session to search, swipe to
-  cycle across hosts, wrapping in either direction, or long-press to return to the last session. In the session
-  list, open a row’s **⋮ → Rename session** to change its name on the server.
-- Swipe the content card to switch panes, looping from last to first or first to last. The bottom tabs remember their pane;
-  pane options switch, create or close panes/tabs. Destructive close actions
-  require confirmation and end the programs in that resource.
+- Add an authenticated HTTPS or SSH endpoint under **⋮ → Servers**. Rexling
+  can keep several servers connected at once. [Connection setup](../docs/connections.md)
+- Tap the header title to browse sessions or hold it to return to the last
+  session. In the full header, swipe the program icon up or down to cycle
+  through sessions. In the session list, open a row’s **⋮ → Rename session** to
+  rename it on the server. Under **⋮ → Preferences → Display**, set
+  **Compact top bar** to **Always** or **With keyboard**.
+- Swipe the terminal to switch panes, wrapping at the ends. Choose bottom or
+  sidebar tabs under **⋮ → Preferences → Tabs**. Use **+** in the sidebar or on
+  medium and wide bottom layouts to create a tab. Closing a tab or pane
+  requires confirmation and ends its programs.
+- Choose **Multiple panes** under **⋮ → Preferences → Panes** to view up to four
+  tiled panes at once on supported full-screen foldables and tablets.
+- Tap the floating pane dock to restore a pane or fan out a group. Tap the
+  active pane’s icon or entry to minimize it. Hold and drag the dock to move
+  it. A blue dot marks unread activity on the dock and the corresponding
+  entry in the fan.
 - A newly selected ready pane is automatically claimed once and resized to the
   phone. Switching away/backgrounding releases it. Manual Take/Release live in
   **⋮**. Another owner's dimensions appear in a contextual takeover notice.
@@ -69,14 +77,9 @@ icons remain upright. Both header and tab icons use the same treatment. The
 header reserves the same width for one, two or three tiles and centers the
 visible stack, keeping the title and directory aligned when pane counts change.
 
-## Image uploads
+## File and image uploads
 
-Configure each Rex server under **⋮ → Preferences → Portside**. Rexling calls
-[Portside](https://github.com/shulhi/portside) 0.3+'s Tailscale-authenticated upload
-API directly; see its repository for server installation and hosting setup.
-Keyboard image paste,
-menu Paste and Attach image upload PNG/JPEG/GIF/WebP files and insert the returned
-server path without submitting the prompt. Uploaded images remain ready for the
-original pane if you navigate away. The separate Portside app can be opened from
-settings but is not required for transfers. See the root README for setup and
-BUILDING.md for the optional real-server fixture test.
+Use **⋮ → Attach file** to upload a file or **⋮ → Image** to pick a photo. You
+can also paste an image from the clipboard or a supported keyboard. Uploads use
+the connected Rex server and require Rex API revision 11 or newer. Rex inserts
+the uploaded path into the pane where you started the upload. [Upload validation](../BUILDING.md#native-upload-checks)
