@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 
@@ -66,10 +67,13 @@ internal data class TerminalDrawerAction(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(status, style = SettingsType.row, color = if (controlled) colors.primary else colors.onSurfaceVariant)
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(status, Modifier.weight(1f, fill = false).alignByBaseline(), style = SettingsType.row,
+                        color = if (controlled) colors.primary else colors.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                     dimensions?.let { (columns, rows) ->
-                        Text("$columns × $rows", style = SettingsType.detail, fontFamily = MonoUi, color = colors.onSurfaceVariant)
+                        Text("$columns × $rows", Modifier.alignByBaseline(), style = SettingsType.detail,
+                            fontFamily = MonoUi, color = colors.onSurfaceVariant, maxLines = 1)
                     }
                 }
                 if (ownership != null) {

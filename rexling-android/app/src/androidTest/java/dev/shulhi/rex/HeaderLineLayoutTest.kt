@@ -102,7 +102,7 @@ class HeaderLineLayoutTest {
                 }
             }
         }}
-        val header=ui.onNodeWithTag("header")
+        val header=ui.onNodeWithTag("header").assertHeightIsEqualTo(44.dp)
         val fullHeight=bounds(header).height
         val strip=ui.onNodeWithContentDescription("Session strip",useUnmergedTree=true)
         ui.onNode(hasText(title) and hasText(session) and hasClickAction()).assertIsDisplayed()
@@ -112,7 +112,7 @@ class HeaderLineLayoutTest {
         assertEquals(fullHeight,bounds(header).height)
         ui.runOnIdle {compact=CompactHeaderMode.WITH_KEYBOARD}
         strip.assertIsNotDisplayed()
-        assertTrue(bounds(header).height<fullHeight)
+        header.assertHeightIsEqualTo(36.dp)
         val inCompact=hasAnyAncestor(hasTestTag("Compact session header"))
         ui.onNode(hasContentDescription("Cloud") and inCompact,useUnmergedTree=true).assertIsDisplayed()
         val backdrop=header.captureToImage().toPixelMap()
@@ -133,6 +133,7 @@ class HeaderLineLayoutTest {
         assertEquals(fullHeight,bounds(header).height)
         ui.runOnIdle {compact=CompactHeaderMode.ALWAYS}
         strip.assertDoesNotExist()
+        header.assertHeightIsEqualTo(36.dp)
         val compactHeight=bounds(header).height
         assertTrue(compactHeight<fullHeight)
         ui.onNode(hasText(title) and hasText(session) and inCompact).performTouchInput {click()}

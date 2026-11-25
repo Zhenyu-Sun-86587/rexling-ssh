@@ -434,7 +434,7 @@ internal enum class CompactHeaderMode(val label: String) {
         SessionHeaderRow(frost.testTag("Compact session header"),topCutout,menu) {
             val session=sessions.getOrNull(selectedIndex)?.label.orEmpty()
             val serverIcon=serverIcons[selectedId] ?: ServerIcon.GLOBE
-            Row(Modifier.weight(1f).heightIn(min=40.dp).padding(start=9.dp).combinedClickable(role=Role.Button,
+            Row(Modifier.weight(1f).heightIn(min=36.dp).padding(start=9.dp).combinedClickable(role=Role.Button,
                 onClickLabel="Open session drawer",onLongClick=onLast,onClick=onSessions),
                 verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 ServerGlyph(serverIcon,Modifier.size(14.dp).semantics {
@@ -717,7 +717,10 @@ internal val activityButtonDiameter=41.dp
         }
     Group {
         // Stands in for the key toolbar's keyboard button while the toolbar is hidden.
-        if(onKeyboard!=null) ChromeButton(ChromeIcon.KEYBOARD,keyboardLabel,enabled,onClick=onKeyboard)
+        val keyboard: @Composable ()->Unit={
+            if(onKeyboard!=null) ChromeButton(ChromeIcon.KEYBOARD,keyboardLabel,enabled,onClick=onKeyboard)
+        }
+        if(!vertical) keyboard()
         ChromeButton(ChromeIcon.SPLIT,"Tabs and panes",enabled,readable=activityEnabled,onClick=onSwitcher)
         Box(Modifier.size(activityButtonDiameter).testTag("Activity button surface"),contentAlignment=Alignment.Center) {
             Box(Modifier.matchParentSize().clip(RoundedCornerShape(23.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
@@ -730,6 +733,7 @@ internal val activityButtonDiameter=41.dp
                 .background(MaterialTheme.colorScheme.surfaceVariant,RoundedCornerShape(5.dp)).padding(1.dp)
                 .background(MaterialTheme.colorScheme.primary,RoundedCornerShape(4.dp)).semantics {testTag="Activity unread dot"})
         }
+        if(vertical) keyboard()
     }
 }
 

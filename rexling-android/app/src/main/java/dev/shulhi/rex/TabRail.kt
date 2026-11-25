@@ -28,13 +28,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,7 +49,7 @@ internal enum class TabRailStyle(val label: String) { ICONS("Icons"), TITLES("Ic
 
 internal fun tabRailWidth(style: TabRailStyle,windowWidthDp: Int=0)=when(style) {
     TabRailStyle.ICONS->52.dp
-    TabRailStyle.TITLES->if(TabWidthClass.of(windowWidthDp)==TabWidthClass.WIDE) (windowWidthDp/4f).dp.coerceAtMost(240.dp) else 152.dp
+    TabRailStyle.TITLES->(windowWidthDp/4f).dp.coerceIn(172.dp,240.dp)
 }
 
 /** Where the tab bar sits, and how a side rail draws its tabs. Kept separately for folded and unfolded screens. */
@@ -281,23 +281,31 @@ private val sidebarLineHeight=14.sp
             }
         }
         HorizontalDivider(Modifier.padding(horizontal=9.dp,vertical=4.dp),thickness=.5.dp,color=divider)
-        // Points the way the rail will go: toward the terminal to show titles, toward the edge to hide them.
-        val towardTerminal=if(side==TabBarPosition.LEFT) -90f else 90f
-        if(titles) {
-            Row(Modifier.fillMaxWidth().padding(end=6.dp),
-                horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                ChromeButton(ChromeIcon.CHEVRON,"Show icons only",modifier=Modifier.size(32.dp)
-                    .drawWithContent {translate(left=2.dp.toPx()) {this@drawWithContent.drawContent()}}
-                    .graphicsLayer {rotationZ=-towardTerminal}) {
-                    onStyle(TabRailStyle.ICONS)
-                }
-                actions()
+        val atStart=side==TabBarPosition.LEFT
+        val atLeftEdge=atStart==(LocalLayoutDirection.current==LayoutDirection.Ltr)
+        val towardTerminal=if(atLeftEdge) -90f else 90f
+        val toggleWidth=36.dp
+        val toggleInset=(tabRailWidth(TabRailStyle.ICONS)-toggleWidth)/2
+        val toggle: @Composable ()->Unit={
+            ChromeButton(ChromeIcon.CHEVRON,if(titles) "Show icons only" else "Show tab titles",
+                modifier=Modifier.size(toggleWidth)
+                    .graphicsLayer {rotationZ=if(titles) -towardTerminal else towardTerminal}) {
+                onStyle(if(titles) TabRailStyle.ICONS else TabRailStyle.TITLES)
             }
-        } else {
-            ChromeButton(ChromeIcon.CHEVRON,"Show tab titles",modifier=Modifier.graphicsLayer {rotationZ=towardTerminal}) {
-                onStyle(TabRailStyle.TITLES)
-            }
-            Box(Modifier.padding(top=4.dp)) {actions()}
+        }
+        if(!titles) Box(Modifier.padding(bottom=4.dp)) {actions()}
+        // Center the toggle in the outer icon slot in either style.
+        val actionsInset=if(titles) 6.dp else 0.dp
+        Row(Modifier.fillMaxWidth().height(activityButtonDiameter)
+            .padding(start=if(atStart) toggleInset else actionsInset,end=if(atStart) actionsInset else toggleInset),
+            horizontalArrangement=when {
+                titles->Arrangement.SpaceBetween
+                atStart->Arrangement.Start
+                else->Arrangement.End
+            },verticalAlignment=Alignment.CenterVertically) {
+            if(atStart) toggle()
+            if(titles) Box {actions()}
+            if(!atStart) toggle()
         }
     }
 }
