@@ -1,5 +1,6 @@
 package dev.shulhi.rex
 
+import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
@@ -50,6 +51,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.app.MultiWindowModeChangedInfo
 import androidx.core.util.Consumer
+
+internal enum class PaneOrientation(val title: String,val preferenceKey: String) {
+    PORTRAIT("Portrait","multi_pane_unfolded_portrait"),
+    LANDSCAPE("Landscape","multi_pane_unfolded_landscape"),
+}
+
+@Composable internal fun currentPaneOrientation(): PaneOrientation =
+    if(LocalConfiguration.current.orientation==Configuration.ORIENTATION_LANDSCAPE) PaneOrientation.LANDSCAPE
+    else PaneOrientation.PORTRAIT
 
 internal enum class PaneDropPosition {
     CENTER, LEFT, RIGHT, ABOVE, BELOW;

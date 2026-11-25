@@ -34,7 +34,9 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable internal fun PreferencesSheet(onAppearance: ()->Unit,onFont: ()->Unit,onAlerts: ()->Unit,onAbout: ()->Unit,onClose: ()->Unit,
     shortcutGesture: ControlShortcutGesture=ControlShortcutGesture.HOLD,onShortcutGesture: (ControlShortcutGesture)->Unit={},onNeovim: ()->Unit={},
-    arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},multiPaneUnfolded: Boolean=false,onMultiPaneUnfolded: (Boolean)->Unit={},tabLayouts: Map<TabWidthClass,TabBarLayout> = emptyMap(),tabWidth: Pair<TabWidthClass,Int> = TabWidthClass.NARROW to 0,onTabLayout: (TabWidthClass,TabBarLayout)->Unit={_,_->},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
+    arrowJoystickEnabled: Boolean=true,onArrowJoystick: (Boolean)->Unit={},enterSubmits: Boolean=false,onEnterSubmits: (Boolean)->Unit={},toolbarWithKeyboardOnly: Boolean=false,onToolbarWithKeyboardOnly: (Boolean)->Unit={},tabLayouts: Map<TabWidthClass,TabBarLayout> = emptyMap(),tabWidth: Pair<TabWidthClass,Int> = TabWidthClass.NARROW to 0,onTabLayout: (TabWidthClass,TabBarLayout)->Unit={_,_->},codexTitleAttention: Boolean=false,onCodexTitleAttention: (Boolean)->Unit={},
+    paneLayouts: Map<PaneOrientation,Boolean> = emptyMap(),paneOrientation: PaneOrientation=currentPaneOrientation(),
+    onPaneLayout: (PaneOrientation,Boolean)->Unit={_,_->},
     minimizeFloatingPanes: Boolean=false,onMinimizeFloatingPanes: (Boolean)->Unit={},onNetwork: ()->Unit={},
     keepScreenAwake: KeepScreenAwake=KeepScreenAwake.SYSTEM,onKeepScreenAwake: (KeepScreenAwake)->Unit={},onToolbar: ()->Unit={},onControlItems: ()->Unit={},onSshKeys: ()->Unit={},hazeState: dev.chrisbanes.haze.HazeState?=null,
     compactHeaderMode: CompactHeaderMode=CompactHeaderMode.NEVER,onCompactHeaderMode: (CompactHeaderMode)->Unit={},
@@ -86,23 +88,7 @@ import androidx.compose.ui.unit.dp
                 }
             }
             TabLayoutPreferences(tabLayouts,tabWidth,onTabLayout)
-            SettingsSection("Panes",compact=true,outlined=true) {
-                Column(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Text("On a large screen",style=SettingsType.paneTitle)
-                    Text("In full screen on an unfolded foldable or tablet.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    PreferenceSegments(listOf(false,true),multiPaneUnfolded,{if(it) "Multiple panes" else "Single pane"},
-                        showCheck=true,onSelect=onMultiPaneUnfolded)
-                }
-                HorizontalDivider(thickness=.5.dp,color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.65f))
-                Row(Modifier.fillMaxWidth().toggleable(minimizeFloatingPanes,role=androidx.compose.ui.semantics.Role.Switch,onValueChange=onMinimizeFloatingPanes)
-                    .padding(horizontal=16.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                        Text("Minimize floating panes",style=SettingsType.paneTitle)
-                        Text("Show floating panes in a corner dock. Swipe between tiled panes.",style=SettingsType.detail,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked=minimizeFloatingPanes,onCheckedChange=null)
-                }
-            }
+            PaneLayoutPreferences(paneLayouts,paneOrientation,onPaneLayout,minimizeFloatingPanes,onMinimizeFloatingPanes)
             SettingsSection("Keyboard",compact=true) {
                 SettingsRow("Keyboard toolbar","Choose and arrange up to seven buttons",SettingsGlyph.COMMAND,onToolbar)
                 SettingsDivider()
@@ -197,69 +183,109 @@ import androidx.compose.ui.unit.dp
     onChange: (TabWidthClass,TabBarLayout)->Unit) {
     val (current,widthDp)=window
     var editing by rememberSaveable(current) {mutableStateOf<TabWidthClass?>(current)}
+    PreferenceProfiles("Tabs by window width","Follows the width available to Rexling, including in split screen.",
+        Modifier.testTag("Tab width profiles")) {
+        TabWidthClass.entries.forEachIndexed {index,profile->
+            if(index>0) ProfileDivider()
+            TabLayoutProfile(profile,layouts[profile] ?: TabBarLayout(),profile==current,widthDp,profile==editing,
+                onToggle={editing=if(editing==profile) null else profile},onChange={onChange(profile,it)})
+        }
+    }
+}
+
+@Composable private fun PaneLayoutPreferences(layouts: Map<PaneOrientation,Boolean>,current: PaneOrientation,
+    onChange: (PaneOrientation,Boolean)->Unit,minimizeFloatingPanes: Boolean,onMinimizeFloatingPanes: (Boolean)->Unit) {
+    var editing by rememberSaveable(current) {mutableStateOf<PaneOrientation?>(current)}
+    PreferenceProfiles("Panes by orientation","Applies in full screen on an unfolded foldable or tablet.") {
+        PaneOrientation.entries.forEachIndexed {index,orientation->
+            if(index>0) ProfileDivider()
+            val multiple=layouts[orientation]==true
+            val expanded=orientation==editing
+            PreferenceProfile(orientation.title,paneLayoutLabel(multiple),orientation==current,expanded,
+                onToggle={editing=if(expanded) null else orientation},icon={PaneOrientationGlyph(orientation,expanded)}) {
+                PreferenceSegments(listOf(false,true),multiple,::paneLayoutLabel,
+                    showCheck=true,onSelect={onChange(orientation,it)})
+            }
+        }
+        ProfileDivider()
+        Row(Modifier.fillMaxWidth().toggleable(minimizeFloatingPanes,role=Role.Switch,onValueChange=onMinimizeFloatingPanes)
+            .padding(horizontal=12.dp,vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                Text("Minimize floating panes",style=SettingsType.paneTitle)
+                Text("Show floating panes in a corner dock. Swipe between tiled panes.",style=SettingsType.detail,
+                    color=MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked=minimizeFloatingPanes,onCheckedChange=null)
+        }
+    }
+}
+
+private fun paneLayoutLabel(multiple: Boolean)=if(multiple) "Multiple panes" else "Single pane"
+
+@Composable private fun PreferenceProfiles(title: String,description: String,modifier: Modifier=Modifier,content: @Composable ColumnScope.()->Unit) {
     val colors=MaterialTheme.colorScheme
     val border=colors.outlineVariant.copy(alpha=.65f)
-    Surface(Modifier.fillMaxWidth().testTag("Tab width profiles"),
+    Surface(modifier.fillMaxWidth(),
         shape=RoundedCornerShape(16.dp),color=colors.surface,border=BorderStroke(.5.dp,border)) {
         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
             Column(Modifier.padding(horizontal=4.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                Text("Tabs by window width",style=SettingsType.paneTitle,color=colors.primary)
-                Text("Follows the width available to Rexling, including in split screen.",
-                    style=SettingsType.detail,color=colors.onSurfaceVariant)
+                Text(title,style=SettingsType.paneTitle,color=colors.primary)
+                Text(description,style=SettingsType.detail,color=colors.onSurfaceVariant)
             }
             Surface(shape=RoundedCornerShape(12.dp),color=colors.surfaceVariant.copy(alpha=.25f),border=BorderStroke(.5.dp,border)) {
-                Column(Modifier.fillMaxWidth()) {
-                    TabWidthClass.entries.forEachIndexed {index,profile->
-                        if(index>0) HorizontalDivider(thickness=.5.dp,color=border)
-                        TabLayoutProfile(profile,layouts[profile] ?: TabBarLayout(),profile==current,widthDp,profile==editing,
-                            onToggle={editing=if(editing==profile) null else profile},onChange={onChange(profile,it)})
-                    }
-                }
+                Column(Modifier.fillMaxWidth(),content=content)
             }
         }
     }
 }
 
+@Composable private fun ProfileDivider() {
+    HorizontalDivider(thickness=.5.dp,color=MaterialTheme.colorScheme.outlineVariant.copy(alpha=.65f))
+}
+
 @Composable private fun TabLayoutProfile(profile: TabWidthClass,layout: TabBarLayout,current: Boolean,widthDp: Int,
     expanded: Boolean,onToggle: ()->Unit,onChange: (TabBarLayout)->Unit) {
-    val colors=MaterialTheme.colorScheme
     val description=when(profile) {
         TabWidthClass.NARROW->"Phones and small split-screen windows"
         TabWidthClass.MEDIUM->"Folded foldables and larger split-screen windows"
         TabWidthClass.WIDE->"Tablets and unfolded foldables"
     }
+    val summary=if(layout.side) "${layout.position.label} tabs · ${layout.style.label.lowercase()}" else "Bottom tabs"
+    PreferenceProfile(profile.title,summary,current,expanded,onToggle,description,icon={TabWidthGlyph(profile,expanded)}) {
+        Text("Position",style=SettingsType.paneTitle)
+        PreferenceSegments(TabBarPosition.entries,layout.position,{it.label}) {onChange(layout.copy(position=it))}
+        if(layout.side) {
+            Spacer(Modifier.height(2.dp))
+            Text("Sidebar style",style=SettingsType.paneTitle)
+            PreferenceSegments(TabRailStyle.entries,layout.style,{it.label}) {onChange(layout.copy(style=it))}
+        }
+        Text(if(current && widthDp>0) "${profile.range} · This window is $widthDp dp" else profile.range,
+            style=SettingsType.paneDetail,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable private fun PreferenceProfile(title: String,summary: String,current: Boolean,expanded: Boolean,
+    onToggle: ()->Unit,description: String?=null,icon: @Composable ()->Unit,content: @Composable ColumnScope.()->Unit) {
+    val colors=MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().background(if(expanded) colors.surface else Color.Transparent)) {
         Row(Modifier.fillMaxWidth().clickable(role=Role.Button,onClick=onToggle)
             .semantics {stateDescription=if(expanded) "Expanded" else "Collapsed"}.padding(horizontal=12.dp,vertical=12.dp),
             verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-            TabWidthGlyph(profile,expanded)
+            icon()
             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Text(profile.title,style=SettingsType.paneTitle)
+                    Text(title,style=SettingsType.paneTitle)
                     if(current) Surface(shape=RoundedCornerShape(6.dp),color=colors.primaryContainer,contentColor=colors.onPrimaryContainer) {
                         Text("Now",Modifier.padding(horizontal=6.dp,vertical=1.dp),style=SettingsType.paneDetail)
                     }
                 }
-                Text(description,style=SettingsType.detail,color=colors.onSurfaceVariant)
-                if(!expanded) {
-                    val summary=if(layout.side) "${layout.position.label} tabs · ${layout.style.label.lowercase()}" else "Bottom tabs"
-                    Text(summary,style=SettingsType.paneDetail,color=colors.onSurfaceVariant)
-                }
+                description?.let {Text(it,style=SettingsType.detail,color=colors.onSurfaceVariant)}
+                if(!expanded) Text(summary,style=SettingsType.paneDetail,color=colors.onSurfaceVariant)
             }
             ChromeSymbol(ChromeIcon.CHEVRON,Modifier.size(16.dp).rotate(if(expanded) 180f else 0f),colors.onSurfaceVariant)
         }
         if(expanded) Column(Modifier.fillMaxWidth().padding(start=62.dp,end=12.dp,bottom=12.dp),
-            verticalArrangement=Arrangement.spacedBy(6.dp)) {
-            Text("Position",style=SettingsType.paneTitle)
-            PreferenceSegments(TabBarPosition.entries,layout.position,{it.label}) {onChange(layout.copy(position=it))}
-            if(layout.side) {
-                Spacer(Modifier.height(2.dp))
-                Text("Sidebar style",style=SettingsType.paneTitle)
-                PreferenceSegments(TabRailStyle.entries,layout.style,{it.label}) {onChange(layout.copy(style=it))}
-            }
-            Text(if(current && widthDp>0) "${profile.range} · This window is $widthDp dp" else profile.range,
-                style=SettingsType.paneDetail,color=colors.onSurfaceVariant)
-        }
+            verticalArrangement=Arrangement.spacedBy(6.dp),content=content)
     }
 }
 
@@ -300,5 +326,17 @@ import androidx.compose.ui.unit.dp
             val inset=if(width==TabWidthClass.WIDE) 0.dp else 3.dp
             drawLine(strokeColor,Offset(hinge,origin.y+inset.toPx()),Offset(hinge,origin.y+height-inset.toPx()),stroke)
         }
+    }
+}
+
+@Composable private fun PaneOrientationGlyph(orientation: PaneOrientation,active: Boolean) {
+    val colors=MaterialTheme.colorScheme
+    Canvas(Modifier.size(40.dp,32.dp)) {
+        val portrait=orientation==PaneOrientation.PORTRAIT
+        val device=if(portrait) Size(18.dp.toPx(),28.dp.toPx()) else Size(28.dp.toPx(),18.dp.toPx())
+        val origin=Offset((size.width-device.width)/2,(size.height-device.height)/2)
+        val corner=CornerRadius(3.5.dp.toPx())
+        if(active) drawRoundRect(colors.primaryContainer,origin,device,corner)
+        drawRoundRect(if(active) colors.primary else colors.onSurfaceVariant,origin,device,corner,style=Stroke(1.5.dp.toPx()))
     }
 }

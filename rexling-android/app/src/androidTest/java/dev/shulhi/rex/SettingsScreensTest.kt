@@ -1,5 +1,7 @@
 package dev.shulhi.rex
 
+import android.app.Application
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,8 +11,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
+import androidx.lifecycle.ViewModelStore
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import androidx.compose.ui.test.*
@@ -52,10 +57,9 @@ class SettingsScreensTest {
     }
     @Test fun editingOneTabProfileDoesNotChangeTheCurrentProfile() {
         val layouts=mutableStateMapOf(TabWidthClass.MEDIUM to TabBarLayout(TabBarPosition.LEFT),TabWidthClass.WIDE to TabBarLayout())
-        var multiple by mutableStateOf(false)
         ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
             PreferencesSheet({},{},{},{},{},tabLayouts=layouts,tabWidth=TabWidthClass.MEDIUM to 555,
-                onTabLayout={width,layout->layouts[width]=layout},multiPaneUnfolded=multiple,onMultiPaneUnfolded={multiple=it})
+                onTabLayout={width,layout->layouts[width]=layout})
         }}
         val medium=ui.onNodeWithText("Medium")
         val wide=ui.onNodeWithText("Wide")
@@ -81,12 +85,51 @@ class SettingsScreensTest {
         File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"tab-width-profiles.png").outputStream().use {
             profiles.compress(Bitmap.CompressFormat.PNG,100,it)
         }
-        ui.onNodeWithText("Single pane").performScrollTo().assertIsSelected()
-        ui.onNodeWithText("Multiple panes").performClick().assertIsSelected()
         ui.runOnIdle {
             assertEquals(TabBarLayout(TabBarPosition.LEFT),layouts[TabWidthClass.MEDIUM])
             assertEquals(TabBarLayout(TabBarPosition.RIGHT,TabRailStyle.TITLES),layouts[TabWidthClass.WIDE])
-            assertTrue(multiple)
+        }
+    }
+
+    @Test fun paneProfilesInheritAndSaveChoicesIndependently() {
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        val name="pane-profile-test-${System.nanoTime()}"
+        val prefs=app.getSharedPreferences(name,0)
+        prefs.edit(commit=true) {putBoolean("multi_pane_unfolded",true)}
+        val store=ViewModelStore()
+        lateinit var model: RexModel
+        ui.runOnUiThread {model=RexModel(app,name);store.put("panes",model)}
+        var windowOrientation by mutableIntStateOf(Configuration.ORIENTATION_PORTRAIT)
+        try {
+            ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
+                val configuration=Configuration(LocalConfiguration.current).apply {orientation=windowOrientation}
+                CompositionLocalProvider(LocalConfiguration provides configuration) {
+                    PreferencesSheet({},{},{},{},{},paneLayouts=model.paneLayouts,onPaneLayout=model::changePaneLayout)
+                }
+            }}
+            val selectable=SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
+            val single=ui.onNode(hasText("Single pane") and selectable)
+            val multiple=ui.onNode(hasText("Multiple panes") and selectable)
+            ui.onNode(hasText("Portrait") and hasText("Now")).performScrollTo().assertIsDisplayed()
+            ui.onNode(hasText("Landscape") and hasText("Multiple panes")).assertExists()
+            multiple.performScrollTo().assertIsSelected()
+            ui.onNodeWithText("Landscape").performScrollTo().performClick()
+            single.performScrollTo().performClick().assertIsSelected()
+            ui.onNode(hasText("Portrait") and hasText("Now") and hasText("Multiple panes")).assertExists()
+            ui.onNodeWithText("Portrait").performScrollTo().performClick()
+            multiple.performScrollTo().assertIsSelected()
+
+            ui.runOnIdle {windowOrientation=Configuration.ORIENTATION_LANDSCAPE}
+            ui.onNode(hasText("Landscape") and hasText("Now")).performScrollTo().assertIsDisplayed()
+            single.performScrollTo().assertIsSelected()
+            ui.runOnIdle {
+                val reopened=RexModel(app,name).also {store.put("panes-reopened",it)}
+                assertEquals(mapOf(PaneOrientation.PORTRAIT to true,PaneOrientation.LANDSCAPE to false),reopened.paneLayouts)
+                assertFalse(prefs.contains(PaneOrientation.PORTRAIT.preferenceKey))
+            }
+        } finally {
+            ui.runOnUiThread {store.clear()}
+            app.deleteSharedPreferences(name)
         }
     }
 

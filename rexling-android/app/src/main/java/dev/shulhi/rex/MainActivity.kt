@@ -221,6 +221,8 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     // instead extends under the gesture handle: side tabs with the key toolbar hidden.
     val panelShown=state.connected || state.phase=="preview" || client.hasScreen
     val unfoldedFullScreen=isUnfoldedFullScreen()
+    val paneOrientation=currentPaneOrientation()
+    val multiplePanes=model.paneLayouts[paneOrientation]==true
     val hasHinge=remember(context) {context.packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_HINGE_ANGLE)}
     val allowFloatingOverlay=unfoldedFullScreen && hasHinge
     val tabLayout=model.tabLayout(tabWidth.first)
@@ -253,7 +255,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
     val visibleBlocks=window?.visiblePanes() ?: blocks
     val chosen=displayedBlock.takeUnless {it.isBlank() || requested?.minimized==true}
         ?: visibleBlocks.firstOrNull {it.id==state.selectedBlock}?.id.orEmpty().ifBlank {visibleBlocks.firstOrNull()?.id.orEmpty()}
-    val tiles=if(model.multiPaneUnfolded && unfoldedFullScreen) multiPaneTiles(window,chosen,allowFloatingOverlay) else null
+    val tiles=if(multiplePanes && unfoldedFullScreen) multiPaneTiles(window,chosen,allowFloatingOverlay) else null
     val alignHeaderToRail=tabLayout.position==TabBarPosition.LEFT && blocks.isNotEmpty()
     val headerIconSlot=if(alignHeaderToRail) tabRailWidth(TabRailStyle.ICONS) else HeaderIconSlotWidth
     val showAllFloating=model.minimizeFloatingPanes || (allowFloatingOverlay && tiles!=null)
@@ -572,9 +574,10 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
                     }
                 },
                 if(unfoldedFullScreen) {
-                    val multiple=model.multiPaneUnfolded
-                    TerminalDrawerAction(if(multiple) "Single pane" else "Multiple panes",
-                        if(multiple) ChromeIcon.ZOOM else ChromeIcon.SPLIT) {model.changeMultiPaneUnfolded(!multiple)}
+                    TerminalDrawerAction(if(multiplePanes) "Single pane" else "Multiple panes",
+                        if(multiplePanes) ChromeIcon.ZOOM else ChromeIcon.SPLIT) {
+                        model.changePaneLayout(paneOrientation,!multiplePanes)
+                    }
                 } else null,
                 TerminalDrawerAction(if(palette.dark) "Light theme" else "Dark theme",
                     if(palette.dark) ChromeIcon.SUN else ChromeIcon.MOON) {
@@ -606,7 +609,7 @@ private data class TerminalCloseTarget(val session: String,val id: String,val la
         compactHeaderMode=model.compactHeaderMode,onCompactHeaderMode=model::changeCompactHeaderMode,
         immersiveStatusBar=model.immersiveStatusBar,onImmersiveStatusBar=model::changeImmersiveStatusBar,
         tabLayouts=model.tabLayouts,tabWidth=tabWidth,onTabLayout=model::changeTabLayout,
-        multiPaneUnfolded=model.multiPaneUnfolded,onMultiPaneUnfolded=model::changeMultiPaneUnfolded,
+        paneLayouts=model.paneLayouts,paneOrientation=paneOrientation,onPaneLayout=model::changePaneLayout,
         codexTitleAttention=model.experimentalCodexAttention,onCodexTitleAttention=model::changeCodexAttention,
         minimizeFloatingPanes=model.minimizeFloatingPanes,onMinimizeFloatingPanes=model::changeMinimizeFloatingPanes,
         keepScreenAwake=model.keepScreenAwake,onKeepScreenAwake=model::changeKeepScreenAwake,onToolbar={preferencesOpen=false;toolbarSettings=true},onControlItems={preferencesOpen=false;controlSettings=true},hazeState=workspaceHaze)
