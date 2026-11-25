@@ -108,7 +108,7 @@ class TerminalView(context: Context) : View(context) {
         get()=currentScreen
         set(value) {setScreen(value,false)}
     internal var allowHiddenCursorInput: Boolean=false
-        set(value) {if(field!=value) {field=value;reportCursorViewport()}}
+        set(value) {if(field!=value) {field=value;reportCursorViewport();invalidate()}}
     private fun inputCursorRow(frame: TerminalScreen)=frame.cursorY ?: frame.cursorAnchorY.takeIf {allowHiddenCursorInput && frame.cursorAnchorX!=null}
     internal var onKeyboardFocus: ((TerminalKeyboardFocus?)->Unit)?=null
     internal val keyboardFocus: TerminalKeyboardFocus? get() {
@@ -155,7 +155,8 @@ class TerminalView(context: Context) : View(context) {
     private val textColors = TerminalTextColors()
     private val fonts = TerminalFonts(context)
     private val terminalImages=TerminalImages()
-    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>) {
+    private data class RecordedRow(val cells: List<TerminalCell>,val recording: TerminalRowRecording,val links: List<TerminalLink>,
+        val paddingCursorColumn: Int?) {
         val contentHash by lazy(LazyThreadSafetyMode.NONE) { rowContentHash(cells) }
         fun atRow(y: Int): RecordedRow = if(links.isEmpty()) this else copy(links=links.map {it.copy(row=y)})
     }
@@ -251,6 +252,14 @@ class TerminalView(context: Context) : View(context) {
         // Content that only moved keeps its recording: reuse rows by content
         // when the whole screen shifted, so only edge and uncovered rows need recording.
         reuseShiftedRows(frame,visibleRows)
+        val anchorRow=frame.cursorAnchorY ?: -1
+        val paddingCursor=if(allowHiddenCursorInput && frame.cursorX==null && frame.cursorY==null &&
+            frame.scroll.below==0L && anchorRow in 0 until visibleRows) {
+            frame.lines[anchorRow].firstOrNull {cell->
+                cell.x==frame.cursorAnchorX && cell.x<visibleColumns && cell.width>0 && cell.attributes and 8!=0 &&
+                    (cell.x==0 || cell.x+cell.width>=visibleColumns || anchorRow==0 || anchorRow==visibleRows-1)
+            }
+        } else null
         val slide=slideFor(frame)
         if(slide!=0f) {canvas.save();canvas.clipRect(0f,insetTop,width.toFloat(),height-insetBottom);canvas.translate(0f,-slide)}
         if(frame.images.isEmpty()) {
@@ -258,22 +267,23 @@ class TerminalView(context: Context) : View(context) {
         if(slide>0f) frame.below.forEachIndexed {i,row->drawLooseRow(canvas,row,visibleColumns,insetTop+(visibleRows+i)*cellHeight)}
         for(y in 0 until visibleRows) {
             val cells=frame.lines[y]
+            val cursor=paddingCursor.takeIf {y==anchorRow}
             var row=recorded[y]
             val links=rowLinks[y]
-            if(row==null || !row.recording.valid || !sameCells(row.cells,cells) || row.links!=links) {
+            if(row==null || !row.recording.valid || !sameCells(row.cells,cells) || row.links!=links || row.paddingCursorColumn!=cursor?.x) {
                 val origin=if(y==0) 0f else insetTop+y*cellHeight
                 val top=if(y==0) insetTop else 0f
                 val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
                 val recording=row?.recording ?: TerminalRowRecording.create(canvas.isHardwareAccelerated)
                 recording.record(width,bottom.toInt().coerceAtLeast(1)) { target ->
-                    drawRow(target,cells,visibleColumns,top,bottom)
+                    drawRow(target,cells,visibleColumns,top,bottom,paddingCursor=cursor)
                     target.save();target.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
                     backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
                     for(link in links) target.drawLine(insetHorizontal+link.start*cellWidth,top+baseline+2,
                         insetHorizontal+link.end*cellWidth,top+baseline+2,backgroundPaint)
                     target.restore()
                 }
-                row=RecordedRow(cells,recording,links);recorded[y]=row;recordedRowCount++
+                row=RecordedRow(cells,recording,links,cursor?.x);recorded[y]=row;recordedRowCount++
             }
             canvas.save();canvas.translate(0f,if(y==0) 0f else insetTop+y*cellHeight)
             row.recording.draw(canvas);canvas.restore()
@@ -286,7 +296,7 @@ class TerminalView(context: Context) : View(context) {
                     val top=if(y==0) insetTop else 0f
                     val bottom=if(y==visibleRows-1) height-origin else top+cellHeight
                     val save=canvas.save();canvas.translate(0f,origin)
-                    drawRow(canvas,frame.lines[y],visibleColumns,top,bottom,pass)
+                    drawRow(canvas,frame.lines[y],visibleColumns,top,bottom,pass,paddingCursor.takeIf {y==anchorRow})
                     if(pass==2) {
                         canvas.save();canvas.clipRect(insetHorizontal,top,width-insetHorizontal,top+cellHeight)
                         backgroundPaint.color=palette.accent;backgroundPaint.strokeWidth=resources.displayMetrics.density.coerceAtLeast(1f)
@@ -432,13 +442,28 @@ class TerminalView(context: Context) : View(context) {
         drawRow(canvas,cells,columns,0f,cellHeight)
         canvas.restoreToCount(save)
     }
-    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float,pass: Int=0) {
+    private fun drawRow(canvas: Canvas,cells: List<TerminalCell>,columns: Int,top: Float,bottom: Float,pass: Int=0,
+        paddingCursor: TerminalCell?=null) {
         var start=0;var end=0;var color=0
         fun flush() {
-            if(pass==2 || end<=start || start>=columns || color==palette.background) return
-            backgroundPaint.color=color
-            canvas.drawRect(if(start==0) 0f else insetHorizontal+start*cellWidth,0f,
-                if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth,bottom,backgroundPaint)
+            if(pass==2 || end<=start || start>=columns) return
+            val left=if(start==0) 0f else insetHorizontal+start*cellWidth
+            val right=if(end>=columns) width.toFloat() else insetHorizontal+end*cellWidth
+            if(paddingCursor!=null && start==paddingCursor.x && end==start+paddingCursor.width) {
+                // An agent can draw its caret with reverse video while keeping the hardware
+                // cursor hidden. Extend the original cell background into the padding.
+                val base=palette.background(paddingCursor)
+                if(base!=palette.background) {
+                    backgroundPaint.color=base
+                    canvas.drawRect(left,0f,right,bottom,backgroundPaint)
+                }
+                backgroundPaint.color=color
+                canvas.drawRect(insetHorizontal+start*cellWidth,top,
+                    minOf(insetHorizontal+end*cellWidth,width-insetHorizontal),minOf(top+cellHeight,bottom),backgroundPaint)
+            } else if(color!=palette.background) {
+                backgroundPaint.color=color
+                canvas.drawRect(left,0f,right,bottom,backgroundPaint)
+            }
         }
         for(cell in cells) {
             if(cell.width==0 && cell.x<end) continue
