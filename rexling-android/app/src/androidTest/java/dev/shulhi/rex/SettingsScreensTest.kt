@@ -7,7 +7,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -50,35 +52,59 @@ class SettingsScreensTest {
     }
     @Test fun editingOneTabProfileDoesNotChangeTheCurrentProfile() {
         val layouts=mutableStateMapOf(TabWidthClass.MEDIUM to TabBarLayout(TabBarPosition.LEFT),TabWidthClass.WIDE to TabBarLayout())
-        ui.setContent {MaterialTheme {
+        var multiple by mutableStateOf(false)
+        ui.setContent {RexTheme(false,ThemeCatalog.defaults[1]) {
             PreferencesSheet({},{},{},{},{},tabLayouts=layouts,tabWidth=TabWidthClass.MEDIUM to 555,
-                onTabLayout={width,layout->layouts[width]=layout})
+                onTabLayout={width,layout->layouts[width]=layout},multiPaneUnfolded=multiple,onMultiPaneUnfolded={multiple=it})
         }}
-        ui.onNodeWithText("Medium").performScrollTo().assertIsSelected()
+        val medium=ui.onNodeWithText("Medium")
+        val wide=ui.onNodeWithText("Wide")
+        val expanded=SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"Expanded")
+        val collapsed=SemanticsMatcher.expectValue(SemanticsProperties.StateDescription,"Collapsed")
+        medium.performScrollTo().assert(expanded)
+        ui.onNode(hasText("Medium") and hasText("Now")).assertExists()
         ui.onNodeWithText("Left").performScrollTo().assertIsSelected()
-        ui.onNodeWithText("Wide").performScrollTo().performClick().assertIsSelected()
-        ui.onNodeWithText("Bottom").assertIsSelected()
+        ui.onNodeWithText("440–759 dp · This window is 555 dp").performScrollTo().assertIsDisplayed()
+        medium.performScrollTo().performClick().assert(collapsed)
+        ui.onNode(hasText("Medium") and hasText("Left tabs · icons")).assertExists()
+        ui.onNodeWithText("Position").assertDoesNotExist()
+        wide.performScrollTo().performClick().assert(expanded)
+        ui.onNode(hasText("Medium") and hasText("Now")).assertExists()
+        ui.onNodeWithText("Bottom").performScrollTo().assertIsSelected()
         ui.onNodeWithText("Sidebar style").assertDoesNotExist()
         ui.onNodeWithText("Right").performClick()
         ui.onNodeWithText("Icons and titles").performScrollTo().performClick().assertIsSelected()
-        ui.onNodeWithText("Medium").performScrollTo().performClick()
-        ui.onNodeWithText("Left").assertIsSelected()
+        medium.performScrollTo().performClick().assert(expanded)
+        ui.onNodeWithText("Left").performScrollTo().assertIsSelected()
+        ui.onNode(hasText("Wide") and hasText("Right tabs · icons and titles")).assertExists()
+        val profiles=ui.onNodeWithTag("Tab width profiles").performScrollTo().captureToImage().asAndroidBitmap()
+        File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"tab-width-profiles.png").outputStream().use {
+            profiles.compress(Bitmap.CompressFormat.PNG,100,it)
+        }
+        ui.onNodeWithText("Single pane").performScrollTo().assertIsSelected()
+        ui.onNodeWithText("Multiple panes").performClick().assertIsSelected()
         ui.runOnIdle {
             assertEquals(TabBarLayout(TabBarPosition.LEFT),layouts[TabWidthClass.MEDIUM])
             assertEquals(TabBarLayout(TabBarPosition.RIGHT,TabRailStyle.TITLES),layouts[TabWidthClass.WIDE])
+            assertTrue(multiple)
         }
     }
 
-    @Test fun compactTopBarOptionsSwitchBetweenAllThreeModes() {
+    @Test fun compactTopBarAndCtrlShortcutUseSegmentedChoices() {
         var mode by mutableStateOf(CompactHeaderMode.NEVER)
+        var gesture by mutableStateOf(ControlShortcutGesture.HOLD)
         ui.setContent {MaterialTheme {
-            PreferencesSheet({},{},{},{},{},compactHeaderMode=mode,onCompactHeaderMode={mode=it})
+            PreferencesSheet({},{},{},{},{},compactHeaderMode=mode,onCompactHeaderMode={mode=it},
+                shortcutGesture=gesture,onShortcutGesture={gesture=it})
         }}
         ui.onNodeWithText("Never").performScrollTo().assertIsSelected()
         listOf(CompactHeaderMode.ALWAYS,CompactHeaderMode.WITH_KEYBOARD,CompactHeaderMode.NEVER).forEach {next->
             ui.onNodeWithText(next.label).performScrollTo().performClick().assertIsSelected()
             ui.runOnIdle {assertEquals(next,mode)}
         }
+        ui.onNodeWithText("Hold").performScrollTo().assertIsSelected()
+        ui.onNodeWithText("Double tap").performScrollTo().performClick().assertIsSelected()
+        ui.runOnIdle {assertEquals(ControlShortcutGesture.DOUBLE_TAP,gesture)}
     }
 
     @Test fun toolbarSystemColorsAreOptIn() {
